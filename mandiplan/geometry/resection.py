@@ -87,7 +87,11 @@ def build_report(
     substantially across a curved mandible.
     """
     report = ResectionReport()
-    inside = resected_mask(planes, frames.points)
+    inside = (
+        resected_mask(planes, frames.points)
+        if frames is not None
+        else np.zeros(0, dtype=bool)
+    )
     if np.any(inside):
         idx = np.where(inside)[0]
         s_lo, s_hi = float(frames.s[idx[0]]), float(frames.s[idx[-1]])

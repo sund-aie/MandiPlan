@@ -45,13 +45,11 @@ def triangles_to_polydata(points: np.ndarray, triangles: np.ndarray) -> vtk.vtkP
         )
     )
     tris = np.ascontiguousarray(triangles, dtype=np.int64)
-    cells_flat = np.hstack(
-        [np.full((len(tris), 1), 3, dtype=np.int64), tris]
-    ).ravel()
+    offsets = np.arange(len(tris) + 1, dtype=np.int64) * 3
     cells = vtk.vtkCellArray()
-    cells.SetCells(
-        len(tris),
-        numpy_support.numpy_to_vtkIdTypeArray(cells_flat, deep=True),
+    cells.SetData(
+        numpy_support.numpy_to_vtkIdTypeArray(offsets, deep=True),
+        numpy_support.numpy_to_vtkIdTypeArray(tris.ravel(), deep=True),
     )
     mesh = vtk.vtkPolyData()
     mesh.SetPoints(pts)

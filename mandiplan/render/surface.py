@@ -15,41 +15,54 @@ from ..geometry.resection import CutPlane
 from .convert import volume_to_vtk
 
 
+class SurfaceExtractor:
+    """Threshold-to-isosurface pipeline, built once per volume.
+
+    Dragging the threshold slider only changes the contour value; the volume
+    is uploaded to VTK once rather than on every update.
+    """
+
+    def __init__(self, volume):
+        self._image = volume_to_vtk(volume)
+        self._contour = vtk.vtkFlyingEdges3D()
+        self._contour.SetInputData(self._image)
+        self._contour.ComputeNormalsOff()
+        self._contour.ComputeGradientsOff()
+        self._contour.ComputeScalarsOff()
+
+        self._connectivity = vtk.vtkPolyDataConnectivityFilter()
+        self._connectivity.SetInputConnection(self._contour.GetOutputPort())
+        self._connectivity.SetExtractionModeToLargestRegion()
+
+        self._triangles = vtk.vtkTriangleFilter()
+        self._triangles.PassLinesOff()
+        self._triangles.PassVertsOff()
+
+        self._normals = vtk.vtkPolyDataNormals()
+        self._normals.SetInputConnection(self._triangles.GetOutputPort())
+        self._normals.SplittingOff()
+        self._normals.ConsistencyOn()
+        self._normals.AutoOrientNormalsOn()
+        self._normals.ComputePointNormalsOn()
+
+    def update(self, threshold: float, largest_component: bool = True) -> vtk.vtkPolyData:
+        self._contour.SetValue(0, float(threshold))
+        self._contour.Update()
+        if largest_component and self._contour.GetOutput().GetNumberOfPoints() > 0:
+            self._triangles.SetInputConnection(self._connectivity.GetOutputPort())
+        else:
+            self._triangles.SetInputConnection(self._contour.GetOutputPort())
+        self._normals.Update()
+        result = vtk.vtkPolyData()
+        result.DeepCopy(self._normals.GetOutput())
+        return result
+
+
 def extract_isosurface(
     volume, threshold: float, largest_component: bool = True
 ) -> vtk.vtkPolyData:
     """Isosurface of ``volume`` at ``threshold`` (native gray values)."""
-    image = volume_to_vtk(volume)
-    surface = vtk.vtkFlyingEdges3D()
-    surface.SetInputData(image)
-    surface.SetValue(0, float(threshold))
-    surface.ComputeNormalsOn()
-    surface.ComputeGradientsOff()
-    surface.ComputeScalarsOff()
-    surface.Update()
-    result = surface.GetOutput()
-
-    if largest_component and result.GetNumberOfPoints() > 0:
-        connectivity = vtk.vtkPolyDataConnectivityFilter()
-        connectivity.SetInputData(result)
-        connectivity.SetExtractionModeToLargestRegion()
-        connectivity.Update()
-        result = connectivity.GetOutput()
-
-    triangles = vtk.vtkTriangleFilter()
-    triangles.SetInputData(result)
-    triangles.PassLinesOff()
-    triangles.PassVertsOff()
-    triangles.Update()
-
-    normals = vtk.vtkPolyDataNormals()
-    normals.SetInputData(triangles.GetOutput())
-    normals.SplittingOff()
-    normals.ConsistencyOn()
-    normals.AutoOrientNormalsOn()
-    normals.ComputePointNormalsOn()
-    normals.Update()
-    return normals.GetOutput()
+    return SurfaceExtractor(volume).update(threshold, largest_component)
 
 
 def mesh_volume_mm3(polydata: vtk.vtkPolyData) -> float:
