@@ -130,6 +130,45 @@ def _clip_with_collection(
     return clip.GetOutput()
 
 
+def reflect_polydata(polydata: vtk.vtkPolyData, plane) -> vtk.vtkPolyData:
+    """Reflect a surface in a :class:`~mandiplan.geometry.mirror.MidSagittalPlane`.
+
+    Reflection reverses handedness, so the triangles are re-wound afterwards
+    and the normals recomputed; otherwise the mirrored graft renders inside-out
+    and its enclosed volume comes out negative.
+    """
+    n = np.asarray(plane.normal, dtype=float)
+    p = np.asarray(plane.point, dtype=float)
+    matrix = vtk.vtkMatrix4x4()
+    householder = np.eye(3) - 2.0 * np.outer(n, n)
+    translation = 2.0 * np.dot(p, n) * n
+    for r in range(3):
+        for c in range(3):
+            matrix.SetElement(r, c, float(householder[r, c]))
+        matrix.SetElement(r, 3, float(translation[r]))
+
+    transform = vtk.vtkTransform()
+    transform.SetMatrix(matrix)
+    filt = vtk.vtkTransformPolyDataFilter()
+    filt.SetTransform(transform)
+    filt.SetInputData(polydata)
+    filt.Update()
+
+    reverse = vtk.vtkReverseSense()
+    reverse.SetInputData(filt.GetOutput())
+    reverse.ReverseCellsOn()
+    reverse.ReverseNormalsOn()
+    reverse.Update()
+
+    normals = vtk.vtkPolyDataNormals()
+    normals.SetInputData(reverse.GetOutput())
+    normals.SplittingOff()
+    normals.ConsistencyOn()
+    normals.AutoOrientNormalsOn()
+    normals.Update()
+    return normals.GetOutput()
+
+
 class SurfaceProjector:
     """Projects arbitrary world points onto the bone surface, with normals."""
 

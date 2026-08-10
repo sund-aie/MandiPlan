@@ -1,0 +1,84 @@
+{
+  "note": [
+    "Generic reconstruction-plate profiles grouped by size class. This is NOT a",
+    "manufacturer catalogue and contains no vendor part numbers. Every dimension",
+    "here is a starting default that you must check against the specification",
+    "sheet of the system you are actually holding, then edit this file to match.",
+    "bend_warning_deg and min_bend_radius_mm are working limits you set for",
+    "yourself; they are not manufacturer ratings."
+  ],
+  "systems": [
+    {
+      "id": "recon-2.4-bar",
+      "name": "2.4 mm reconstruction bar, straight",
+      "shape": "straight",
+      "hole_pitch_mm": 9.0,
+      "end_margin_mm": 4.5,
+      "width_mm": 12.0,
+      "thickness_mm": 2.4,
+      "hole_counts": [6, 8, 10, 12, 14, 16, 18, 20, 24],
+      "bend_warning_deg": 15.0,
+      "min_bend_radius_mm": 15.0,
+      "min_holes_per_side": 3,
+      "notes": "Load-bearing bar for a segmental defect. Bicortical screws."
+    },
+    {
+      "id": "recon-2.7-bar",
+      "name": "2.7 mm reconstruction bar, straight",
+      "shape": "straight",
+      "hole_pitch_mm": 10.0,
+      "end_margin_mm": 5.0,
+      "width_mm": 13.0,
+      "thickness_mm": 2.7,
+      "hole_counts": [6, 8, 10, 12, 14, 16, 18, 20],
+      "bend_warning_deg": 12.0,
+      "min_bend_radius_mm": 20.0,
+      "min_holes_per_side": 3,
+      "notes": "Stiffer bar for long defects; harder to contour by hand."
+    },
+    {
+      "id": "recon-2.0-plate",
+      "name": "2.0 mm reconstruction plate, straight",
+      "shape": "straight",
+      "hole_pitch_mm": 8.0,
+      "end_margin_mm": 4.0,
+      "width_mm": 9.0,
+      "thickness_mm": 2.0,
+      "hole_counts": [6, 8, 10, 12, 14, 16, 18, 20],
+      "bend_warning_deg": 20.0,
+      "min_bend_radius_mm": 10.0,
+      "min_holes_per_side": 3,
+      "notes": "Thinner and easier to contour; less rigid across a long span."
+    },
+    {
+      "id": "angle-2.4-prebent",
+      "name": "2.4 mm pre-bent angle bar (body to ramus)",
+      "shape": "pre_bent_angle",
+      "preformed_angle_deg": 120.0,
+      "preformed_at_fraction": 0.5,
+      "hole_pitch_mm": 9.0,
+      "end_margin_mm": 4.5,
+      "width_mm": 12.0,
+      "thickness_mm": 2.4,
+      "hole_counts": [10, 12, 14, 16, 18],
+      "bend_warning_deg": 12.0,
+      "min_bend_radius_mm": 15.0,
+      "min_holes_per_side": 3,
+      "notes": "Comes with the gonial angle already formed; only the residual bend is yours to make."
+    },
+    {
+      "id": "custom-psi",
+      "name": "Patient-specific (custom) plate",
+      "shape": "custom",
+      "hole_pitch_mm": 9.0,
+      "end_margin_mm": 4.5,
+      "width_mm": 12.0,
+      "thickness_mm": 2.4,
+      "hole_counts": [],
+      "bend_warning_deg": 90.0,
+      "min_bend_radius_mm": 8.0,
+      "min_holes_per_side": 3,
+      "notes": "Made to the planned path, so no chairside bending. Any path length fits."
+    }
+  ]
+}

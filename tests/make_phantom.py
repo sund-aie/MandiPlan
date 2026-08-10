@@ -38,8 +38,8 @@ class PhantomSpec:
     """Parameters of the analytic phantom.  All lengths in millimetres."""
 
     radius_mm: float = 32.0
-    theta_start_deg: float = -70.0
-    theta_end_deg: float = 70.0
+    arch_centre_deg: float = -90.0  # chin direction: -90 deg is anterior in LPS
+    half_span_deg: float = 70.0
     semi_axis_bl_mm: float = 6.0  # a, buccolingual
     semi_axis_si_mm: float = 9.0  # b, superior-inferior
     centre_xy: tuple[float, float] = (0.0, 0.0)
@@ -51,6 +51,14 @@ class PhantomSpec:
     edge_mm: float | None = None  # default: two voxels of the coarsest axis
     noise_sigma: float = 25.0
     seed: int = 0
+
+    @property
+    def theta_start_deg(self) -> float:
+        return self.arch_centre_deg - self.half_span_deg
+
+    @property
+    def theta_end_deg(self) -> float:
+        return self.arch_centre_deg + self.half_span_deg
 
     @property
     def theta_span_rad(self) -> float:

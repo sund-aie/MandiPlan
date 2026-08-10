@@ -161,12 +161,78 @@ def test_margin_points_report_signed_distances(window, phantom_folder):
     assert "lesion" in window.resection_panel.readout.text()
 
 
-def test_plate_path_bend_table_and_exports(window, tmp_path):
+def test_mirror_reconstruction_through_the_interface(window, phantom_folder):
+    spec, _ = phantom_folder
+    session = window.session
+    session.clear_planes()
+
+    # A lateral defect: entirely on one side, so mirroring covers all of it.
+    mid = session.frames.length_mm / 2.0
+    for s, sign in ((mid + 12.0, +1.0), (mid + 34.0, -1.0)):
+        index = session.frames.index_of(s)
+        session.add_plane(
+            session.frames.points[index], sign * session.frames.tangents[index]
+        )
+
+    session.estimate_symmetry_plane()
+    plane = session.symmetry_plane
+    assert plane is not None
+    assert abs(plane.point[0] - spec.centre_xy[0]) < 1.0
+    assert plane.symmetry > 0.9
+    assert "Symmetry score" in window.reconstruction_panel.plane_info.text()
+
+    assert session.coverage is not None
+    assert not session.coverage.crosses_midline
+
+    session.build_graft()
+    assert session.graft_surface is not None
+    assert session.graft_volume_mm3 > 0
+    # The graft should be about the size of the fragment it replaces.
+    session.execute_cut()
+    assert rel_error(session.graft_volume_mm3, session.report.fragment_volume_mm3) < 0.1
+    session.undo_cut()
+    assert "Mirrored graft volume" in window.reconstruction_panel.coverage_info.text()
+
+
+def test_a_defect_across_the_midline_is_reported_as_partly_unmirrorable(window):
+    session = window.session
+    session.clear_planes()
+    mid = session.frames.length_mm / 2.0
+    for s, sign in ((mid - 10.0, +1.0), (mid + 25.0, -1.0)):
+        index = session.frames.index_of(s)
+        session.add_plane(
+            session.frames.points[index], sign * session.frames.tangents[index]
+        )
+    if session.symmetry_plane is None:
+        session.estimate_symmetry_plane()
+    session.update_reconstruction()
+
+    coverage = session.coverage
+    assert coverage.crosses_midline
+    assert coverage.uncovered_mm > 15.0
+    assert "no healthy counterpart" in window.reconstruction_panel.coverage_info.text()
+
+    session.build_graft()
+    assert session.bridge_surface is not None
+    assert session.bridge_surface.GetNumberOfPoints() > 0
+
+
+def _buccal_path(spec, count: int = 12, half_span_deg: float = 60.0):
+    """Points just outside the phantom's buccal cortex, as a user would click."""
+    radius = spec.radius_mm + spec.semi_axis_bl_mm + 0.5
+    centre = np.radians(spec.arch_centre_deg)
+    half = np.radians(half_span_deg)
+    for theta in np.linspace(centre - half, centre + half, count):
+        yield [radius * np.cos(theta), radius * np.sin(theta), spec.centre_z]
+
+
+def test_plate_path_bend_table_and_exports(window, phantom_folder, tmp_path):
+    spec, _ = phantom_folder
     session = window.session
     session.clear_plate_path()
     window.set_mode(Mode.PLATE)
-    for theta in np.linspace(np.radians(-60), np.radians(60), 12):
-        session.add_plate_point([38.5 * np.cos(theta), 38.5 * np.sin(theta), 0.0])
+    for point in _buccal_path(spec):
+        session.add_plate_point(point)
 
     plan = session.plate_plan
     assert plan is not None
@@ -213,6 +279,94 @@ def test_changing_the_pitch_changes_the_table(window):
     assert np.all(lengths <= 5.0 + 1e-9)
     assert rel_error(float(lengths.mean()), 5.0) < 0.01
     session.set_plate_settings(pitch_mm=9.0)
+
+
+def test_choosing_a_plate_system_drives_the_pitch_and_the_fit(window, tmp_path):
+    from mandiplan.exporting import write_steps_csv
+
+    session = window.session
+    panel = window.plate_panel
+    index = panel.system_box.findData("recon-2.7-bar")
+    panel.system_box.setCurrentIndex(index)
+
+    assert session.plate_system.id == "recon-2.7-bar"
+    assert session.plate.pitch_mm == pytest.approx(session.plate_system.hole_pitch_mm)
+    assert session.plate_plan.pitch_mm == pytest.approx(session.plate_system.hole_pitch_mm)
+    assert panel.pitch.value() == pytest.approx(session.plate_system.hole_pitch_mm)
+
+    fit = session.fit
+    assert fit is not None
+    assert fit.option is not None
+    assert fit.option.length_mm >= session.plate_plan.total_length_mm
+    assert "-hole" in panel.fit_info.text()
+
+    assert session.steps
+    assert panel.steps_table.rowCount() == len(session.steps)
+    assert session.steps[0].kind == "cut"
+
+    path = write_steps_csv(
+        tmp_path / "steps.csv",
+        session.steps,
+        session.plate_system,
+        session.bending_kit,
+        fit,
+    )
+    text = path.read_text(encoding="utf-8")
+    assert text.splitlines()[0] == f"# {DISCLAIMER}"
+    assert "distance_from_cut_end_mm" in text
+    assert session.plate_system.name in text
+
+    panel.system_box.setCurrentIndex(panel.system_box.findData("recon-2.4-bar"))
+
+
+def test_changing_the_bending_kit_changes_the_instructions(window):
+    session = window.session
+    panel = window.plate_panel
+    panel.kit_box.setCurrentIndex(panel.kit_box.findData("bar-bending-press"))
+    assert session.bending_kit.id == "bar-bending-press"
+    bends = [s for s in session.steps if s.kind == "bend"]
+    assert bends
+    assert all(s.instrument == "bending press" for s in bends)
+    panel.kit_box.setCurrentIndex(panel.kit_box.findData("bending-irons"))
+
+
+def test_a_custom_plate_needs_no_bench_steps(window):
+    session = window.session
+    panel = window.plate_panel
+    session.clear_planes()  # judge the plate on its own, with no defect to span
+    panel.system_box.setCurrentIndex(panel.system_box.findData("custom-psi"))
+    assert session.fit.fits
+    assert "Custom plate" in panel.fit_info.text()
+    assert len(session.steps) == 1
+    assert "no bending steps" in session.steps[0].text
+    panel.system_box.setCurrentIndex(panel.system_box.findData("recon-2.4-bar"))
+
+
+def test_a_plate_that_stops_short_of_the_defect_is_refused(window, phantom_folder):
+    """Screw purchase is checked, not just length."""
+    spec, _ = phantom_folder
+    session = window.session
+    panel = window.plate_panel
+    session.clear_plate_path()
+    # A short path that runs out before it reaches retained bone distally.
+    for point in _buccal_path(spec, count=8, half_span_deg=25.0):
+        session.add_plate_point(point)
+    mid = session.frames.length_mm / 2.0
+    for s, sign in ((mid + 4.0, +1.0), (mid + 30.0, -1.0)):
+        index = session.frames.index_of(s)
+        session.add_plane(
+            session.frames.points[index], sign * session.frames.tangents[index]
+        )
+
+    fit = session.fit
+    assert not fit.fits
+    assert any("retained bone" in problem for problem in fit.problems)
+    assert "Problem:" in panel.fit_info.text()
+
+    session.clear_planes()
+    session.clear_plate_path()
+    for point in _buccal_path(spec):
+        session.add_plate_point(point)
 
 
 def test_undo_restores_the_previous_plate_path(window):

@@ -61,6 +61,63 @@ would have been wrong. One line each.
   perpendicular to the surface normal, so wrapping it around the arch bends it
   about an axis lying in that plane.
 
+## Mirror reconstruction
+
+- **The mid-sagittal plane is searched for, not assumed.** Coordinate descent
+  over one lateral offset and two tilt angles, maximising the fraction of bone
+  voxels whose reflection is also bone. A full grid over the three costs twenty
+  times as much and lands in the same place, because the parameters are close
+  to independent once the volume is in patient axes.
+- **The symmetry score is reported, not just used.** Mirroring is only as good
+  as the patient's symmetry, and a case where the best plane maps 60% of the
+  bone onto bone should be visible as such before anyone trusts the graft.
+- **A defect crossing the midline is reported as partly un-mirrorable** rather
+  than silently returning the piece that could be mirrored. For a symmetric
+  arch the un-mirrorable span is exactly twice the distance from the midline to
+  the nearer cut, which is what the tests check.
+- **The un-mirrorable span is interpolated from the patient, not predicted from
+  a population.** Cross-sections at the two ends of the gap are blended and
+  swept along the arch curve. A statistical shape model would need a curated
+  library of real mandibles, which cannot be assembled inside an application
+  that makes no network calls and ships no patient data.
+- **Profile extents are measured at the interpolated threshold crossing.**
+  Counting whole samples above the threshold loses up to half a sample at each
+  end, which was a 4.8% underestimate of the reconstructed volume.
+- **Reflection reverses handedness**, so the mirrored surface is re-wound and
+  its normals recomputed; otherwise the graft renders inside-out and its
+  enclosed volume comes out negative.
+
+## Plate catalogue and bench steps
+
+- **The catalogue is data, not code, and is generic by size class.** No vendor
+  names, no part numbers, no dimensions presented as manufacturer
+  specifications. Publishing invented specifications as fact would be worse
+  than publishing none.
+- **`bend_warning_deg` and `min_bend_radius_mm` are working limits the user
+  sets**, and are named and documented that way rather than as ratings.
+- **Fit is judged on screw purchase as well as length.** A plate long enough to
+  span the defect but with two holes on retained bone is refused, because the
+  length alone was never the question.
+- **Bench distances are measured from the plate's proximal cut end**, not from
+  the first screw hole, because that is where a ruler starts.
+- **Bend directions are named in patient anatomy** — anterior, superior,
+  toward the patient's left — rather than in the frame conventions, so a step
+  can be followed without first reading the geometry documentation.
+- **A kit that cannot make a bend says so** instead of omitting the step; the
+  step still states the angle and names what is needed.
+
+## Packaging
+
+- **`run_mandiplan.command` is the supported way in.** macOS has no `python`,
+  only `python3`, and the double-click launcher removes the question entirely
+  by building its own virtual environment on first run.
+- **PyInstaller excludes the TLS and plotting stacks.** The application makes
+  no network calls and reads no encrypted DICOM, so `cryptography`, `requests`
+  and `urllib3` are dead weight — and collecting them broke the build.
+- **The bundle was built and run on Linux** to prove the spec collects what it
+  needs. The macOS-only steps (`sips`, `iconutil`, `BUNDLE`, `hdiutil`) are
+  written but unrun here.
+
 ## Interface
 
 - **2-D views are QPainter widgets, not VTK image viewers.** They own the

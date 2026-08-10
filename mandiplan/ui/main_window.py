@@ -29,6 +29,7 @@ from ..dicom_io import DicomLoadError
 from ..exporting import (
     write_bend_csv,
     write_plan_summary_csv,
+    write_steps_csv,
     write_surface_stl,
     write_template_stl,
 )
@@ -36,7 +37,13 @@ from ..geometry.cpr import cross_section_world_point
 from ..geometry.measure import distance_mm, format_mm
 from .image_view import ImageView, Overlay
 from .modes import Mode
-from .panels import ArchPanel, PlatePanel, ResectionPanel, VolumePanel
+from .panels import (
+    ArchPanel,
+    PlatePanel,
+    ReconstructionPanel,
+    ResectionPanel,
+    VolumePanel,
+)
 from .session import Session
 from .view3d import View3D
 
@@ -145,18 +152,20 @@ class MainWindow(QMainWindow):
         self.volume_panel = VolumePanel(self.session)
         self.arch_panel = ArchPanel(self.session)
         self.resection_panel = ResectionPanel(self.session)
+        self.reconstruction_panel = ReconstructionPanel(self.session)
         self.plate_panel = PlatePanel(self.session)
         self.toolbox.addItem(self.volume_panel, "1 · Volume and bone threshold")
         self.toolbox.addItem(self.arch_panel, "2 · Arch curve and reformat")
         self.toolbox.addItem(self.resection_panel, "3 · Resection planning")
-        self.toolbox.addItem(self.plate_panel, "4 · Plate path and bends")
+        self.toolbox.addItem(self.reconstruction_panel, "4 · Mirror reconstruction")
+        self.toolbox.addItem(self.plate_panel, "5 · Plate path and bends")
 
         dock = QDockWidget("Planning", self)
         dock.setWidget(self.toolbox)
         dock.setAllowedAreas(
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
-        dock.setMinimumWidth(360)
+        dock.setMinimumWidth(400)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
 
         self.volume_panel.load_requested.connect(self.open_dicom_folder)
@@ -164,6 +173,8 @@ class MainWindow(QMainWindow):
             panel.mode_requested.connect(self.set_mode)
         self.plate_panel.export_csv_requested.connect(self.export_bend_csv)
         self.plate_panel.export_stl_requested.connect(self.export_template_stl)
+        self.plate_panel.export_steps_requested.connect(self.export_steps_csv)
+        self.reconstruction_panel.export_graft_requested.connect(self.export_graft_stl)
 
     def _build_actions(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
@@ -175,6 +186,8 @@ class MainWindow(QMainWindow):
         for text, slot in (
             ("Export plate bend table (CSV)…", self.export_bend_csv),
             ("Export bending template (STL)…", self.export_template_stl),
+            ("Export bench steps (CSV)…", self.export_steps_csv),
+            ("Export reconstruction target (STL)…", self.export_graft_stl),
             ("Export resection summary (CSV)…", self.export_resection_csv),
             ("Export resected fragment (STL)…", self.export_fragment_stl),
         ):
@@ -612,6 +625,35 @@ class MainWindow(QMainWindow):
                 path, plan, self.session.plate.width_mm, self.session.plate.thickness_mm
             )
             self.show_message(f"Bending template written to {path}")
+
+    def export_steps_csv(self) -> None:
+        if not self.session.steps:
+            self.show_message("Draw a plate path first.")
+            return
+        path = self._save_path(
+            "Export bench steps", "CSV files (*.csv)", "plate_bending_steps.csv"
+        )
+        if path:
+            write_steps_csv(
+                path,
+                self.session.steps,
+                self.session.plate_system,
+                self.session.bending_kit,
+                self.session.fit,
+            )
+            self.show_message(f"Bench steps written to {path}")
+
+    def export_graft_stl(self) -> None:
+        surface = self.session.graft_surface
+        if surface is None:
+            self.show_message("Mirror the healthy side first.")
+            return
+        path = self._save_path(
+            "Export reconstruction target", "STL files (*.stl)", "reconstruction.stl"
+        )
+        if path:
+            write_surface_stl(path, surface)
+            self.show_message(f"Reconstruction target written to {path}")
 
     def export_resection_csv(self) -> None:
         rows = self.resection_panel.summary_rows()

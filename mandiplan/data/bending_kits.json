@@ -1,0 +1,64 @@
+{
+  "note": [
+    "Generic instrument categories found in plate-bending sets, not a vendor",
+    "catalogue. Add your department's kit here with its own instrument names so",
+    "the generated steps read the way your set is labelled."
+  ],
+  "kits": [
+    {
+      "id": "bending-irons",
+      "name": "Bending irons (two-handled pair)",
+      "instruments": ["bending iron, left hand", "bending iron, right hand"],
+      "handles": ["in_plane", "out_of_plane"],
+      "grip_span_mm": 20.0,
+      "max_angle_per_pass_deg": 10.0,
+      "can_twist": false,
+      "marking": "Mark the bar with a sterile marker at the distance given, on the outer face.",
+      "notes": "Grip either side of the mark and close the handles; take the angle in passes rather than one pull."
+    },
+    {
+      "id": "bending-pliers",
+      "name": "Three-point bending pliers",
+      "instruments": ["three-point bending pliers"],
+      "handles": ["in_plane", "out_of_plane"],
+      "grip_span_mm": 14.0,
+      "max_angle_per_pass_deg": 8.0,
+      "can_twist": false,
+      "marking": "Centre the middle jaw on the mark.",
+      "notes": "Good for fine contouring between screw holes; keep the jaws clear of the holes themselves."
+    },
+    {
+      "id": "bar-bending-press",
+      "name": "Bar bending press",
+      "instruments": ["bending press"],
+      "handles": ["in_plane", "out_of_plane"],
+      "grip_span_mm": 26.0,
+      "max_angle_per_pass_deg": 20.0,
+      "can_twist": false,
+      "marking": "Set the mark against the press index line.",
+      "notes": "For thick bars that will not move with hand instruments."
+    },
+    {
+      "id": "twisting-forceps",
+      "name": "Plate twisting forceps (pair)",
+      "instruments": ["twisting forceps A", "twisting forceps B"],
+      "handles": ["twist"],
+      "grip_span_mm": 18.0,
+      "max_angle_per_pass_deg": 10.0,
+      "can_twist": true,
+      "marking": "Mark both ends of the span to be twisted.",
+      "notes": "Grip either side of the span and rotate in opposite directions."
+    },
+    {
+      "id": "template-wire",
+      "name": "Malleable template wire and transfer",
+      "instruments": ["malleable template wire"],
+      "handles": ["in_plane", "out_of_plane", "twist"],
+      "grip_span_mm": 0.0,
+      "max_angle_per_pass_deg": 90.0,
+      "can_twist": true,
+      "marking": "Lay the wire on the printed template and follow it by hand.",
+      "notes": "Shape the wire to the printed template first, then copy the wire onto the plate."
+    }
+  ]
+}

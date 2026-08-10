@@ -13,18 +13,30 @@ import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from .. import constants
+from ..bending_steps import BendStep, generate_steps
 from ..dicom_io import SeriesGeometry, SeriesInfo, load_folder
 from ..geometry import cpr
+from ..geometry.mirror import (
+    MidSagittalPlane,
+    MirrorCoverage,
+    bridge_mesh,
+    estimate_midsagittal_plane,
+    estimate_profile,
+    mirror_coverage,
+)
 from ..geometry.plate import PlatePlan, compute_plate_plan
 from ..geometry.resection import CutPlane, ResectionReport, build_report
 from ..geometry.spline import ArchCurve
 from ..geometry.threshold import estimate_bone_threshold
 from ..geometry.volume import Volume
+from ..plate_catalog import FitReport, fit_check, kit_by_id, load_kits, load_systems, system_by_id
+from ..render.convert import triangles_to_polydata
 from ..render.surface import (
     SurfaceExtractor,
     SurfaceProjector,
     clip_closed,
     mesh_volume_mm3,
+    reflect_polydata,
 )
 
 
@@ -78,6 +90,7 @@ class Session(QObject):
     arch_changed = pyqtSignal()
     reformat_changed = pyqtSignal()
     resection_changed = pyqtSignal()
+    reconstruction_changed = pyqtSignal()
     plate_changed = pyqtSignal()
     message = pyqtSignal(str)
 
@@ -106,10 +119,19 @@ class Session(QObject):
         self.fragment_surface = None
         self.retained_surface = None
 
+        self.symmetry_plane: MidSagittalPlane | None = None
+        self.coverage: MirrorCoverage | None = None
+        self.graft_surface = None
+        self.bridge_surface = None
+
         self.plate_points: list[np.ndarray] = []
         self.plate_normals: list[np.ndarray] = []
         self.plate = PlateSettings()
         self.plate_plan: PlatePlan | None = None
+        self.plate_system = load_systems()[0]
+        self.bending_kit = load_kits()[0]
+        self.fit: FitReport | None = None
+        self.steps: list[BendStep] = []
 
         self._undo: list[_Snapshot] = []
 
@@ -133,6 +155,10 @@ class Session(QObject):
         self.plate_plan = None
         self.cut_applied = False
         self.report = None
+        self.symmetry_plane = None
+        self.coverage = None
+        self.graft_surface = None
+        self.bridge_surface = None
         self._undo.clear()
         self.volume_changed.emit()
         for warning in geometry.warnings:
@@ -157,6 +183,8 @@ class Session(QObject):
         self.cut_applied = False
         self.fragment_surface = None
         self.retained_surface = None
+        self.graft_surface = None
+        self.bridge_surface = None
         self.surface_changed.emit()
         self.update_plate_plan()
 
@@ -288,6 +316,11 @@ class Session(QObject):
         if self.cut_applied and self.fragment_surface is not None:
             self.report.fragment_volume_mm3 = mesh_volume_mm3(self.fragment_surface)
         self.resection_changed.emit()
+        self.update_reconstruction()
+        # Moving a cut changes how many screw holes land on retained bone, so
+        # the plate verdict has to be recomputed and re-shown with it.
+        self._update_fit()
+        self.plate_changed.emit()
 
     def execute_cut(self) -> None:
         if self.surface is None or not self.planes:
@@ -304,7 +337,117 @@ class Session(QObject):
         self.retained_surface = None
         self.update_resection_report()
 
+    # -- reconstruction ----------------------------------------------------
+
+    def estimate_symmetry_plane(self) -> None:
+        """Find the patient's mid-sagittal plane from the bone itself."""
+        if self.volume is None:
+            return
+        self.symmetry_plane = estimate_midsagittal_plane(self.volume, self.threshold)
+        if self.symmetry_plane.symmetry < 0.75:
+            self.message.emit(
+                f"The best symmetry plane only maps {self.symmetry_plane.symmetry:.0%} "
+                "of the bone onto bone. Check it before mirroring."
+            )
+        self.update_reconstruction()
+
+    def update_reconstruction(self) -> None:
+        """Mirror the healthy side into the defect and measure what it misses."""
+        self.coverage = None
+        if (
+            self.symmetry_plane is None
+            or self.frames is None
+            or self.report is None
+            or not np.isfinite(self.report.arc_length_mm)
+        ):
+            self.reconstruction_changed.emit()
+            return
+        self.coverage = mirror_coverage(
+            self.frames,
+            self.symmetry_plane,
+            self.report.entry_s_mm,
+            self.report.exit_s_mm,
+        )
+        self.reconstruction_changed.emit()
+
+    def build_graft(self) -> None:
+        """Build the mirrored graft, and estimate any span it cannot reach."""
+        if self.surface is None or self.symmetry_plane is None or not self.planes:
+            self.message.emit(
+                "Place the cutting planes and estimate the mid-sagittal plane first."
+            )
+            return
+        retained = self.retained_surface
+        if retained is None:
+            retained = clip_closed(self.surface, self.planes, keep_resected=False)
+        mirrored = reflect_polydata(retained, self.symmetry_plane)
+        self.graft_surface = clip_closed(mirrored, self.planes, keep_resected=True)
+
+        self.bridge_surface = None
+        if self.coverage is not None and self.coverage.uncovered_spans:
+            self.bridge_surface = self._build_bridge(self.coverage.uncovered_spans[0])
+        self.reconstruction_changed.emit()
+
+    def _build_bridge(self, span: tuple[float, float]):
+        """Estimate the bone across a span that mirroring cannot cover."""
+        if self.volume is None or self.frames is None:
+            return None
+        margin = 1.0
+        ends = (
+            max(span[0] - margin, 0.0),
+            min(span[1] + margin, self.frames.length_mm),
+        )
+        profiles = []
+        for s in ends:
+            cross = cpr.build_cross_section(
+                self.volume, self.frames, s, width_mm=self.cpr.cross_width_mm
+            )
+            profile = estimate_profile(cross, self.threshold, s)
+            if profile is None:
+                self.message.emit(
+                    f"No bone found at {s:.1f} mm along the curve, so the missing "
+                    "segment cannot be estimated there."
+                )
+                return None
+            profiles.append(profile)
+        points, triangles = bridge_mesh(self.frames, profiles[0], profiles[1])
+        return triangles_to_polydata(points, triangles)
+
+    @property
+    def graft_volume_mm3(self) -> float:
+        return (
+            mesh_volume_mm3(self.graft_surface)
+            if self.graft_surface is not None
+            else float("nan")
+        )
+
     # -- plate -------------------------------------------------------------
+
+    def set_plate_system(self, system_id: str) -> None:
+        self.plate_system = system_by_id(system_id)
+        self.plate.pitch_mm = self.plate_system.hole_pitch_mm
+        self.plate.width_mm = self.plate_system.width_mm
+        self.plate.thickness_mm = self.plate_system.thickness_mm
+        self.update_plate_plan()
+
+    def set_bending_kit(self, kit_id: str) -> None:
+        self.bending_kit = kit_by_id(kit_id)
+        self.update_plate_plan()
+
+    def _update_fit(self) -> None:
+        self.fit = None
+        self.steps = []
+        if self.plate_plan is None:
+            return
+        span = None
+        if self.report is not None and np.isfinite(self.report.arc_length_mm):
+            span = (self.report.entry_s_mm, self.report.exit_s_mm)
+        self.fit = fit_check(
+            self.plate_plan, self.plate_system, defect_span=span, frames=self.frames
+        )
+        self.steps = generate_steps(
+            self.plate_plan, self.plate_system, self.bending_kit, self.fit
+        )
 
     def add_plate_point(self, world_point) -> None:
         if self.projector is None:
@@ -348,6 +491,7 @@ class Session(QObject):
                     f"Plate path is {total:.1f} mm, shorter than one "
                     f"{self.plate.pitch_mm:.1f} mm screw-hole pitch."
                 )
+        self._update_fit()
         self.plate_changed.emit()
 
     # -- undo --------------------------------------------------------------

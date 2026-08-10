@@ -9,21 +9,24 @@ from helpers import rel_error
 from mandiplan.geometry.resection import CutPlane, build_report, resected_mask
 from mandiplan.render.surface import clip_closed, mesh_volume_mm3
 
+# Cut angles measured from the middle of the arch (the symphysis).
 THETA_A_DEG = -20.0
 THETA_B_DEG = 20.0
 
 
-def _radial_plane(spec, theta_deg: float, into_positive_theta: bool) -> CutPlane:
-    """Plane containing the arch axis, cutting the sweep at ``theta_deg``.
+def _radial_plane(spec, offset_deg: float, into_positive_theta: bool) -> CutPlane:
+    """Plane containing the arch axis, cutting the sweep ``offset_deg`` from
+    the middle of the arch.
 
     Its normal is the tangential direction, pointing into the fragment that is
     being removed.
     """
+    theta_deg = spec.arch_centre_deg + offset_deg
     t = np.radians(theta_deg)
     tangential = np.array([-np.sin(t), np.cos(t), 0.0])
     normal = tangential if into_positive_theta else -tangential
     origin = np.array([spec.centre_xy[0], spec.centre_xy[1], spec.centre_z])
-    return CutPlane(origin=origin, normal=normal, label=f"cut@{theta_deg:.0f}deg")
+    return CutPlane(origin=origin, normal=normal, label=f"cut@{offset_deg:+.0f}deg")
 
 
 @pytest.fixture(scope="module")

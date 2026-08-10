@@ -16,14 +16,17 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from ..bending_steps import steps_as_rows
 from ..constants import MAX_RESECTION_PLANES
 from ..geometry import cpr
 from ..geometry.measure import format_deg, format_mm
 from ..geometry.plate import bend_table_rows
+from ..plate_catalog import load_kits, load_systems
 from .histogram import ThresholdPanel
 from .modes import Mode
 
@@ -295,14 +298,84 @@ class ResectionPanel(QWidget):
         self.readout.setText("\n".join(lines))
 
 
-class PlatePanel(QWidget):
-    mode_requested = pyqtSignal(object)
-    export_csv_requested = pyqtSignal()
-    export_stl_requested = pyqtSignal()
+class ReconstructionPanel(QWidget):
+    """Mirror the healthy side into the defect, and say what it cannot reach."""
+
+    export_graft_requested = pyqtSignal()
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
         self.session = session
+
+        self.estimate_button = QPushButton("Estimate mid-sagittal plane")
+        self.mirror_button = QPushButton("Mirror healthy side into the defect")
+        self.export_button = QPushButton("Export reconstruction target (STL)…")
+        self.plane_info = QLabel("No symmetry plane estimated.")
+        self.plane_info.setWordWrap(True)
+        self.coverage_info = QLabel("")
+        self.coverage_info.setWordWrap(True)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.estimate_button)
+        layout.addWidget(self.plane_info)
+        layout.addWidget(self.mirror_button)
+        layout.addWidget(self.coverage_info)
+        layout.addWidget(
+            _hint(
+                "The mirrored healthy side is the reconstruction target. Where the "
+                "defect crosses the midline there is no healthy counterpart to "
+                "mirror, and that span is estimated by blending this patient's own "
+                "cross-sections across the gap — an interpolation, not a prediction "
+                "from a population of mandibles."
+            )
+        )
+        layout.addWidget(self.export_button)
+        layout.addStretch(1)
+
+        self.estimate_button.clicked.connect(session.estimate_symmetry_plane)
+        self.mirror_button.clicked.connect(session.build_graft)
+        self.export_button.clicked.connect(self.export_graft_requested)
+        session.reconstruction_changed.connect(self.refresh)
+
+    def refresh(self) -> None:
+        session = self.session
+        plane = session.symmetry_plane
+        if plane is None:
+            self.plane_info.setText("No symmetry plane estimated.")
+        else:
+            self.plane_info.setText(
+                f"Mid-sagittal plane at x = {plane.point[0]:.2f} mm, tilted "
+                f"{plane.tilt_deg:.2f}° from the left-right axis.\n"
+                f"Symmetry score: {plane.symmetry:.0%} of bone mirrors onto bone."
+            )
+        lines = []
+        if session.coverage is not None:
+            lines.append(session.coverage.summary())
+        if session.graft_surface is not None:
+            lines.append(
+                f"Mirrored graft volume: {session.graft_volume_mm3:.0f} mm³"
+            )
+        if session.bridge_surface is not None:
+            lines.append("The un-mirrorable span is shown as an estimated segment.")
+        self.coverage_info.setText("\n".join(lines))
+
+
+class PlatePanel(QWidget):
+    mode_requested = pyqtSignal(object)
+    export_csv_requested = pyqtSignal()
+    export_stl_requested = pyqtSignal()
+    export_steps_requested = pyqtSignal()
+
+    def __init__(self, session, parent=None):
+        super().__init__(parent)
+        self.session = session
+
+        self.system_box = QComboBox()
+        for system in load_systems():
+            self.system_box.addItem(system.name, system.id)
+        self.kit_box = QComboBox()
+        for kit in load_kits():
+            self.kit_box.addItem(kit.name, kit.id)
 
         self.draw_button = QPushButton("Draw plate path on the bone")
         self.draw_button.setCheckable(True)
@@ -343,34 +416,66 @@ class PlatePanel(QWidget):
         )
         self.table.setSortingEnabled(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.setMinimumHeight(180)
+
+        self.steps_table = QTableWidget(0, 5)
+        self.steps_table.setHorizontalHeaderLabels(
+            ["step", "kind", "from cut end", "angle", "instruction"]
+        )
+        self.steps_table.verticalHeader().setVisible(False)
+        self.steps_table.setWordWrap(True)
+        self.steps_table.horizontalHeader().setStretchLastSection(True)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.table, "Bend table")
+        self.tabs.addTab(self.steps_table, "Bench steps")
+        self.tabs.setMinimumHeight(220)
 
         self.summary = QLabel("No plate path.")
         self.summary.setWordWrap(True)
+        self.fit_info = QLabel("")
+        self.fit_info.setWordWrap(True)
         self.export_csv = QPushButton("Export bend table (CSV)…")
         self.export_stl = QPushButton("Export bending template (STL)…")
+        self.export_steps = QPushButton("Export bench steps (CSV)…")
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self.draw_button)
+        selection = QFormLayout()
+        selection.addRow("Plate system", self.system_box)
+        selection.addRow("Bending kit", self.kit_box)
+        chooser = QGroupBox("Selection")
+        chooser.setLayout(selection)
+        layout.addWidget(chooser)
         layout.addWidget(
             _hint(
-                "Clicks are projected onto the bone surface. The pitch is the "
-                "screw-hole spacing of your plate system — set it before reading "
-                "the table."
+                "The catalogue holds generic profiles by size class, not a "
+                "manufacturer's catalogue. Check the dimensions against the system "
+                "you are holding and edit mandiplan/data/plate_systems.json to match."
             )
+        )
+        layout.addWidget(self.draw_button)
+        layout.addWidget(
+            _hint("Clicks are projected onto the bone surface.")
         )
         row = QHBoxLayout()
         row.addWidget(self.undo_point)
         row.addWidget(self.clear_path)
         layout.addLayout(row)
-        box = QGroupBox("Plate")
+        box = QGroupBox("Plate dimensions")
         box.setLayout(form)
         layout.addWidget(box)
         layout.addWidget(self.summary)
-        layout.addWidget(self.table, 1)
+        layout.addWidget(self.fit_info)
+        layout.addWidget(self.tabs, 1)
         layout.addWidget(self.export_csv)
+        layout.addWidget(self.export_steps)
         layout.addWidget(self.export_stl)
 
+        self.system_box.currentIndexChanged.connect(
+            lambda i: self._on_system(self.system_box.itemData(i))
+        )
+        self.kit_box.currentIndexChanged.connect(
+            lambda i: session.set_bending_kit(self.kit_box.itemData(i))
+        )
         self.draw_button.toggled.connect(
             lambda on: self.mode_requested.emit(Mode.PLATE if on else Mode.NAVIGATE)
         )
@@ -383,12 +488,52 @@ class PlatePanel(QWidget):
         )
         self.export_csv.clicked.connect(self.export_csv_requested)
         self.export_stl.clicked.connect(self.export_stl_requested)
+        self.export_steps.clicked.connect(self.export_steps_requested)
         session.plate_changed.connect(self.refresh)
+
+    def _on_system(self, system_id: str) -> None:
+        self.session.set_plate_system(system_id)
+        for spin, value in (
+            (self.pitch, self.session.plate.pitch_mm),
+            (self.width, self.session.plate.width_mm),
+            (self.thickness, self.session.plate.thickness_mm),
+        ):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
+
+    def _refresh_fit(self) -> None:
+        fit = self.session.fit
+        self.steps_table.setRowCount(0)
+        if fit is None:
+            self.fit_info.setText("")
+            return
+        lines = [fit.verdict]
+        if fit.holes_proximal or fit.holes_distal:
+            lines.append(
+                f"Screw holes: {fit.holes_proximal} proximal, "
+                f"{fit.holes_over_defect} over the defect, {fit.holes_distal} distal."
+            )
+        lines.extend(f"Problem: {p}" for p in fit.problems)
+        lines.extend(f"Note: {w}" for w in fit.warnings[:4])
+        self.fit_info.setText("\n".join(lines))
+        self.fit_info.setStyleSheet(
+            "color: #ff9d9d;" if fit.problems else "color: #b7d1a0;"
+        )
+
+        rows = steps_as_rows(self.session.steps)
+        self.steps_table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            for c, text in enumerate(row):
+                self.steps_table.setItem(r, c, QTableWidgetItem(text))
+        self.steps_table.resizeColumnsToContents()
+        self.steps_table.resizeRowsToContents()
 
     def refresh(self) -> None:
         plan = self.session.plate_plan
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
+        self._refresh_fit()
         if plan is None:
             self.summary.setText(
                 f"{len(self.session.plate_points)} path points — "

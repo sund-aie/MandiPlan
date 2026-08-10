@@ -28,6 +28,8 @@ RESECT_COLOUR = (0.85, 0.25, 0.25)
 PLATE_COLOUR = (0.55, 0.70, 0.95)
 ARCH_COLOUR = (0.35, 0.85, 0.60)
 MARK_COLOUR = (1.0, 0.75, 0.2)
+GRAFT_COLOUR = (0.45, 0.85, 0.70)
+BRIDGE_COLOUR = (0.95, 0.78, 0.45)
 
 
 class View3D(QWidget):
@@ -62,6 +64,7 @@ class View3D(QWidget):
         session.resection_changed.connect(self.refresh_resection)
         session.plate_changed.connect(self.refresh_plate)
         session.arch_changed.connect(self.refresh_arch)
+        session.reconstruction_changed.connect(self.refresh_reconstruction)
 
     def start(self) -> None:
         self.interactor.Initialize()
@@ -142,6 +145,22 @@ class View3D(QWidget):
         self.mark_actor.GetProperty().SetColor(*MARK_COLOUR)
         self.renderer.AddActor(self.mark_actor)
 
+        self.graft_mapper = vtk.vtkPolyDataMapper()
+        self.graft_actor = vtk.vtkActor()
+        self.graft_actor.SetMapper(self.graft_mapper)
+        self.graft_actor.GetProperty().SetColor(*GRAFT_COLOUR)
+        self.graft_actor.GetProperty().SetOpacity(0.55)
+        self.graft_actor.VisibilityOff()
+        self.renderer.AddActor(self.graft_actor)
+
+        self.bridge_mapper = vtk.vtkPolyDataMapper()
+        self.bridge_actor = vtk.vtkActor()
+        self.bridge_actor.SetMapper(self.bridge_mapper)
+        self.bridge_actor.GetProperty().SetColor(*BRIDGE_COLOUR)
+        self.bridge_actor.GetProperty().SetOpacity(0.55)
+        self.bridge_actor.VisibilityOff()
+        self.renderer.AddActor(self.bridge_actor)
+
         self.measure_mapper = vtk.vtkPolyDataMapper()
         self.measure_actor = vtk.vtkActor()
         self.measure_actor.SetMapper(self.measure_mapper)
@@ -153,6 +172,8 @@ class View3D(QWidget):
             self.bone_mapper,
             self.fragment_mapper,
             self.plate_mapper,
+            self.graft_mapper,
+            self.bridge_mapper,
             self.measure_mapper,
         ):
             mapper.SetInputData(empty_polydata())
@@ -193,7 +214,9 @@ class View3D(QWidget):
     def _colour_preview(self) -> None:
         """Tint the fragment that the current planes would remove."""
         surface = self.session.surface
-        if surface is None or not self.session.planes:
+        # Once a graft is in place the tint would hide it, and the graft itself
+        # already shows what is being replaced.
+        if surface is None or not self.session.planes or self.session.graft_surface:
             self.bone_mapper.ScalarVisibilityOff()
             return
         from vtk.util import numpy_support
@@ -206,6 +229,18 @@ class View3D(QWidget):
         self.bone_mapper.ScalarVisibilityOn()
         self.bone_mapper.SetScalarModeToUsePointData()
         self.bone_mapper.SetColorModeToMapScalars()
+
+    def refresh_reconstruction(self) -> None:
+        for surface, mapper, actor in (
+            (self.session.graft_surface, self.graft_mapper, self.graft_actor),
+            (self.session.bridge_surface, self.bridge_mapper, self.bridge_actor),
+        ):
+            if surface is None:
+                actor.VisibilityOff()
+            else:
+                mapper.SetInputData(surface)
+                actor.VisibilityOn()
+        self.render()
 
     def refresh_arch(self) -> None:
         curve = self.session.arch_curve

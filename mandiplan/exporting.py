@@ -73,6 +73,41 @@ def write_bend_csv(path: str | Path, plan: PlatePlan, width_mm: float, thickness
     return path
 
 
+def write_steps_csv(
+    path: str | Path, steps, system, kit, fit=None
+) -> Path:
+    """Write the bench bending steps for one plate system and one kit."""
+    path = Path(path)
+    lines = [
+        "MandiPlan plate bending steps",
+        f"plate system: {system.name}",
+        f"bending kit: {kit.name}",
+        "distances are measured from the proximal cut end of the plate",
+    ]
+    if fit is not None:
+        lines.append(f"fit: {fit.verdict}")
+        lines.extend(f"problem: {p}" for p in fit.problems)
+    lines.append(
+        "plate dimensions here are generic profiles by size class; check them "
+        "against the specification sheet of the system you are holding"
+    )
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        _write_header(handle, lines)
+        writer = csv.writer(handle)
+        writer.writerow(["step", "kind", "distance_from_cut_end_mm", "angle_deg",
+                         "instrument", "instruction"])
+        for step in steps:
+            writer.writerow([
+                step.order,
+                step.kind,
+                _num(step.distance_mm),
+                _num(step.angle_deg),
+                step.instrument,
+                step.text,
+            ])
+    return path
+
+
 def write_plan_summary_csv(path: str | Path, rows: list[tuple[str, str]], title: str) -> Path:
     """Write a two-column quantity/value summary (resection readout, measurements)."""
     path = Path(path)

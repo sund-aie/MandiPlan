@@ -17,25 +17,49 @@ Rendering here is plain on purpose. Measurement is not: every number the
 application shows is derived from DICOM voxel spacing in millimetres, never
 from screen pixels.
 
-## Install
+## Run it on macOS
 
-Python 3.11 or newer.
+**The simplest way: double-click `run_mandiplan.command` in Finder.** On first
+run it builds a private virtual environment beside itself, installs the
+dependencies into it, and starts the application. After that it just starts.
+(macOS will refuse to run a downloaded script until you right-click it and
+choose Open, once.)
+
+From a terminal, use `python3` — macOS has no command called `python`, which is
+what `zsh: command not found: python` means:
 
 ```sh
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+cd /path/to/MandiPlan
+python3 -m venv .venv && source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+python3 -m mandiplan                    # or: python3 -m mandiplan /path/to/dicom
 ```
 
-Primary platform is macOS on Apple Silicon; it runs on Linux and Windows too.
-On a headless Linux machine the test suite needs `Xvfb` installed (it starts
-one itself); an ordinary desktop session needs nothing.
+Python 3.11 or newer is required; get it from python.org if `python3 --version`
+says otherwise. Everything runs on Linux and Windows too, with `python3`
+or `python` as that system names it.
 
-## Run
+## Build a double-clickable app
 
 ```sh
-python -m mandiplan                 # or: python -m mandiplan /path/to/dicom
+./packaging/build_macos.sh
+```
+
+This produces `dist/MandiPlan.app` and `dist/MandiPlan.dmg` (drag onto
+Applications to install), with the icon in `packaging/icon.png`. The bundle is
+about a gigabyte, most of it VTK, and it is **not code signed or notarised**, so
+the first launch needs a right-click → Open.
+
+The bundle was built and run on Linux to check that it collects everything it
+needs; the macOS-only steps in that script — `sips`/`iconutil` for the icon,
+the `.app` bundle and the disk image — have not been run here, so treat the
+first macOS build as the one that proves them.
+
+## Other commands
+
+```sh
 pytest                              # must pass with no skips
-python tests/make_phantom.py        # writes build/phantom_dicom to open in the app
+python3 tests/make_phantom.py       # writes build/phantom_dicom to open in the app
 ```
 
 With no patient CBCT to hand, run `tests/make_phantom.py` and open the folder
@@ -93,11 +117,30 @@ landmarks, and the readout gives the signed distance from each cut plane to
 each of them — positive means the point is on the resected side. *Undo cut*
 puts it back; Ctrl+Z undoes editing steps.
 
-**5 · Plate.** *Draw plate path on the bone* and click along the bone in the
-3-D view; clicks are projected onto the surface. The path is resampled at the
-screw-hole pitch of your plate system (9 mm by default, editable — it is not a
-constant), and each interior node gets three signed angles in the plate's own
-frame:
+**5 · Mirror reconstruction.** *Estimate mid-sagittal plane* finds the
+patient's plane of symmetry by maximising the overlap of the bone with its own
+reflection, and reports the score it reached — a low score means this patient
+is not symmetric enough for mirroring to be trusted, and you can see that
+before you rely on it. *Mirror healthy side into the defect* reflects the
+retained bone and clips it to the resection: that mirrored piece is the
+reconstruction target, and it exports as an STL.
+
+Where the defect crosses the midline, mirroring runs out of donor: the bone
+that would be mirrored into the crossing part is inside the resection too. The
+panel measures that span and says so rather than quietly returning a partial
+graft. For that span the missing bone is estimated by blending this patient's
+own cross-sections at the two ends of the gap and sweeping them along the arch
+curve — an interpolation of their anatomy, shown in a different colour from the
+mirrored part so the two are never confused.
+
+**6 · Plate.** Pick a plate system and a bending kit at the top of the panel.
+The system sets the screw-hole pitch and the plate's width and thickness; the
+kit decides which instrument each instruction names and how many passes a bend
+is split into.
+
+*Draw plate path on the bone* and click along the bone in the 3-D view; clicks
+are projected onto the surface. The path is resampled at the screw-hole pitch,
+and each interior node gets three signed angles in the plate's own frame:
 
 | angle | what it is |
 |---|---|
@@ -110,9 +153,46 @@ repeated in the CSV header. Note that for a plate on the buccal surface most of
 the arch curvature shows up as out-of-plane bend, since the plate's own plane
 is the tangent plane of the bone.
 
-*Export bend table (CSV)* writes the table; *Export bending template (STL)*
-sweeps a rectangular ribbon (12 × 2 mm by default) along the path for printing
-and bending against.
+The panel then answers the question that matters at the bench: **does this
+plate fit?** It picks the shortest length in the chosen system that covers the
+path, says how many holes to trim, counts how many screw holes land on retained
+bone either side of the defect, and refuses the plan in red when either side
+has too few for purchase or when no length in the system is long enough — in
+which case it says a custom plate is needed rather than leaving you to work it
+out. Bends steeper than the working limit set for that system are listed as
+notes.
+
+The **Bench steps** tab turns all of that into instructions for the kit you
+picked, measured from the proximal cut end of the plate because that is what a
+ruler measures, and pointed in patient anatomy rather than in frame
+conventions:
+
+> 1. Take the 10-hole 2.4 mm reconstruction bar (90.0 mm). Trim 1 hole from the
+>    distal end to 81.0 mm.
+> 2. Mark at 13.5 mm from the proximal end (hole 1). Bend 12.4° across the
+>    plate's face, so the distal end moves toward the patient's left, in 2
+>    passes of about 6.2° each. Grip 10 mm either side of the mark.
+> 4. At 31.4 mm (hole 3): 1.0° of twist clockwise is needed; bending irons
+>    cannot twist. Use twisting forceps here.
+
+*Export bend table (CSV)* writes the angle table, *Export bench steps (CSV)*
+the instructions above, and *Export bending template (STL)* sweeps the plate's
+own cross-section along the path for printing and bending against.
+
+### The plate catalogue is yours to correct
+
+`mandiplan/data/plate_systems.json` holds generic profiles grouped by size
+class — 2.0, 2.4 and 2.7 mm bars, a pre-bent angle bar, and a custom plate. It
+is **not a manufacturer's catalogue and carries no part numbers**: the pitches,
+widths, thicknesses and hole counts are plausible defaults, not specifications.
+Check them against the sheet for the system you actually hold and edit the file
+to match; `bend_warning_deg` and `min_bend_radius_mm` are working limits you set
+for yourself, not manufacturer ratings.
+
+`mandiplan/data/bending_kits.json` is the same idea for instruments: bending
+irons, three-point pliers, a bar press, twisting forceps, and a template wire.
+Add your department's set with its own instrument names and the steps will read
+the way your kit is labelled.
 
 ## Privacy
 
@@ -140,6 +220,10 @@ angle per node and solid volume are all known exactly.
 | twist on a planar path | ≈0 | 0° |
 | total plate length vs. analytic arc length | 2% | 0.38% |
 | resected fragment volume vs. analytic wedge | 3% | 0.03% |
+| mid-sagittal plane offset on a symmetric phantom | 0.6 mm | 0.06 mm |
+| mirrored graft volume vs. the fragment it replaces | 5% | 0.02% |
+| un-mirrorable span across the midline vs. analytic | 1.5 mm | 0.0 mm |
+| estimated segment across the gap vs. analytic | 3% | 0.4% |
 | DICOM round trip: spacing and orientation preserved | exact | exact |
 
 The cross-section figures are dominated by where the bone edge level is put,
@@ -152,6 +236,22 @@ application: load, flatten, measure, resect, draw a plate, export.
 
 ## Known limitations
 
+- **There is no library of mandibles behind the reconstruction.** Where
+  mirroring has no donor, the missing bone is interpolated from this patient's
+  own cross-sections at the two ends of the gap. It is not predicted from a
+  population of normal mandibles, because building that needs a curated set of
+  real CBCT scans, and this application makes no network calls and ships no
+  patient data. If you assemble a de-identified set yourself, a statistical
+  shape model fitted to it would replace the interpolation — that is a
+  substantial piece of work, not a setting.
+- Mirroring assumes the healthy side is normal. A patient whose contralateral
+  side is also diseased, previously operated, or simply asymmetric will get a
+  target that is wrong in exactly the way the symmetry score warns about.
+- The plate catalogue is generic. Dimensions come from an editable file, not
+  from any manufacturer, and nothing in the application knows the real bending
+  characteristics of the alloy in your hand.
+- The bending steps assume the plate starts straight (except for the pre-bent
+  angle profile, which is only told to you, not modelled bend by bend).
 - Segmentation is threshold plus largest-connected-component. Scatter from
   restorations, or a mandible touching the maxilla at the threshold you pick,
   will need the threshold moved by hand; there is no editing brush.
