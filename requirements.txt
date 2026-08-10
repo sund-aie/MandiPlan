@@ -1,0 +1,6 @@
+numpy>=1.26
+vtk>=9.3
+PyQt6>=6.6
+SimpleITK>=2.3
+pydicom>=2.4
+pytest>=7.4

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mandiplan"
+version = "0.1.0"
+description = "CBCT-based mandibular resection and reconstruction-plate planning (research and education use only)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.26",
+    "vtk>=9.3",
+    "PyQt6>=6.6",
+    "SimpleITK>=2.3",
+    "pydicom>=2.4",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.4"]
+
+[project.scripts]
+mandiplan = "mandiplan.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["mandiplan*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
