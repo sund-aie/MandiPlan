@@ -175,13 +175,6 @@ class ArchCurve:
         return self._dense_points
 
 
-def polyline_length_mm(points) -> float:
-    pts = np.asarray(points, dtype=float).reshape(-1, 3)
-    if len(pts) < 2:
-        return 0.0
-    return float(np.linalg.norm(np.diff(pts, axis=0), axis=1).sum())
-
-
 def resample_polyline(points, step_mm: float) -> np.ndarray:
     """Resample an open polyline at uniform arc length (mm) along its chords."""
     pts = np.asarray(points, dtype=float).reshape(-1, 3)

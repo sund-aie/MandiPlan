@@ -100,6 +100,10 @@ def test_panoramic_measurement_reports_arc_length_honestly(window):
     text = window.measure_label.text()
     assert "arc length along arch curve 45.00 mm" in text
     assert "not a straight line" in text
+    # A transient status message must not hide the result.
+    window.statusBar().showMessage("something happened")
+    assert window.measure_label.isVisible()
+    window.statusBar().clearMessage()
     window.set_mode(Mode.NAVIGATE)
 
 

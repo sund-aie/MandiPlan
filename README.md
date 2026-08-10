@@ -165,4 +165,7 @@ application: load, flatten, measure, resect, draw a plate, export.
 - The arch curve is planar — seeds are placed in one axial slice. A jaw with
   significant vertical curvature across the region of interest is flattened
   against a curve that does not follow it in z.
+- Rebuilding the panoramic reformat resamples the whole volume, so on a large
+  field of view it takes a few seconds after each change to the curve or to the
+  slab settings.
 - Nothing is saved between runs except what you export. There is no case file.

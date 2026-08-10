@@ -25,17 +25,6 @@ def volume_to_vtk(volume) -> vtk.vtkImageData:
     return image
 
 
-def polydata_points(polydata: vtk.vtkPolyData) -> np.ndarray:
-    return numpy_support.vtk_to_numpy(polydata.GetPoints().GetData()).reshape(-1, 3)
-
-
-def polydata_normals(polydata: vtk.vtkPolyData) -> np.ndarray | None:
-    normals = polydata.GetPointData().GetNormals()
-    if normals is None:
-        return None
-    return numpy_support.vtk_to_numpy(normals).reshape(-1, 3)
-
-
 def triangles_to_polydata(points: np.ndarray, triangles: np.ndarray) -> vtk.vtkPolyData:
     """Build a triangle mesh ``vtkPolyData`` from numpy arrays."""
     pts = vtk.vtkPoints()

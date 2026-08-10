@@ -32,6 +32,7 @@ from ..exporting import (
     write_surface_stl,
     write_template_stl,
 )
+from ..geometry.cpr import cross_section_world_point
 from ..geometry.measure import distance_mm, format_mm
 from .image_view import ImageView, Overlay
 from .modes import Mode
@@ -238,8 +239,11 @@ class MainWindow(QMainWindow):
             "color: #ffffff; background: #a03030; padding: 2px 10px; font-weight: bold;"
         )
         bar = self.statusBar()
+        # The hint shares its slot with transient messages, which is fine; the
+        # measurement and the disclaimer are permanent, because Qt hides normal
+        # status-bar widgets for as long as a message is showing.
         bar.addWidget(self.hint_label, 1)
-        bar.addWidget(self.measure_label)
+        bar.addPermanentWidget(self.measure_label)
         bar.addPermanentWidget(self.banner)
         bar.setSizeGripEnabled(False)
 
@@ -479,8 +483,15 @@ class MainWindow(QMainWindow):
             self._record_measure_point(name, x_mm, y_mm)
 
     def _on_reformat_pick(self, name: str, x_mm: float, y_mm: float) -> None:
+        session = self.session
         if self.mode == Mode.MEASURE:
             self._record_measure_point(name, x_mm, y_mm)
+        elif self.mode == Mode.LANDMARK and name == "cross" and session.frames is not None:
+            session.add_landmark(
+                cross_section_world_point(
+                    session.frames, session.cross_section_s, x_mm, y_mm
+                )
+            )
         elif name == "panoramic":
             self._set_cross_section(x_mm)
 

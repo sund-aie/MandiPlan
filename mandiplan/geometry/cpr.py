@@ -207,14 +207,3 @@ def cross_section_world_point(frames: ArchFrames, s_mm: float, u_mm: float, z_mm
     p = frames.points[i]
     n = frames.normals[i]
     return np.array([p[0] + u_mm * n[0], p[1] + u_mm * n[1], z_mm])
-
-
-def panoramic_world_point(frames: ArchFrames, s_mm: float, z_mm: float):
-    """World point on the arch curve for a location picked in the panoramic view.
-
-    The buccolingual coordinate is collapsed by the reformat, so the point
-    returned lies on the curve itself.
-    """
-    i = frames.index_of(s_mm)
-    p = frames.points[i]
-    return np.array([p[0], p[1], z_mm])

@@ -74,10 +74,6 @@ class Volume:
         pts = np.asarray(points_xyz, dtype=float)
         return (pts - self.origin) / self.spacing
 
-    def clamp_to_bounds(self, points_xyz) -> np.ndarray:
-        lo, hi = self.bounds_mm
-        return np.clip(np.asarray(points_xyz, dtype=float), lo, hi)
-
     # -- sampling ---------------------------------------------------------
 
     def sample(self, points_xyz, fill: float | None = None) -> np.ndarray:
@@ -131,17 +127,11 @@ class Volume:
 
     # -- orthogonal slices -------------------------------------------------
 
-    def slice_index(self, axis: int, world_coord: float) -> int:
-        """Nearest slice index along world ``axis`` (0=x, 1=y, 2=z)."""
-        i = int(round((world_coord - self.origin[axis]) / self.spacing[axis]))
-        return int(np.clip(i, 0, self.size_xyz[axis] - 1))
-
     def orthogonal_slice(self, axis: int, index: int) -> np.ndarray:
         """2-D slice perpendicular to world ``axis``.
 
-        Returns an array whose rows/columns follow the two remaining world
-        axes in ascending order: axis 0 (x) -> rows y, cols z is avoided;
-        concretely the returned arrays are
+        Rows and columns follow the two remaining world axes in ascending
+        order::
 
             axis=0 (sagittal): rows = z, cols = y
             axis=1 (coronal):  rows = z, cols = x
