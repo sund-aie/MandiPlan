@@ -17,6 +17,20 @@ Rendering here is plain on purpose. Measurement is not: every number the
 application shows is derived from DICOM voxel spacing in millimetres, never
 from screen pixels.
 
+## Get it
+
+```sh
+cd ~/Desktop
+git clone https://github.com/sund-aie/MandiPlan.git
+cd MandiPlan
+```
+
+`git clone` makes a folder named `MandiPlan` **inside** the folder you are
+standing in, so after cloning you have to `cd MandiPlan` before anything else
+works. Run `ls` — if you do not see `requirements.txt` and `run_mandiplan.command`
+listed, you are not in the repository, and every command below will fail with
+"no such file or directory".
+
 ## Run it on macOS
 
 **The simplest way: double-click `run_mandiplan.command` in Finder.** On first
@@ -25,14 +39,20 @@ dependencies into it, and starts the application. After that it just starts.
 (macOS will refuse to run a downloaded script until you right-click it and
 choose Open, once.)
 
-From a terminal, use `python3` — macOS has no command called `python`, which is
-what `zsh: command not found: python` means:
+From a terminal, standing in the repository, use `python3` — macOS has no
+command called `python`, which is what `zsh: command not found: python` means:
 
 ```sh
-cd /path/to/MandiPlan
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 python3 -m pip install -r requirements.txt
-python3 -m mandiplan                    # or: python3 -m mandiplan /path/to/dicom
+python3 -m mandiplan
+```
+
+To open a folder of DICOM files straight away, pass it as an argument:
+
+```sh
+python3 -m mandiplan ~/Desktop/my_cbct_folder
 ```
 
 Python 3.11 or newer is required; get it from python.org if `python3 --version`
@@ -40,6 +60,8 @@ says otherwise. Everything runs on Linux and Windows too, with `python3`
 or `python` as that system names it.
 
 ## Build a double-clickable app
+
+Standing in the repository:
 
 ```sh
 ./packaging/build_macos.sh
@@ -57,9 +79,17 @@ first macOS build as the one that proves them.
 
 ## Other commands
 
+Run the test suite (it must pass with no skips):
+
 ```sh
-pytest                              # must pass with no skips
-python3 tests/make_phantom.py       # writes build/phantom_dicom to open in the app
+pytest
+```
+
+Generate the phantom, which writes `build/phantom_dicom` for you to open in the
+application:
+
+```sh
+python3 tests/make_phantom.py
 ```
 
 With no patient CBCT to hand, run `tests/make_phantom.py` and open the folder
