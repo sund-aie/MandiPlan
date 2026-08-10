@@ -18,6 +18,10 @@ def main(argv: list[str] | None = None) -> int:
 
     window = MainWindow()
     window.show()
+    # A plain Python process does not come to the front on its own, so the
+    # window can otherwise open behind the terminal it was launched from.
+    window.raise_()
+    window.activateWindow()
     window.start()
     if len(argv) > 1:
         window.load_folder(argv[1])

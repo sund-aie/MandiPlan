@@ -6,13 +6,27 @@ fed with ``SetInputData``; nothing here rebuilds a mapper per frame.
 
 from __future__ import annotations
 
+import os
+import sys
+
 import numpy as np
 import vtk
 import vtkmodules.qt
 
 vtkmodules.qt.PyQtImpl = "PyQt6"
 
-from PyQt6.QtCore import pyqtSignal  # noqa: E402
+# VTK's widget defaults to a plain QWidget that paints itself directly into a
+# native child window, using WA_PaintOnScreen and a null paint engine. Qt
+# supports that on X11 only; on macOS it leaves the window unpainted, which
+# looks like the application starting into no window at all. The QOpenGLWidget
+# base lets Qt composite the widget normally. Override with
+# MANDIPLAN_VTK_WIDGET=QWidget if a machine prefers the other one.
+vtkmodules.qt.QVTKRWIBase = os.environ.get(
+    "MANDIPLAN_VTK_WIDGET",
+    "QOpenGLWidget" if sys.platform == "darwin" else "QWidget",
+)
+
+from PyQt6.QtCore import Qt, pyqtSignal  # noqa: E402
 from PyQt6.QtWidgets import QVBoxLayout, QWidget  # noqa: E402
 from vtkmodules.qt.QVTKRenderWindowInteractor import (  # noqa: E402
     QVTKRenderWindowInteractor,
@@ -32,6 +46,24 @@ GRAFT_COLOUR = (0.45, 0.85, 0.70)
 BRIDGE_COLOUR = (0.95, 0.78, 0.45)
 
 
+class _VtkWidget(QVTKRenderWindowInteractor):
+    """VTK's interactor widget with its X11-only paint settings undone.
+
+    Only applied on the QOpenGLWidget base, where Qt owns the framebuffer and
+    has to be allowed to composite.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        if vtkmodules.qt.QVTKRWIBase == "QOpenGLWidget":
+            self.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen, False)
+
+    def paintEngine(self):  # noqa: N802
+        if vtkmodules.qt.QVTKRWIBase == "QOpenGLWidget":
+            return super(QVTKRenderWindowInteractor, self).paintEngine()
+        return None
+
+
 class View3D(QWidget):
     """3-D view of the mandible with interactive resection planes."""
 
@@ -46,7 +78,7 @@ class View3D(QWidget):
         self._syncing = False
         self._measure_points: list[np.ndarray] = []
 
-        self.interactor = QVTKRenderWindowInteractor(self)
+        self.interactor = _VtkWidget(self)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.interactor)

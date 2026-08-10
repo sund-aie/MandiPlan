@@ -8,6 +8,7 @@ import numpy as np
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QActionGroup, QColor
 from PyQt6.QtWidgets import (
+    QApplication,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -64,7 +65,7 @@ class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(APP_NAME)
-        self.resize(1500, 950)
+        self._size_to_screen()
 
         self.session = Session(self)
         self.mode = Mode.NAVIGATE
@@ -77,6 +78,23 @@ class MainWindow(QMainWindow):
         self._build_status_bar()
         self._connect_session()
         self.set_mode(Mode.NAVIGATE)
+
+    def _size_to_screen(self) -> None:
+        """Open at a usable size that still fits the display.
+
+        A hard-coded 1500 x 950 is larger than the usable area of a 13-inch
+        laptop, which leaves the window hanging off the screen.
+        """
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.resize(1280, 860)
+            return
+        available = screen.availableGeometry()
+        self.resize(
+            min(1500, int(available.width() * 0.95)),
+            min(950, int(available.height() * 0.95)),
+        )
+        self.move(available.center() - self.rect().center())
 
     # -- construction ------------------------------------------------------
 

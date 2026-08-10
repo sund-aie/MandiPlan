@@ -59,6 +59,22 @@ Python 3.11 or newer is required; get it from python.org if `python3 --version`
 says otherwise. Everything runs on Linux and Windows too, with `python3`
 or `python` as that system names it.
 
+### If it starts but no window appears
+
+Run the display check and note which of its three windows you actually see:
+
+```sh
+python3 tools/check_display.py
+```
+
+The 3-D view is a VTK widget inside Qt, and VTK offers two ways to embed it.
+The default suits X11; macOS needs the other one, which is why MandiPlan picks
+`QOpenGLWidget` there. If your machine wants the opposite, force it:
+
+```sh
+MANDIPLAN_VTK_WIDGET=QWidget python3 -m mandiplan
+```
+
 ## Build a double-clickable app
 
 Standing in the repository:
