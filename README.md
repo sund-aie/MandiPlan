@@ -115,6 +115,11 @@ can check what the application reports against what it should report.
 
 ## The workflow
 
+The planning panel is a numbered sequence, and the strip above it says where
+you are: a dot per step, green once it is finished, and a line naming either
+what has been achieved or the next thing to do. Steps that cannot be started
+yet say what they are waiting for.
+
 **1 · Load and threshold.** *File → Open DICOM folder*. MandiPlan reads the
 voxel spacing from the header, re-orients the volume to patient axes, and shows
 the matrix, voxel size and field of view in millimetres. A series with gantry
@@ -146,7 +151,9 @@ as a mean ray-sum that looks like an OPG. Below it is a buccolingual
 cross-section at any point along the curve; ← and → step it along, Shift for
 5 mm steps.
 
-**3 · Measure.** Choose *Measure* and click two points. In the 3-D view you get
+**3 · Measure.** Choose *Measure* and click two points, or *Angle* and click
+three — the angle is reported at the middle point, which is how you record a
+gonial angle or check a bend against the plan. In the 3-D view you get
 a straight-line distance. In the panoramic view you get three numbers, labelled
 for what they are: arc length along the arch curve, superior–inferior
 distance, and the flattened distance between the points. The x-axis of that
@@ -154,7 +161,11 @@ view is arc length, not a straight line, and the readout says so — across a
 curved mandible the two differ by several millimetres.
 
 **4 · Resection.** *Add cutting plane* drops a plane perpendicular to the arch
-curve; drag its handles in the 3-D view. Bone that the current planes would
+curve; drag its handles in the 3-D view, or set it by numbers in the panel:
+position along the arch curve in millimetres, obliquity (yaw about the superior
+axis), inclination (tilt about the buccolingual direction), and offsets in
+patient axes. Dragging is quick; an osteotomy you have to describe, check or
+hand over needs numbers. Bone that the current planes would
 remove is tinted red as you move them. Up to two planes, which covers a
 segmental resection. *Execute cut* separates the fragment and reports the
 resected segment as both arc length along the curve and straight-line distance

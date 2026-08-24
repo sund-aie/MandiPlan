@@ -6,7 +6,12 @@ import numpy as np
 import pytest
 
 from helpers import rel_error
-from mandiplan.geometry.resection import CutPlane, build_report, resected_mask
+from mandiplan.geometry.resection import (
+    CutPlane,
+    build_report,
+    plane_from_frame,
+    resected_mask,
+)
 from mandiplan.render.surface import clip_closed, mesh_volume_mm3
 
 # Cut angles measured from the middle of the arch (the symphysis).
@@ -91,3 +96,56 @@ def test_no_planes_means_nothing_is_resected(arch_frames):
     report = build_report(arch_frames, [])
     assert not np.isfinite(report.arc_length_mm)
     assert not resected_mask([], arch_frames.points).any()
+
+
+# -- placing a cut by numbers rather than by dragging it ---------------------
+
+
+def test_a_plane_placed_by_numbers_sits_on_the_curve(arch_frames):
+    origin, normal = plane_from_frame(arch_frames, 30.0)
+    index = arch_frames.index_of(30.0)
+    assert np.allclose(origin, arch_frames.points[index])
+    assert np.allclose(normal, arch_frames.tangents[index])
+    assert np.linalg.norm(normal) == pytest.approx(1.0)
+
+
+def test_yaw_turns_the_cut_about_the_superior_axis(arch_frames):
+    index = arch_frames.index_of(30.0)
+    tangent = arch_frames.tangents[index]
+    _, normal = plane_from_frame(arch_frames, 30.0, yaw_deg=25.0)
+    assert normal[2] == pytest.approx(0.0, abs=1e-9)  # still horizontal
+    turned = np.degrees(np.arccos(np.clip(np.dot(normal, tangent), -1, 1)))
+    assert turned == pytest.approx(25.0, abs=1e-6)
+
+
+def test_tilt_lifts_the_cut_out_of_the_axial_plane(arch_frames):
+    _, normal = plane_from_frame(arch_frames, 30.0, tilt_deg=20.0)
+    assert normal[2] == pytest.approx(np.sin(np.radians(20.0)), abs=1e-6)
+    _, opposite = plane_from_frame(arch_frames, 30.0, tilt_deg=-20.0)
+    assert opposite[2] == pytest.approx(-np.sin(np.radians(20.0)), abs=1e-6)
+
+
+def test_the_offset_moves_the_cut_in_patient_axes(arch_frames):
+    base, base_normal = plane_from_frame(arch_frames, 30.0)
+    moved, moved_normal = plane_from_frame(arch_frames, 30.0, offset_mm=(2.0, -3.0, 4.0))
+    assert np.allclose(moved - base, [2.0, -3.0, 4.0])
+    assert np.allclose(moved_normal, base_normal)
+
+
+def test_placing_a_cut_by_numbers_keeps_the_side_it_removes(arch_frames, spec):
+    from mandiplan.ui.session import Session
+
+    session = Session()
+    session.frames = arch_frames
+    mid = arch_frames.length_mm / 2.0
+    for s, sign in ((mid - 10.0, +1.0), (mid + 10.0, -1.0)):
+        index = arch_frames.index_of(s)
+        session.add_plane(
+            arch_frames.points[index], sign * arch_frames.tangents[index]
+        )
+    before = [plane.normal.copy() for plane in session.planes]
+
+    session.place_plane(1, mid + 14.0, yaw_deg=0.0, tilt_deg=0.0)
+    assert np.dot(session.planes[1].normal, before[1]) > 0
+    assert session.plane_arc_position(1) == pytest.approx(mid + 14.0, abs=0.3)
+    assert np.isfinite(session.report.arc_length_mm)

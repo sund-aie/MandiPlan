@@ -301,7 +301,7 @@ class View3D(QWidget):
 
     def set_mode(self, mode: Mode) -> None:
         self.mode = mode
-        if mode != Mode.MEASURE:
+        if mode not in (Mode.MEASURE, Mode.ANGLE):
             self.clear_measurement()
 
     def clear_measurement(self) -> None:
@@ -405,15 +405,16 @@ class View3D(QWidget):
         if actor not in (self.bone_actor, self.fragment_actor):
             return
         point = np.array(self.picker.GetPickPosition(), dtype=float)
-        if self.mode == Mode.MEASURE:
+        if self.mode in (Mode.MEASURE, Mode.ANGLE):
             self._add_measure_point(point)
         self.surface_picked.emit(point)
 
     def _add_measure_point(self, point: np.ndarray) -> None:
-        if len(self._measure_points) >= 2:
+        limit = 3 if self.mode == Mode.ANGLE else 2
+        if len(self._measure_points) >= limit:
             self._measure_points.clear()
         self._measure_points.append(point)
-        if len(self._measure_points) == 2:
+        if len(self._measure_points) >= 2:
             from ..render.convert import polyline_to_polydata
 
             self.measure_mapper.SetInputData(

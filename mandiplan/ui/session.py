@@ -25,7 +25,7 @@ from ..geometry.mirror import (
     mirror_coverage,
 )
 from ..geometry.plate import PlatePlan, compute_plate_plan
-from ..geometry.resection import CutPlane, ResectionReport, build_report
+from ..geometry.resection import CutPlane, ResectionReport, build_report, plane_from_frame
 from ..geometry.spline import ArchCurve
 from ..geometry.threshold import estimate_bone_threshold
 from ..geometry.volume import Volume
@@ -280,6 +280,38 @@ class Session(QObject):
         plane = self.planes[index]
         self.planes[index] = CutPlane(origin=origin, normal=normal, label=plane.label)
         self.update_resection_report()
+
+    def place_plane(
+        self,
+        index: int,
+        s_mm: float,
+        yaw_deg: float,
+        tilt_deg: float,
+        offset_mm=(0.0, 0.0, 0.0),
+    ) -> None:
+        """Set a cut plane from numbers rather than by dragging it."""
+        if self.frames is None or index >= len(self.planes):
+            return
+        origin, normal = plane_from_frame(
+            self.frames, s_mm, yaw_deg, tilt_deg, offset_mm
+        )
+        plane = self.planes[index]
+        # Keep the side the plane removes: the numeric normal follows the
+        # curve, so flip it when this plane was facing the other way.
+        if np.dot(normal, plane.normal) < 0:
+            normal = -normal
+        self.planes[index] = CutPlane(origin=origin, normal=normal, label=plane.label)
+        self.cut_applied = False
+        self.fragment_surface = None
+        self.retained_surface = None
+        self.update_resection_report()
+
+    def plane_arc_position(self, index: int) -> float:
+        """Where a cut plane sits along the arch curve, in mm."""
+        if self.frames is None or index >= len(self.planes):
+            return float("nan")
+        d = np.linalg.norm(self.frames.points - self.planes[index].origin, axis=1)
+        return float(self.frames.s[int(np.argmin(d))])
 
     def flip_plane(self, index: int) -> None:
         self._push_undo()

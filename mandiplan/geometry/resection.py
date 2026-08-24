@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+SUPERIOR = np.array([0.0, 0.0, 1.0])
+
 
 @dataclass
 class CutPlane:
@@ -31,6 +33,52 @@ class CutPlane:
         """Distance in mm; positive on the resected side."""
         pts = np.asarray(points, dtype=float)
         return (pts - self.origin) @ self.normal
+
+
+def plane_from_frame(
+    frames,
+    s_mm: float,
+    yaw_deg: float = 0.0,
+    tilt_deg: float = 0.0,
+    offset_mm=(0.0, 0.0, 0.0),
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build a cut plane from a position along the arch curve and two angles.
+
+    Dragging a plane widget is quick but not repeatable; an osteotomy that has
+    to be described, checked or handed over needs numbers. The plane starts
+    perpendicular to the arch curve at ``s_mm`` and is then turned:
+
+    ``yaw_deg``
+        rotation about the superior axis, which makes the cut oblique in the
+        axial plane. Positive is counter-clockwise seen from above.
+    ``tilt_deg``
+        rotation about the buccolingual direction, which tips the cut
+        superiorly or inferiorly. Positive tips the normal toward superior.
+    ``offset_mm``
+        a further translation of the plane's origin in patient axes
+        (x = left, y = posterior, z = superior).
+
+    Returns ``(origin, normal)`` with the normal pointing the way the curve
+    runs, i.e. toward increasing arc length.
+    """
+    index = frames.index_of(s_mm)
+    origin = frames.points[index] + np.asarray(offset_mm, dtype=float).reshape(3)
+    normal = _rotate(frames.tangents[index], SUPERIOR, np.radians(yaw_deg))
+    buccolingual = _rotate(frames.normals[index], SUPERIOR, np.radians(yaw_deg))
+    normal = _rotate(normal, buccolingual, np.radians(tilt_deg))
+    return origin, normal / np.linalg.norm(normal)
+
+
+def _rotate(vector, axis, angle_rad: float) -> np.ndarray:
+    """Rodrigues rotation of ``vector`` about a unit ``axis``."""
+    v = np.asarray(vector, dtype=float)
+    k = np.asarray(axis, dtype=float)
+    k = k / np.linalg.norm(k)
+    return (
+        v * np.cos(angle_rad)
+        + np.cross(k, v) * np.sin(angle_rad)
+        + k * np.dot(k, v) * (1.0 - np.cos(angle_rad))
+    )
 
 
 @dataclass

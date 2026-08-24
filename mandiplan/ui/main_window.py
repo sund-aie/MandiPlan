@@ -35,7 +35,7 @@ from ..exporting import (
     write_template_stl,
 )
 from ..geometry.cpr import cross_section_world_point
-from ..geometry.measure import distance_mm, format_mm
+from ..geometry.measure import angle_deg, distance_mm, format_mm
 from .image_view import ImageView, Overlay
 from .modes import Mode
 from .panels import (
@@ -47,6 +47,7 @@ from .panels import (
 )
 from .session import Session
 from .view3d import View3D
+from .workflow_bar import WorkflowBar
 
 SEED_COLOUR = QColor(90, 220, 150)
 CURVE_COLOUR = QColor(60, 190, 130)
@@ -178,14 +179,23 @@ class MainWindow(QMainWindow):
         self.toolbox.addItem(self.reconstruction_panel, "4 · Mirror reconstruction")
         self.toolbox.addItem(self.plate_panel, "5 · Plate path and bends")
 
+        self.workflow_bar = WorkflowBar(self.session)
+        planning = QWidget()
+        planning_layout = QVBoxLayout(planning)
+        planning_layout.setContentsMargins(0, 0, 0, 0)
+        planning_layout.addWidget(self.workflow_bar)
+        planning_layout.addWidget(self.toolbox, 1)
+
         dock = QDockWidget("Planning", self)
-        dock.setWidget(self.toolbox)
+        dock.setWidget(planning)
         dock.setAllowedAreas(
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
         dock.setMinimumWidth(400)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
 
+        self.toolbox.currentChanged.connect(self.workflow_bar.set_page)
+        self.workflow_bar.step_selected.connect(self.toolbox.setCurrentIndex)
         self.volume_panel.load_requested.connect(self.open_dicom_folder)
         for panel in (self.arch_panel, self.resection_panel, self.plate_panel):
             panel.mode_requested.connect(self.set_mode)
@@ -510,12 +520,12 @@ class MainWindow(QMainWindow):
                 [x_mm, y_mm, self._slice_world_coord("axial")]
             )
             return
-        if self.mode == Mode.MEASURE:
+        if self.mode in (Mode.MEASURE, Mode.ANGLE):
             self._record_measure_point(name, x_mm, y_mm)
 
     def _on_reformat_pick(self, name: str, x_mm: float, y_mm: float) -> None:
         session = self.session
-        if self.mode == Mode.MEASURE:
+        if self.mode in (Mode.MEASURE, Mode.ANGLE):
             self._record_measure_point(name, x_mm, y_mm)
         elif self.mode == Mode.LANDMARK and name == "cross" and session.frames is not None:
             session.add_landmark(
@@ -527,12 +537,16 @@ class MainWindow(QMainWindow):
             self._set_cross_section(x_mm)
 
     def _record_measure_point(self, name: str, x_mm: float, y_mm: float) -> None:
+        wanted = 3 if self.mode == Mode.ANGLE else 2
         points = self._measure_points.setdefault(name, [])
-        if len(points) >= 2:
+        if len(points) >= wanted:
             points.clear()
         points.append((x_mm, y_mm))
-        if len(points) == 2:
-            self._report_2d_measurement(name, points)
+        if len(points) == wanted:
+            if wanted == 3:
+                self._report_2d_angle(name, points)
+            else:
+                self._report_2d_measurement(name, points)
         self.refresh_slices()
         self.refresh_reformats()
 
@@ -552,13 +566,21 @@ class MainWindow(QMainWindow):
         self._last_measurement = text
         self.measure_label.setText(text)
 
+    def _report_2d_angle(self, name: str, points) -> None:
+        a, b, c = (np.array([x, y, 0.0]) for x, y in points)
+        text = f"angle at the middle point: {angle_deg(a, b, c):.1f}°"
+        if name == "panoramic":
+            text += " (in the flattened view, whose x-axis is arc length)"
+        self._last_measurement = text
+        self.measure_label.setText(text)
+
     def _measure_overlays(self, name: str) -> list[Overlay]:
         points = self._measure_points.get(name, [])
         if not points:
             return []
         array = np.array(points, dtype=float)
         overlays = [Overlay(points=array, colour=MEASURE_COLOUR, kind="points", radius=4)]
-        if len(points) == 2:
+        if len(points) >= 2:
             overlays.append(
                 Overlay(points=array, colour=MEASURE_COLOUR, kind="line", width=2.0)
             )
@@ -569,13 +591,17 @@ class MainWindow(QMainWindow):
             self.session.add_plate_point(point)
         elif self.mode == Mode.LANDMARK:
             self.session.add_landmark(point)
-        elif self.mode == Mode.MEASURE:
+        elif self.mode in (Mode.MEASURE, Mode.ANGLE):
             picks = self.view3d.measure_points
-            if len(picks) == 2:
+            text = ""
+            if self.mode == Mode.MEASURE and len(picks) == 2:
                 text = (
                     "straight-line distance in 3-D: "
                     f"{format_mm(distance_mm(picks[0], picks[1]))}"
                 )
+            elif self.mode == Mode.ANGLE and len(picks) == 3:
+                text = f"angle at the middle point: {angle_deg(*picks):.1f}°"
+            if text:
                 self._last_measurement = text
                 self.measure_label.setText(text)
 

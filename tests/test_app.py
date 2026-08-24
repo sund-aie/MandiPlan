@@ -107,6 +107,15 @@ def test_panoramic_measurement_reports_arc_length_honestly(window):
     window.set_mode(Mode.NAVIGATE)
 
 
+def test_angle_measurement_reports_degrees(window):
+    window.set_mode(Mode.ANGLE)
+    window._on_reformat_pick("panoramic", 10.0, 0.0)
+    window._on_reformat_pick("panoramic", 0.0, 0.0)
+    window._on_reformat_pick("panoramic", 0.0, 10.0)
+    assert "90.0°" in window.measure_label.text()
+    window.set_mode(Mode.NAVIGATE)
+
+
 def test_measuring_the_bone_in_the_cross_section(window, phantom_folder):
     """The height of the phantom measured through the UI, in millimetres."""
     spec, _ = phantom_folder
@@ -140,6 +149,45 @@ def test_resection_preview_cut_and_readout(window, phantom_folder):
 
     session.undo_cut()
     assert not session.cut_applied
+
+
+def test_the_workflow_bar_tracks_the_toolbox_and_the_plan(window):
+    window.toolbox.setCurrentIndex(1)
+    assert "Step 2 of 5" in window.workflow_bar.heading.text()
+    # The bar and the panels are two views of the same position.
+    window.workflow_bar.step_selected.emit(3)
+    assert window.toolbox.currentIndex() == 3
+    assert "Step 4 of 5" in window.workflow_bar.heading.text()
+    window.toolbox.setCurrentIndex(0)
+    assert "Done — Volume loaded" in window.workflow_bar.detail.text()
+
+
+def test_placing_a_cut_by_numbers_from_the_panel(window):
+    session = window.session
+    panel = window.resection_panel
+    session.clear_planes()
+    window.add_cut_plane()
+    window.add_cut_plane()
+    assert panel.plane_box.count() == 2
+
+    panel.plane_box.setCurrentIndex(1)
+    target = session.frames.length_mm / 2.0 + 20.0
+    panel.position.setValue(target)
+    assert session.plane_arc_position(1) == pytest.approx(target, abs=0.3)
+
+    before = session.planes[1].normal.copy()
+    panel.yaw.setValue(20.0)
+    after = session.planes[1].normal
+    turned = np.degrees(np.arccos(np.clip(np.dot(before, after), -1, 1)))
+    assert turned == pytest.approx(20.0, abs=0.5)
+    assert after[2] == pytest.approx(0.0, abs=1e-6)
+
+    panel.tilt.setValue(15.0)
+    assert abs(session.planes[1].normal[2]) == pytest.approx(
+        np.sin(np.radians(15.0)), abs=1e-3
+    )
+    panel.yaw.setValue(0.0)
+    panel.tilt.setValue(0.0)
 
 
 def test_a_third_cutting_plane_is_refused(window):

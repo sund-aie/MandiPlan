@@ -118,6 +118,30 @@ would have been wrong. One line each.
   needs. The macOS-only steps (`sips`, `iconutil`, `BUNDLE`, `hdiutil`) are
   written but unrun here.
 
+## Ideas taken from the commercial planners
+
+Two of these were looked at for structure: NemoFAB's numbered wizard and IPS
+CaseDesigner's ribbon plus context panel. Almost all of their content is
+orthognathic — cephalometrics, occlusion, splints, soft-tissue simulation, Le
+Fort I, the Arnett protocol — which the specification excludes and which a
+segmental resection tool has no use for. Three things did carry over, none of
+them by copying a name or a layout:
+
+- **The work is a numbered sequence that knows where you are.** Both products
+  present planning as ordered steps rather than a pile of tools. MandiPlan's
+  steps are its own, and each one reports whether it is finished, what it is
+  waiting for, or what to do next.
+- **A cut can be set by numbers, not only by dragging.** CaseDesigner gives
+  segment movement explicit millimetre and degree entry with a finish action.
+  The same argument applies to an osteotomy plane: dragging is fast but not
+  repeatable or communicable.
+- **Angle measurement beside distance.** Both list it as a diagnostic tool and
+  it was missing.
+
+Deliberately not taken: anything orthognathic, the vendors' button names
+(Spanish wizard labels for a different operation), and nerve auto-tracing,
+which the specification excludes.
+
 ## Interface
 
 - **2-D views are QPainter widgets, not VTK image viewers.** They own the

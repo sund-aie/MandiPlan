@@ -212,6 +212,25 @@ class ResectionPanel(QWidget):
         self.clear = QPushButton("Clear planes")
         self.execute = QPushButton("Execute cut")
         self.undo = QPushButton("Undo cut")
+        self.plane_box = QComboBox()
+        self.position = QDoubleSpinBox()
+        self.position.setRange(0.0, 1000.0)
+        self.position.setSuffix(" mm along curve")
+        self.position.setSingleStep(1.0)
+        self.yaw = QDoubleSpinBox()
+        self.yaw.setRange(-89.0, 89.0)
+        self.yaw.setSuffix("° yaw")
+        self.tilt = QDoubleSpinBox()
+        self.tilt.setRange(-89.0, 89.0)
+        self.tilt.setSuffix("° tilt")
+        self.offsets = {}
+        for key, label in (("x", " mm L/R"), ("y", " mm A/P"), ("z", " mm S/I")):
+            spin = QDoubleSpinBox()
+            spin.setRange(-60.0, 60.0)
+            spin.setSingleStep(0.5)
+            spin.setSuffix(label)
+            self.offsets[key] = spin
+
         self.landmark_button = QPushButton("Mark tumour margin point")
         self.landmark_button.setCheckable(True)
         self.clear_landmarks = QPushButton("Clear margin points")
@@ -237,6 +256,23 @@ class ResectionPanel(QWidget):
                 "view; the red bone is what the current planes would remove."
             )
         )
+        numbers = QFormLayout()
+        numbers.addRow("Cut", self.plane_box)
+        numbers.addRow("Position", self.position)
+        numbers.addRow("Obliquity", self.yaw)
+        numbers.addRow("Inclination", self.tilt)
+        for key in ("x", "y", "z"):
+            numbers.addRow("Offset" if key == "x" else "", self.offsets[key])
+        numeric_box = QGroupBox("Place the cut by numbers")
+        numeric_box.setLayout(numbers)
+        layout.addWidget(numeric_box)
+        layout.addWidget(
+            _hint(
+                "Position runs along the arch curve. Yaw turns the cut about the "
+                "superior axis, tilt about the buccolingual direction; the offsets "
+                "shift it in patient axes. Dragging the handle updates these."
+            )
+        )
         layout.addWidget(self.landmark_button)
         layout.addWidget(self.clear_landmarks)
         layout.addWidget(self.readout)
@@ -251,7 +287,43 @@ class ResectionPanel(QWidget):
         self.landmark_button.toggled.connect(
             lambda on: self.mode_requested.emit(Mode.LANDMARK if on else Mode.NAVIGATE)
         )
+        self.plane_box.currentIndexChanged.connect(self._load_plane_controls)
+        for spin in (self.position, self.yaw, self.tilt, *self.offsets.values()):
+            spin.valueChanged.connect(self._apply_plane_controls)
         session.resection_changed.connect(self.refresh)
+        session.arch_changed.connect(self.refresh)
+
+    def _current_plane(self) -> int:
+        return max(self.plane_box.currentIndex(), 0)
+
+    def _load_plane_controls(self) -> None:
+        """Show the selected plane's numbers without re-applying them."""
+        session = self.session
+        index = self._current_plane()
+        if index >= len(session.planes) or session.frames is None:
+            return
+        self._loading = True
+        try:
+            self.position.setRange(0.0, session.frames.length_mm)
+            self.position.setValue(session.plane_arc_position(index))
+            for key in ("x", "y", "z"):
+                self.offsets[key].setValue(0.0)
+        finally:
+            self._loading = False
+
+    def _apply_plane_controls(self) -> None:
+        if getattr(self, "_loading", False):
+            return
+        index = self._current_plane()
+        if index >= len(self.session.planes):
+            return
+        self.session.place_plane(
+            index,
+            self.position.value(),
+            self.yaw.value(),
+            self.tilt.value(),
+            [self.offsets[key].value() for key in ("x", "y", "z")],
+        )
 
     def _flip(self, index: int) -> None:
         if index < len(self.session.planes):
@@ -275,6 +347,16 @@ class ResectionPanel(QWidget):
 
     def refresh(self) -> None:
         session = self.session
+        enabled = bool(session.planes) and session.frames is not None
+        for widget in (self.position, self.yaw, self.tilt, *self.offsets.values()):
+            widget.setEnabled(enabled)
+        if self.plane_box.count() != len(session.planes):
+            self._loading = True
+            self.plane_box.clear()
+            for plane in session.planes:
+                self.plane_box.addItem(plane.label)
+            self._loading = False
+            self._load_plane_controls()
         if not session.planes:
             self.readout.setText("No cutting planes.")
             return

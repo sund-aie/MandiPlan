@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mandiplan.geometry.measure import distance_mm
+from mandiplan.geometry.measure import angle_deg, distance_mm
 from mandiplan.geometry.volume import Volume
 
 
@@ -64,3 +64,15 @@ def test_extent_and_bounds(ramp):
 def test_rejects_non_positive_spacing():
     with pytest.raises(ValueError):
         Volume(array=np.zeros((2, 2, 2)), spacing=[1.0, 0.0, 1.0])
+
+
+def test_angle_is_measured_at_the_middle_point():
+    assert angle_deg([1, 0, 0], [0, 0, 0], [0, 1, 0]) == pytest.approx(90.0)
+    assert angle_deg([1, 0, 0], [0, 0, 0], [-1, 0, 0]) == pytest.approx(180.0)
+    assert angle_deg([1, 0, 0], [0, 0, 0], [1, 1, 0]) == pytest.approx(45.0)
+    # Scale does not matter, only direction.
+    assert angle_deg([9, 0, 0], [0, 0, 0], [0, 0.1, 0]) == pytest.approx(90.0)
+
+
+def test_a_degenerate_angle_is_not_a_number():
+    assert not np.isfinite(angle_deg([0, 0, 0], [0, 0, 0], [1, 0, 0]))
