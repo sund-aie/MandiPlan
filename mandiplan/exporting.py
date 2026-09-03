@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import vtk
 
-from .constants import DISCLAIMER
+from .constants import ATTRIBUTION, DISCLAIMER
 from .geometry.plate import PlatePlan, ribbon_mesh
 from .render.convert import triangles_to_polydata
 
@@ -37,8 +37,51 @@ _SIGN_CONVENTIONS = [
 ]
 
 
+#: Binary STL keeps an 80-byte header ahead of the triangle count, and two
+#: spare bytes on every triangle. The attribution goes in both, so stripping
+#: the header alone does not remove it.
+_STL_HEADER_BYTES = 80
+
+
+def stamp_stl(path: Path, attribution: str = ATTRIBUTION) -> Path:
+    """Write the attribution into a binary STL's header and attribute bytes.
+
+    The header is the conventional place and survives most round-trips. The
+    per-triangle attribute field is a second copy in the geometry block, so a
+    tool that rewrites the header still carries the credit. Neither is
+    tamper-proof — any file can be edited — but both travel with the mesh
+    through ordinary use.
+    """
+    data = bytearray(path.read_bytes())
+    if len(data) < _STL_HEADER_BYTES + 4:
+        return path
+
+    header = attribution.encode("utf-8", "replace")[:_STL_HEADER_BYTES]
+    data[: len(header)] = header
+    data[len(header) : _STL_HEADER_BYTES] = b" " * (_STL_HEADER_BYTES - len(header))
+
+    count = int.from_bytes(data[_STL_HEADER_BYTES : _STL_HEADER_BYTES + 4], "little")
+    mark = attribution.encode("utf-8", "replace")
+    start = _STL_HEADER_BYTES + 4
+    for triangle in range(count):
+        offset = start + triangle * 50 + 48
+        if offset + 2 > len(data):
+            break
+        data[offset] = mark[(triangle * 2) % len(mark)]
+        data[offset + 1] = mark[(triangle * 2 + 1) % len(mark)]
+    path.write_bytes(bytes(data))
+    return path
+
+
+def read_stl_attribution(path: Path) -> str:
+    """The attribution recovered from a binary STL header, for checking."""
+    with Path(path).open("rb") as handle:
+        return handle.read(_STL_HEADER_BYTES).decode("utf-8", "replace").rstrip()
+
+
 def _write_header(handle, lines: list[str]) -> None:
     handle.write(f"# {DISCLAIMER}\n")
+    handle.write(f"# {ATTRIBUTION}\n")
     for line in lines:
         handle.write(f"# {line}\n")
 
@@ -130,7 +173,7 @@ def write_template_stl(
     writer.SetFileTypeToBinary()
     writer.SetInputData(triangles_to_polydata(points, triangles))
     writer.Write()
-    return path
+    return stamp_stl(path)
 
 
 def write_surface_stl(path: str | Path, polydata) -> Path:
@@ -144,7 +187,7 @@ def write_surface_stl(path: str | Path, polydata) -> Path:
     writer.SetFileTypeToBinary()
     writer.SetInputData(triangles.GetOutput())
     writer.Write()
-    return path
+    return stamp_stl(path)
 
 
 def _num(value: float) -> str:

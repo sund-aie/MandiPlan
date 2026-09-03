@@ -7,6 +7,10 @@ DISCLAIMER = (
     "NOT FOR CLINICAL DECISION-MAKING"
 )
 
+#: Embedded in every exported file: the STL header and per-triangle attribute
+#: bytes, and the comment header of every CSV.
+ATTRIBUTION = "MandiPlan - made by Ahmed Alsunaidi and vesper"
+
 # Curved planar reformation defaults (all millimetres).
 CPR_STEP_MM = 0.2
 CPR_SLAB_MM = 10.0

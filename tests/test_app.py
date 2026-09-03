@@ -477,3 +477,53 @@ def test_the_plane_widget_draws_no_handles(window):
     window.view3d.plane_translated.emit(0, moved)
     assert np.allclose(session.planes[0].origin, moved)
     assert np.allclose(session.planes[0].normal, normal)
+
+
+# -- camera interaction ------------------------------------------------------
+
+
+def _camera(window) -> np.ndarray:
+    return np.array(window.view3d.renderer.GetActiveCamera().GetPosition())
+
+
+def _drag(window, hold: bool) -> float:
+    """Move the pointer across the 3-D view, with or without the button down."""
+    iren = window.view3d.interactor._Iren
+    before = _camera(window)
+    iren.SetEventPosition(300, 200)
+    if hold:
+        iren.LeftButtonPressEvent()
+    for x in (320, 350, 380):
+        iren.SetEventPosition(x, 210)
+        iren.MouseMoveEvent()
+    if hold:
+        iren.LeftButtonReleaseEvent()
+    return float(np.linalg.norm(_camera(window) - before))
+
+
+def test_the_camera_style_is_trackball_not_the_switch(window):
+    """vtkInteractorStyleSwitch carries a joystick mode and a hidden j/t toggle."""
+    style = window.view3d.interactor._Iren.GetInteractorStyle()
+    assert isinstance(style, vtk.vtkInteractorStyleTrackballCamera)
+    assert not isinstance(style, vtk.vtkInteractorStyleSwitch)
+
+
+def test_rotation_needs_the_button_held(window):
+    window.set_mode(Mode.NAVIGATE)
+    assert _drag(window, hold=True) > 1e-3
+    assert _drag(window, hold=False) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_rotation_stops_on_release(window):
+    _drag(window, hold=True)
+    assert _drag(window, hold=False) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_the_hidden_joystick_key_no_longer_switches_modes(window):
+    iren = window.view3d.interactor._Iren
+    iren.SetKeyEventInformation(0, 0, "j", 0, "j")
+    iren.CharEvent()
+    assert isinstance(
+        iren.GetInteractorStyle(), vtk.vtkInteractorStyleTrackballCamera
+    )
+    assert _drag(window, hold=False) == pytest.approx(0.0, abs=1e-9)
