@@ -36,6 +36,7 @@ from ..exporting import (
 )
 from ..geometry.cpr import cross_section_world_point
 from ..geometry.measure import angle_deg, distance_mm, format_mm
+from .cohort_panel import CohortPanel
 from .image_view import ImageView, Overlay
 from .modes import Mode
 from .panels import (
@@ -180,10 +181,12 @@ class MainWindow(QMainWindow):
         self.toolbox.addItem(self.plate_panel, "5 · Plate path and bends")
 
         self.workflow_bar = WorkflowBar(self.session)
+        self.cohort_panel = CohortPanel()
         planning = QWidget()
         planning_layout = QVBoxLayout(planning)
         planning_layout.setContentsMargins(0, 0, 0, 0)
         planning_layout.addWidget(self.workflow_bar)
+        planning_layout.addWidget(self.cohort_panel)
         planning_layout.addWidget(self.toolbox, 1)
 
         dock = QDockWidget("Planning", self)
@@ -265,6 +268,9 @@ class MainWindow(QMainWindow):
         self.resection_panel.add_plane.clicked.connect(self.add_cut_plane)
 
         help_menu = self.menuBar().addMenu("&Help")
+        cohort_action = QAction("Cohort and data sources", self)
+        cohort_action.triggered.connect(self.show_cohort)
+        help_menu.addAction(cohort_action)
         about = QAction("About MandiPlan", self)
         about.triggered.connect(self.show_about)
         help_menu.addAction(about)
@@ -333,6 +339,10 @@ class MainWindow(QMainWindow):
 
     def show_message(self, text: str) -> None:
         self.statusBar().showMessage(text, 8000)
+
+    def show_cohort(self) -> None:
+        self.cohort_panel.refresh()
+        self.cohort_panel.show()
 
     def show_about(self) -> None:
         QMessageBox.information(

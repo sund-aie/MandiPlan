@@ -50,6 +50,20 @@ def test_no_module_imports_anything_that_can_reach_the_network():
     assert not offenders, f"network-capable imports found: {offenders}"
 
 
+def test_dataset_fetching_lives_outside_the_application():
+    """Downloading is a deliberate terminal step, not something the app does.
+
+    tools/ is exempt from the no-network rule above precisely because it is not
+    imported by the application; this keeps that exemption honest.
+    """
+    fetcher = PACKAGE.parent / "tools" / "fetch_datasets.py"
+    assert fetcher.exists()
+    assert any(name.startswith("urllib") for name in _imported_modules(fetcher))
+    for path in PACKAGE.rglob("*.py"):
+        imported = _imported_modules(path)
+        assert not any("fetch_datasets" in name for name in imported), path
+
+
 def test_the_disclaimer_is_not_configurable():
     from mandiplan.constants import DISCLAIMER
 

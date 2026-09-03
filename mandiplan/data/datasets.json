@@ -1,0 +1,127 @@
+{
+  "note": [
+    "Registry of open datasets that can back the shape library.",
+    "",
+    "Every record here was supplied by the user and has NOT been verified",
+    "against the live repository: record identifiers, licences and case counts",
+    "are claims until tools/fetch_datasets.py checks them at download time,",
+    "which is why each carries metadata_verified: false. The fetcher re-reads",
+    "the licence from the repository API and refuses the download when it",
+    "disagrees with what is written here.",
+    "",
+    "Demographics are recorded as 'not published' where the dataset does not",
+    "state them. They are not estimated, because an invented sex split or age",
+    "range would defeat the purpose of showing the cohort to the user."
+  ],
+  "licence_allowlist": ["CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0"],
+  "licence_denylist_patterns": ["-NC", "-ND", "NonCommercial", "NoDerivatives"],
+  "source_denylist_patterns": ["cancerimagingarchive.net", "tcia", "TCIA"],
+  "datasets": [
+    {
+      "name": "margo",
+      "title": "MARGO pre-segmented mandible meshes",
+      "kind": "mesh",
+      "records": ["zenodo:7882821", "zenodo:10170185"],
+      "licence": "CC-BY-4.0",
+      "case_count": 100,
+      "pool": "primary",
+      "metadata_verified": false,
+      "notes": "Segmented .ply meshes, not raw volumes; loaded straight into the mirroring pipeline as reference shapes.",
+      "demographics": {
+        "sex_split": "not published",
+        "age_range": "not published",
+        "country_of_origin": "not published"
+      }
+    },
+    {
+      "name": "dental3d-multimodal",
+      "title": "3D multimodal dental dataset",
+      "kind": "volume",
+      "records": ["figshare:26965903"],
+      "licence": "CC-BY-4.0",
+      "case_count": 289,
+      "pool": "primary",
+      "metadata_verified": false,
+      "notes": "Raw CBCT volumes to run DentalSegmentator against.",
+      "demographics": {
+        "sex_split": "not published",
+        "age_range": "not published",
+        "country_of_origin": "not published"
+      }
+    },
+    {
+      "name": "pmcanalseg",
+      "title": "PMCanalSeg",
+      "kind": "volume",
+      "records": ["figshare:28742600"],
+      "licence": "CC-BY-4.0",
+      "case_count": 191,
+      "pool": "primary",
+      "metadata_verified": false,
+      "notes": "Raw CBCT volumes to run DentalSegmentator against.",
+      "demographics": {
+        "sex_split": "not published",
+        "age_range": "not published",
+        "country_of_origin": "not published"
+      }
+    },
+    {
+      "name": "cipriano-mandibular-canal",
+      "title": "Cipriano mandibular canal CBCT dataset",
+      "kind": "volume",
+      "records": ["zenodo:6822279"],
+      "licence": "CC-BY-4.0",
+      "case_count": null,
+      "pool": "primary",
+      "metadata_verified": false,
+      "notes": "Raw CBCT volumes to run DentalSegmentator against; case count not supplied.",
+      "demographics": {
+        "sex_split": "not published",
+        "age_range": "not published",
+        "country_of_origin": "not published"
+      }
+    },
+    {
+      "name": "toothfairy2",
+      "title": "ToothFairy2",
+      "kind": "volume",
+      "records": [],
+      "licence": "CC-BY-SA-4.0",
+      "licence_status": "license unclear, treat as CC BY-SA until confirmed",
+      "case_count": 480,
+      "voxel_mm": 0.3,
+      "pool": "secondary",
+      "requires_truncation_filter": true,
+      "metadata_verified": false,
+      "notes": "Jawbone-labelled, 0.3 mm isotropic. Cases whose ramus or condyle is cut off by the field of view are rejected before they reach the shape library.",
+      "demographics": {
+        "sex_split": "not published",
+        "age_range": "not published",
+        "country_of_origin": "not published"
+      }
+    }
+  ],
+  "external_models": [
+    {
+      "name": "dentalsegmentator",
+      "title": "DentalSegmentator nnU-Net weights",
+      "records": ["zenodo:10829675"],
+      "licence": "CC-BY-4.0",
+      "metadata_verified": false,
+      "vendored": false,
+      "install_note": "Installed separately by the user; MandiPlan only stores a path to it.",
+      "labels": {
+        "1": "upper skull / maxilla",
+        "2": "mandible",
+        "3": "upper teeth",
+        "4": "lower teeth",
+        "5": "mandibular canal"
+      }
+    }
+  ],
+  "hard_excluded": [
+    {"pattern": "TCIA", "reason": "TCIA collections are excluded by project policy."},
+    {"name": "HaN-Seg", "reason": "CC BY-NC-ND: no derivatives, no commercial use."},
+    {"name": "Teeth3DS", "reason": "CC BY-NC-ND: no derivatives, no commercial use."}
+  ]
+}
