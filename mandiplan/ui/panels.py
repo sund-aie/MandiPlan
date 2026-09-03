@@ -288,8 +288,12 @@ class ResectionPanel(QWidget):
             lambda on: self.mode_requested.emit(Mode.LANDMARK if on else Mode.NAVIGATE)
         )
         self.plane_box.currentIndexChanged.connect(self._load_plane_controls)
-        for spin in (self.position, self.yaw, self.tilt, *self.offsets.values()):
-            spin.valueChanged.connect(self._apply_plane_controls)
+        # Translation and rotation are wired to different handlers on purpose:
+        # moving a cut must never re-angle it.
+        for spin in (self.position, *self.offsets.values()):
+            spin.valueChanged.connect(self._apply_translation)
+        for spin in (self.yaw, self.tilt):
+            spin.valueChanged.connect(self._apply_rotation)
         session.resection_changed.connect(self.refresh)
         session.arch_changed.connect(self.refresh)
 
@@ -311,19 +315,25 @@ class ResectionPanel(QWidget):
         finally:
             self._loading = False
 
-    def _apply_plane_controls(self) -> None:
+    def _apply_translation(self) -> None:
         if getattr(self, "_loading", False):
             return
         index = self._current_plane()
         if index >= len(self.session.planes):
             return
-        self.session.place_plane(
+        self.session.translate_plane(
             index,
             self.position.value(),
-            self.yaw.value(),
-            self.tilt.value(),
             [self.offsets[key].value() for key in ("x", "y", "z")],
         )
+
+    def _apply_rotation(self) -> None:
+        if getattr(self, "_loading", False):
+            return
+        index = self._current_plane()
+        if index >= len(self.session.planes):
+            return
+        self.session.rotate_plane(index, self.yaw.value(), self.tilt.value())
 
     def _flip(self, index: int) -> None:
         if index < len(self.session.planes):

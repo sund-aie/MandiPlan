@@ -68,7 +68,7 @@ class View3D(QWidget):
     """3-D view of the mandible with interactive resection planes."""
 
     surface_picked = pyqtSignal(object)  # np.ndarray world point
-    plane_moved = pyqtSignal(int, object, object)  # index, origin, normal
+    plane_translated = pyqtSignal(int, object)  # index, origin (never the normal)
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
@@ -385,11 +385,12 @@ class View3D(QWidget):
         if self._syncing or index >= len(self._plane_widgets):
             return
         rep = self._plane_widgets[index].GetRepresentation()
+        # Deliberately does not read GetNormal(): dragging a plane along the jaw
+        # translates it, and must not re-angle it. Angulation is set explicitly.
         origin = np.array(rep.GetOrigin(), dtype=float)
-        normal = np.array(rep.GetNormal(), dtype=float)
         self._syncing = True
         try:
-            self.plane_moved.emit(index, origin, normal)
+            self.plane_translated.emit(index, origin)
         finally:
             self._syncing = False
 

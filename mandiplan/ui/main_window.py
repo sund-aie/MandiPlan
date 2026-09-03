@@ -303,7 +303,7 @@ class MainWindow(QMainWindow):
         session.resection_changed.connect(self.refresh_reformats)
         session.message.connect(self.show_message)
         self.view3d.surface_picked.connect(self._on_surface_pick)
-        self.view3d.plane_moved.connect(self._on_plane_moved)
+        self.view3d.plane_translated.connect(self._on_plane_translated)
 
     def start(self) -> None:
         self.view3d.start()
@@ -643,8 +643,8 @@ class MainWindow(QMainWindow):
         session.add_plane(origin, normal)
         self.view3d.render()
 
-    def _on_plane_moved(self, index: int, origin, normal) -> None:
-        self.session.set_plane(index, origin, normal)
+    def _on_plane_translated(self, index: int, origin) -> None:
+        self.session.set_plane_origin(index, origin)
 
     # -- export ------------------------------------------------------------
 

@@ -281,26 +281,43 @@ class Session(QObject):
         self.planes[index] = CutPlane(origin=origin, normal=normal, label=plane.label)
         self.update_resection_report()
 
-    def place_plane(
-        self,
-        index: int,
-        s_mm: float,
-        yaw_deg: float,
-        tilt_deg: float,
-        offset_mm=(0.0, 0.0, 0.0),
+    def translate_plane(
+        self, index: int, s_mm: float, offset_mm=(0.0, 0.0, 0.0)
     ) -> None:
-        """Set a cut plane from numbers rather than by dragging it."""
+        """Move a cut plane along the jaw. Its angulation is left alone.
+
+        Sliding a cut to a new position is not a request to re-angle it. The
+        normal is deliberately not recomputed from the arch tangent here, so a
+        cut you have angled by hand keeps that angle as you move it.
+        """
         if self.frames is None or index >= len(self.planes):
             return
-        origin, normal = plane_from_frame(
-            self.frames, s_mm, yaw_deg, tilt_deg, offset_mm
-        )
+        origin, _ = plane_from_frame(self.frames, s_mm, 0.0, 0.0, offset_mm)
         plane = self.planes[index]
-        # Keep the side the plane removes: the numeric normal follows the
-        # curve, so flip it when this plane was facing the other way.
+        self._replace_plane(index, origin, plane.normal)
+
+    def set_plane_origin(self, index: int, origin) -> None:
+        """Move a cut plane to a world point, keeping its angulation."""
+        if index >= len(self.planes):
+            return
+        self._replace_plane(index, np.asarray(origin, dtype=float), self.planes[index].normal)
+
+    def rotate_plane(self, index: int, yaw_deg: float, tilt_deg: float) -> None:
+        """Re-angle a cut plane about its own position. Its origin is left alone."""
+        if self.frames is None or index >= len(self.planes):
+            return
+        plane = self.planes[index]
+        s_mm = self.plane_arc_position(index)
+        _, normal = plane_from_frame(self.frames, s_mm, yaw_deg, tilt_deg)
+        # Keep the side the plane removes: the frame normal follows the curve,
+        # so flip it when this plane was facing the other way.
         if np.dot(normal, plane.normal) < 0:
             normal = -normal
-        self.planes[index] = CutPlane(origin=origin, normal=normal, label=plane.label)
+        self._replace_plane(index, plane.origin, normal)
+
+    def _replace_plane(self, index: int, origin, normal) -> None:
+        label = self.planes[index].label
+        self.planes[index] = CutPlane(origin=origin, normal=normal, label=label)
         self.cut_applied = False
         self.fragment_surface = None
         self.retained_surface = None

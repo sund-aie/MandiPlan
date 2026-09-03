@@ -175,10 +175,12 @@ def test_placing_a_cut_by_numbers_from_the_panel(window):
     panel.position.setValue(target)
     assert session.plane_arc_position(1) == pytest.approx(target, abs=0.3)
 
-    before = session.planes[1].normal.copy()
+    # Angulation is measured against the curve at the cut, which is what the
+    # yaw control is relative to.
     panel.yaw.setValue(20.0)
+    tangent = session.frames.tangents[session.frames.index_of(target)]
     after = session.planes[1].normal
-    turned = np.degrees(np.arccos(np.clip(np.dot(before, after), -1, 1)))
+    turned = np.degrees(np.arccos(abs(np.clip(np.dot(tangent, after), -1, 1))))
     assert turned == pytest.approx(20.0, abs=0.5)
     assert after[2] == pytest.approx(0.0, abs=1e-6)
 
@@ -186,6 +188,14 @@ def test_placing_a_cut_by_numbers_from_the_panel(window):
     assert abs(session.planes[1].normal[2]) == pytest.approx(
         np.sin(np.radians(15.0)), abs=1e-3
     )
+
+    # Moving the cut afterwards must leave that angulation untouched.
+    angled = session.planes[1].normal.copy()
+    origin_before = session.planes[1].origin.copy()
+    panel.position.setValue(target - 8.0)
+    assert np.allclose(session.planes[1].normal, angled)
+    assert not np.allclose(session.planes[1].origin, origin_before)
+
     panel.yaw.setValue(0.0)
     panel.tilt.setValue(0.0)
 

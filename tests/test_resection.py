@@ -132,6 +132,63 @@ def test_the_offset_moves_the_cut_in_patient_axes(arch_frames):
     assert np.allclose(moved_normal, base_normal)
 
 
+def test_translating_a_cut_never_changes_its_angulation(arch_frames):
+    """Sliding a cut along the jaw is not a request to re-angle it."""
+    from mandiplan.ui.session import Session
+
+    session = Session()
+    session.frames = arch_frames
+    mid = arch_frames.length_mm / 2.0
+    index = arch_frames.index_of(mid)
+    session.add_plane(arch_frames.points[index], arch_frames.tangents[index])
+
+    session.rotate_plane(0, yaw_deg=30.0, tilt_deg=10.0)
+    angled = session.planes[0].normal.copy()
+
+    for position in (mid - 15.0, mid + 5.0, mid + 20.0):
+        session.translate_plane(0, position)
+        assert np.allclose(session.planes[0].normal, angled), position
+        assert session.plane_arc_position(0) == pytest.approx(position, abs=0.3)
+
+    session.translate_plane(0, mid, offset_mm=(3.0, 0.0, -2.0))
+    assert np.allclose(session.planes[0].normal, angled)
+
+
+def test_rotating_a_cut_never_moves_it(arch_frames):
+    from mandiplan.ui.session import Session
+
+    session = Session()
+    session.frames = arch_frames
+    mid = arch_frames.length_mm / 2.0
+    index = arch_frames.index_of(mid)
+    session.add_plane(arch_frames.points[index], arch_frames.tangents[index])
+    session.translate_plane(0, mid, offset_mm=(2.0, 1.0, 0.0))
+    origin = session.planes[0].origin.copy()
+
+    for yaw in (10.0, -25.0, 40.0):
+        session.rotate_plane(0, yaw_deg=yaw, tilt_deg=0.0)
+        assert np.allclose(session.planes[0].origin, origin), yaw
+
+
+def test_dragging_the_plane_in_3d_only_moves_it(arch_frames):
+    """The 3-D widget reports an origin; the angulation is not sourced from it."""
+    from mandiplan.ui.session import Session
+
+    session = Session()
+    session.frames = arch_frames
+    index = arch_frames.index_of(arch_frames.length_mm / 2.0)
+    session.add_plane(arch_frames.points[index], arch_frames.tangents[index])
+    session.rotate_plane(0, yaw_deg=35.0, tilt_deg=12.0)
+    angled = session.planes[0].normal.copy()
+
+    # This is what View3D.plane_translated delivers on a widget drag.
+    session.set_plane_origin(0, arch_frames.points[index] + np.array([4.0, -2.0, 1.0]))
+    assert np.allclose(session.planes[0].normal, angled)
+    assert np.allclose(
+        session.planes[0].origin, arch_frames.points[index] + np.array([4.0, -2.0, 1.0])
+    )
+
+
 def test_placing_a_cut_by_numbers_keeps_the_side_it_removes(arch_frames, spec):
     from mandiplan.ui.session import Session
 
@@ -145,7 +202,7 @@ def test_placing_a_cut_by_numbers_keeps_the_side_it_removes(arch_frames, spec):
         )
     before = [plane.normal.copy() for plane in session.planes]
 
-    session.place_plane(1, mid + 14.0, yaw_deg=0.0, tilt_deg=0.0)
+    session.translate_plane(1, mid + 14.0)
     assert np.dot(session.planes[1].normal, before[1]) > 0
     assert session.plane_arc_position(1) == pytest.approx(mid + 14.0, abs=0.3)
     assert np.isfinite(session.report.arc_length_mm)
