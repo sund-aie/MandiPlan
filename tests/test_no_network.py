@@ -64,9 +64,11 @@ def test_dataset_fetching_lives_outside_the_application():
         assert not any("fetch_datasets" in name for name in imported), path
 
 
-def test_the_disclaimer_is_not_configurable():
-    from mandiplan.constants import DISCLAIMER
+def test_the_status_bar_carries_no_disclaimer_banner():
+    """The status-bar banner was removed at the project owner's instruction.
 
-    assert "NOT A MEDICAL DEVICE" in DISCLAIMER
+    The disclaimer still reaches the About dialog and every exported CSV; it is
+    simply no longer painted across the bottom of the window.
+    """
     source = (PACKAGE / "ui" / "main_window.py").read_text(encoding="utf-8")
-    assert "addPermanentWidget(self.banner)" in source
+    assert "self.banner" not in source

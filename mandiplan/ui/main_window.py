@@ -298,20 +298,12 @@ class MainWindow(QMainWindow):
         self.hint_label = QLabel("")
         self.measure_label = QLabel("")
         self.measure_label.setStyleSheet("color: #1a73e8; font-weight: 500;")
-        # The disclaimer is a permanent status-bar widget: transient messages
-        # are shown in the temporary area and never cover or replace it.
-        self.banner = QLabel(DISCLAIMER)
-        self.banner.setStyleSheet(
-            "color: #c5221f; background: #fce8e6; padding: 4px 12px;"
-            "border-radius: 8px; font-weight: 600; font-size: 11px;"
-        )
         bar = self.statusBar()
         # The hint shares its slot with transient messages, which is fine; the
-        # measurement and the disclaimer are permanent, because Qt hides normal
-        # status-bar widgets for as long as a message is showing.
+        # measurement is permanent, because Qt hides normal status-bar widgets
+        # for as long as a message is showing.
         bar.addWidget(self.hint_label, 1)
         bar.addPermanentWidget(self.measure_label)
-        bar.addPermanentWidget(self.banner)
         bar.setSizeGripEnabled(False)
 
     def _connect_session(self) -> None:

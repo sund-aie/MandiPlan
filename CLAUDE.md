@@ -8,7 +8,7 @@
 ## Non-negotiable
 - All measurements in millimetres, derived from DICOM voxel spacing. Never measure in index or pixel space.
 - CBCT gray values are NOT Hounsfield units. Bone threshold is always user-adjustable, never hardcoded.
-- The status-bar banner "RESEARCH AND EDUCATION USE ONLY — NOT A MEDICAL DEVICE" must never be removable.
+- No status-bar disclaimer banner. The project owner removed it deliberately; do not reinstate it. The disclaimer stays in the About dialog and in the header of every exported CSV.
 - No network calls, ever.
 
 ## Style

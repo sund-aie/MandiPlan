@@ -44,15 +44,6 @@ def window(qt_app, phantom_folder):
     win.close()
 
 
-def test_the_banner_is_permanent(window):
-    assert window.banner.text() == DISCLAIMER
-    window.statusBar().showMessage("a transient message")
-    assert window.banner.isVisible()
-    assert window.banner.text() == DISCLAIMER
-    window.statusBar().clearMessage()
-    assert window.banner.text() == DISCLAIMER
-
-
 def test_volume_loads_with_its_real_voxel_spacing(window, phantom_folder):
     spec, _ = phantom_folder
     volume = window.session.volume
