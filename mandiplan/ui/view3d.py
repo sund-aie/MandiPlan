@@ -109,6 +109,14 @@ class View3D(QWidget):
         self.interactor.GetRenderWindow().AddRenderer(self.renderer)
         self._build_pipeline()
 
+        # VTK's default is vtkInteractorStyleSwitch, which carries a joystick
+        # camera mode that keeps moving the camera from the cursor position
+        # rather than from a click-drag delta, plus hidden "j"/"t" keys that
+        # flip between the two. Pinning the trackball style gives plain
+        # click-hold-drag-release rotation and removes the accidental toggle.
+        self.camera_style = vtk.vtkInteractorStyleTrackballCamera()
+        self.interactor.SetInteractorStyle(self.camera_style)
+
         self.picker = vtk.vtkCellPicker()
         self.picker.SetTolerance(0.005)
         self.interactor.AddObserver("LeftButtonPressEvent", self._on_left_button, 1.0)
