@@ -216,9 +216,9 @@ class ImageView(QWidget):
 
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(18, 18, 22))
+        painter.fillRect(self.rect(), QColor(233, 236, 239))
         if self._pixmap is None:
-            painter.setPen(QColor(150, 150, 160))
+            painter.setPen(QColor(128, 134, 139))
             painter.drawText(
                 self.rect(), Qt.AlignmentFlag.AlignCenter, "no image"
             )
@@ -232,7 +232,7 @@ class ImageView(QWidget):
         self._draw_axes(painter)
         self._draw_scale_bar(painter)
         if self.title:
-            painter.setPen(QColor(220, 220, 230))
+            painter.setPen(QColor(32, 33, 36))
             font = painter.font()
             font.setBold(True)
             painter.setFont(font)
@@ -289,7 +289,7 @@ class ImageView(QWidget):
                 painter.drawText(pts[-1] + QPointF(8, -8), item.label)
 
     def _draw_axes(self, painter: QPainter) -> None:
-        painter.setPen(QColor(160, 160, 175))
+        painter.setPen(QColor(95, 99, 104))
         font = QFont(painter.font())
         font.setPointSizeF(8.0)
         painter.setFont(font)
@@ -311,7 +311,7 @@ class ImageView(QWidget):
         length_px = length_mm * self._scale()
         y = self.height() - 22
         x = 56
-        pen = QPen(QColor(235, 235, 245))
+        pen = QPen(QColor(32, 33, 36))
         pen.setWidth(2)
         painter.setPen(pen)
         painter.drawLine(int(x), int(y), int(x + length_px), int(y))

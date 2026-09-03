@@ -14,6 +14,10 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv)
     app.setApplicationName(APP_NAME)
 
+    from .ui.theme import stylesheet
+
+    app.setStyleSheet(stylesheet())
+
     from .ui.main_window import MainWindow
 
     window = MainWindow()

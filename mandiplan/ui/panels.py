@@ -34,7 +34,7 @@ from .modes import Mode
 def _hint(text: str) -> QLabel:
     label = QLabel(text)
     label.setWordWrap(True)
-    label.setStyleSheet("color: #9aa0b0; font-size: 10px;")
+    label.setStyleSheet("color: #5f6368; font-size: 11px;")
     return label
 
 
@@ -610,7 +610,7 @@ class PlatePanel(QWidget):
         lines.extend(f"Note: {w}" for w in fit.warnings[:4])
         self.fit_info.setText("\n".join(lines))
         self.fit_info.setStyleSheet(
-            "color: #ff9d9d;" if fit.problems else "color: #b7d1a0;"
+            "color: #c5221f;" if fit.problems else "color: #188038;"
         )
 
         rows = steps_as_rows(self.session.steps)

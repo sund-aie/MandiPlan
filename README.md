@@ -113,6 +113,14 @@ it writes. The phantom is a synthetic mandible-like arc whose geometry is known
 in closed form — 78.19 mm of arc, a 12 × 18 mm elliptical cross-section — so you
 can check what the application reports against what it should report.
 
+## The interface
+
+A light, flat layout: an off-white ground, one accent colour used only for the
+active tool and primary actions, soft shadows instead of borders, and rounded
+panels. The 3-D viewport is the dominant element and the planning controls sit
+beside it as a collapsible panel — the **Panel** button in the toolbar hides
+them and gives the whole window to the view.
+
 ## The workflow
 
 The planning panel is a numbered sequence, and the strip above it says where

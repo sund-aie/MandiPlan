@@ -36,8 +36,9 @@ from ..geometry.plate import ribbon_mesh  # noqa: E402
 from ..geometry.resection import resected_mask  # noqa: E402
 from .convert_helpers import empty_polydata, points_to_polydata  # noqa: E402
 from .modes import Mode  # noqa: E402
+from .theme import VIEWPORT_BACKGROUND, VIEWPORT_BACKGROUND_TOP  # noqa: E402
 
-BONE_COLOUR = (0.93, 0.90, 0.83)
+BONE_COLOUR = (0.95, 0.93, 0.88)
 RESECT_COLOUR = (0.85, 0.25, 0.25)
 PLATE_COLOUR = (0.55, 0.70, 0.95)
 ARCH_COLOUR = (0.35, 0.85, 0.60)
@@ -105,7 +106,9 @@ class View3D(QWidget):
         layout.addWidget(self.interactor)
 
         self.renderer = vtk.vtkRenderer()
-        self.renderer.SetBackground(0.10, 0.11, 0.14)
+        self.renderer.SetBackground(*VIEWPORT_BACKGROUND)
+        self.renderer.SetBackground2(*VIEWPORT_BACKGROUND_TOP)
+        self.renderer.GradientBackgroundOn()
         self.interactor.GetRenderWindow().AddRenderer(self.renderer)
         self._build_pipeline()
 

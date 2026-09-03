@@ -14,9 +14,9 @@ from PyQt6.QtWidgets import (
 
 from ..workflow import workflow_status
 
-DONE = QColor(120, 190, 120)
-CURRENT = QColor(240, 190, 90)
-BLOCKED = QColor(90, 95, 110)
+DONE = QColor(24, 128, 56)
+CURRENT = QColor(26, 115, 232)
+BLOCKED = QColor(218, 220, 224)
 
 
 class _Dots(QWidget):
@@ -52,7 +52,7 @@ class _Dots(QWidget):
             painter.drawEllipse(int(x - 5), 4, 10, 10)
             if status.index == self.current:
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.setPen(QColor(235, 235, 245))
+                painter.setPen(QColor(26, 115, 232))
                 painter.drawEllipse(int(x - 8), 1, 16, 16)
 
     def mousePressEvent(self, event):  # noqa: N802
@@ -80,7 +80,7 @@ class WorkflowBar(QWidget):
         self.dots = _Dots()
         self.detail = QLabel("")
         self.detail.setWordWrap(True)
-        self.detail.setStyleSheet("color: #b9c0d0; font-size: 11px;")
+        self.detail.setStyleSheet("color: #5f6368; font-size: 11px;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)

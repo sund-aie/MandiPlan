@@ -47,6 +47,7 @@ from .panels import (
     VolumePanel,
 )
 from .session import Session
+from .theme import card
 from .view3d import View3D
 from .workflow_bar import WorkflowBar
 
@@ -115,7 +116,7 @@ class MainWindow(QMainWindow):
             view.title = name.capitalize()
             slider = QSlider(Qt.Orientation.Horizontal)
             label = QLabel("—")
-            label.setStyleSheet("color: #9aa0b0; font-size: 10px;")
+            label.setStyleSheet("color: #5f6368; font-size: 11px;")
             grid.addWidget(view, 0, column)
             grid.addWidget(slider, 1, column)
             grid.addWidget(label, 2, column)
@@ -189,13 +190,20 @@ class MainWindow(QMainWindow):
         planning_layout.addWidget(self.cohort_panel)
         planning_layout.addWidget(self.toolbox, 1)
 
-        dock = QDockWidget("Planning", self)
-        dock.setWidget(planning)
-        dock.setAllowedAreas(
+        card(self.workflow_bar)
+        card(self.cohort_panel)
+
+        self.planning_dock = QDockWidget("Planning", self)
+        self.planning_dock.setWidget(planning)
+        self.planning_dock.setAllowedAreas(
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
-        dock.setMinimumWidth(400)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        self.planning_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.planning_dock.setMinimumWidth(400)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.planning_dock)
 
         self.toolbox.currentChanged.connect(self.workflow_bar.set_page)
         self.workflow_bar.step_selected.connect(self.toolbox.setCurrentIndex)
@@ -261,6 +269,17 @@ class MainWindow(QMainWindow):
                 lambda _c, d=direction: self.view3d.set_view_direction(d)
             )
             toolbar.addAction(action)
+        self.panel_action = QAction("Panel", self)
+        self.panel_action.setCheckable(True)
+        self.panel_action.setChecked(True)
+        self.panel_action.setToolTip(
+            "Collapse the planning panel and give the whole window to the 3-D view"
+        )
+        self.panel_action.toggled.connect(self.planning_dock.setVisible)
+        self.planning_dock.visibilityChanged.connect(self.panel_action.setChecked)
+        toolbar.addSeparator()
+        toolbar.addAction(self.panel_action)
+
         add_plane = QAction("Add cutting plane", self)
         add_plane.triggered.connect(self.add_cut_plane)
         toolbar.addSeparator()
@@ -278,12 +297,13 @@ class MainWindow(QMainWindow):
     def _build_status_bar(self) -> None:
         self.hint_label = QLabel("")
         self.measure_label = QLabel("")
-        self.measure_label.setStyleSheet("color: #ffe150;")
+        self.measure_label.setStyleSheet("color: #1a73e8; font-weight: 500;")
         # The disclaimer is a permanent status-bar widget: transient messages
         # are shown in the temporary area and never cover or replace it.
         self.banner = QLabel(DISCLAIMER)
         self.banner.setStyleSheet(
-            "color: #ffffff; background: #a03030; padding: 2px 10px; font-weight: bold;"
+            "color: #c5221f; background: #fce8e6; padding: 4px 12px;"
+            "border-radius: 8px; font-weight: 600; font-size: 11px;"
         )
         bar = self.statusBar()
         # The hint shares its slot with transient messages, which is fine; the
