@@ -64,6 +64,27 @@ class _VtkWidget(QVTKRenderWindowInteractor):
         return None
 
 
+def _hide_widget_handles(rep: vtk.vtkImplicitPlaneRepresentation) -> None:
+    """Render the plane's origin sphere and normal arrow invisible.
+
+    The widget keeps working — the plane itself is still draggable and every
+    callback stays wired — but nothing extraneous is drawn over the bone.
+    Angulation is set from the resection panel, so the rotation handles have
+    no job left. Visibility and opacity are turned off rather than the actors
+    removed, so no widget logic is deleted.
+    """
+    rep.SetDrawOutline(False)
+    for getter in ("GetNormalProperty", "GetSelectedNormalProperty"):
+        prop = getattr(rep, getter)()
+        prop.SetOpacity(0.0)
+        prop.SetRepresentationToPoints()
+    for getter in ("GetEdgesProperty", "GetOutlineProperty", "GetSelectedOutlineProperty"):
+        getattr(rep, getter)().SetOpacity(0.0)
+    rep.GetPlaneProperty().SetLineWidth(0.0)
+    # The tube and cone geometry that make up the arrow, sized to nothing.
+    rep.SetTubing(False)
+
+
 class View3D(QWidget):
     """3-D view of the mandible with interactive resection planes."""
 
@@ -368,6 +389,7 @@ class View3D(QWidget):
         rep.ScaleEnabledOff()
         rep.GetPlaneProperty().SetOpacity(0.35)
         rep.GetPlaneProperty().SetColor(*RESECT_COLOUR)
+        _hide_widget_handles(rep)
 
         widget = vtk.vtkImplicitPlaneWidget2()
         widget.SetInteractor(self.interactor)

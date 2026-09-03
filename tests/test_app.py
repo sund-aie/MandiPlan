@@ -449,3 +449,31 @@ def test_refusing_a_bad_series_reports_it(qt_app, tmp_path):
     with pytest.raises(DicomLoadError):
         window.session.load_dicom_folder(str(empty))
     window.close()
+
+
+def test_the_plane_widget_draws_no_handles(window):
+    """Nothing extraneous is rendered, but the widget itself still functions."""
+    session = window.session
+    session.clear_planes()
+    window.add_cut_plane()
+    widget = window.view3d._plane_widgets[0]
+    rep = widget.GetRepresentation()
+
+    for getter in (
+        "GetNormalProperty",
+        "GetSelectedNormalProperty",
+        "GetEdgesProperty",
+        "GetOutlineProperty",
+        "GetSelectedOutlineProperty",
+    ):
+        assert getattr(rep, getter)().GetOpacity() == 0.0, getter
+    assert not rep.GetDrawOutline()
+
+    # The widget logic is intact: the plane still draws and still responds.
+    assert rep.GetDrawPlane()
+    assert widget.GetEnabled()
+    normal = session.planes[0].normal.copy()
+    moved = np.asarray(rep.GetOrigin(), dtype=float) + np.array([2.0, 0.0, 0.0])
+    window.view3d.plane_translated.emit(0, moved)
+    assert np.allclose(session.planes[0].origin, moved)
+    assert np.allclose(session.planes[0].normal, normal)
