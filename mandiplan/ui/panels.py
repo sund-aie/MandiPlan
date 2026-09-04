@@ -26,6 +26,8 @@ from ..constants import MAX_RESECTION_PLANES
 from ..geometry import cpr
 from ..geometry.measure import format_deg, format_mm
 from ..geometry.plate import bend_table_rows
+from ..plate_assets import assets_in_family
+from ..plate_assets import families as plate_families
 from ..plate_catalog import load_kits, load_systems
 from .histogram import ThresholdPanel
 from .modes import Mode
@@ -492,6 +494,8 @@ class ReconstructionPanel(QWidget):
 
 class PlatePanel(QWidget):
     mode_requested = pyqtSignal(object)
+    #: plate mesh, hole centres, screw trajectories
+    overlays_changed = pyqtSignal(bool, bool, bool)
     export_csv_requested = pyqtSignal()
     export_stl_requested = pyqtSignal()
     export_steps_requested = pyqtSignal()
@@ -499,6 +503,31 @@ class PlatePanel(QWidget):
     def __init__(self, session, parent=None):
         super().__init__(parent)
         self.session = session
+
+        # -- plate library -------------------------------------------------
+        self.family_box = QComboBox()
+        for family_id, label in plate_families():
+            self.family_box.addItem(label, family_id)
+        self.model_box = QComboBox()
+        self.status_badge = QLabel("")
+        self.clearance = QDoubleSpinBox()
+        self.clearance.setRange(0.0, 5.0)
+        self.clearance.setSingleStep(0.1)
+        self.clearance.setDecimals(1)
+        self.clearance.setSuffix(" mm clearance")
+        self.clearance.setValue(session.plate_clearance_mm)
+        self.clearance.setToolTip(
+            "How far the plate's inner face stands off the bone surface"
+        )
+        self.show_plate = QCheckBox("Plate mesh")
+        self.show_plate.setChecked(True)
+        self.show_holes = QCheckBox("Hole centres")
+        self.show_holes.setChecked(True)
+        self.show_screws = QCheckBox("Screw trajectories")
+        self.properties = QLabel("")
+        self.properties.setWordWrap(True)
+        self.fit_status = QLabel("")
+        self.fit_status.setWordWrap(True)
 
         self.system_box = QComboBox()
         for system in load_systems():
@@ -569,17 +598,40 @@ class PlatePanel(QWidget):
         self.export_steps = QPushButton("Export bench steps (CSV)…")
 
         layout = QVBoxLayout(self)
+
+        library = QFormLayout()
+        library.addRow("Plate family", self.family_box)
+        library.addRow("Model", self.model_box)
+        library.addRow("", self.status_badge)
+        library.addRow("Standoff", self.clearance)
+        toggles = QHBoxLayout()
+        toggles.addWidget(self.show_plate)
+        toggles.addWidget(self.show_holes)
+        toggles.addWidget(self.show_screws)
+        library.addRow("Show", toggles)
+        library_box = QGroupBox("Plate library")
+        library_box.setLayout(library)
+        layout.addWidget(library_box)
+        layout.addWidget(self.fit_status)
+
+        properties_box = QGroupBox("Plate properties")
+        properties_layout = QVBoxLayout()
+        properties_layout.addWidget(self.properties)
+        properties_box.setLayout(properties_layout)
+        layout.addWidget(properties_box)
+
         selection = QFormLayout()
         selection.addRow("Plate system", self.system_box)
         selection.addRow("Bending kit", self.kit_box)
-        chooser = QGroupBox("Selection")
+        chooser = QGroupBox("Bending")
         chooser.setLayout(selection)
         layout.addWidget(chooser)
         layout.addWidget(
             _hint(
-                "The catalogue holds generic profiles by size class, not a "
-                "manufacturer's catalogue. Check the dimensions against the system "
-                "you are holding and edit mandiplan/data/plate_systems.json to match."
+                "The bending kit and its working limits are generic profiles by "
+                "size class, not a manufacturer's catalogue. Check them against "
+                "the system you are holding and edit "
+                "mandiplan/data/plate_systems.json to match."
             )
         )
         layout.addWidget(self.draw_button)
@@ -600,6 +652,11 @@ class PlatePanel(QWidget):
         layout.addWidget(self.export_steps)
         layout.addWidget(self.export_stl)
 
+        self.family_box.currentIndexChanged.connect(self._on_family)
+        self.model_box.currentIndexChanged.connect(self._on_model)
+        self.clearance.valueChanged.connect(session.set_plate_clearance)
+        for box in (self.show_plate, self.show_holes, self.show_screws):
+            box.toggled.connect(self._emit_overlays)
         self.system_box.currentIndexChanged.connect(
             lambda i: self._on_system(self.system_box.itemData(i))
         )
@@ -620,6 +677,73 @@ class PlatePanel(QWidget):
         self.export_stl.clicked.connect(self.export_stl_requested)
         self.export_steps.clicked.connect(self.export_steps_requested)
         session.plate_changed.connect(self.refresh)
+        self._reload_models()
+
+    # -- plate library ---------------------------------------------------
+
+    def _reload_models(self) -> None:
+        """Repopulate the model list for the selected family."""
+        family = self.family_box.currentData()
+        self._loading_models = True
+        try:
+            self.model_box.clear()
+            for asset in assets_in_family(family):
+                self.model_box.addItem(
+                    f"{asset.hole_count} holes, {asset.length_mm:.0f} mm", asset.id
+                )
+        finally:
+            self._loading_models = False
+        self._on_model()
+
+    def _on_family(self) -> None:
+        self._reload_models()
+
+    def _on_model(self) -> None:
+        if getattr(self, "_loading_models", False):
+            return
+        asset_id = self.model_box.currentData()
+        if asset_id:
+            self.session.set_plate_asset(asset_id)
+        self.refresh_library()
+
+    def _emit_overlays(self) -> None:
+        self.overlays_changed.emit(
+            self.show_plate.isChecked(),
+            self.show_holes.isChecked(),
+            self.show_screws.isChecked(),
+        )
+
+    def refresh_library(self) -> None:
+        """Mirror the selected asset's identity, status and fit into the panel."""
+        asset = self.session.plate_asset
+        if asset is None:
+            self.status_badge.setText("No plate selected")
+            set_role(self.status_badge, "hint")
+            self.properties.setText("Choose a plate model to see its properties.")
+            self.fit_status.setText("")
+            return
+
+        self.status_badge.setText(asset.status_label)
+        set_role(
+            self.status_badge, "badge-exact" if asset.exact else "badge-generic"
+        )
+        self.properties.setText("\n".join(asset.summary_lines()))
+
+        fitted = self.session.fitted_plate
+        warnings = self.session.plate_fit_warnings
+        if fitted is None:
+            self.fit_status.setText("Draw a plate path to fit this plate to it.")
+            set_role(self.fit_status, "hint")
+            return
+        text = (
+            f"Fitted rigidly to {fitted.holes_used} of {asset.hole_count} holes. "
+            f"Residual: max {fitted.max_residual_mm:.2f} mm, "
+            f"rms {fitted.rms_residual_mm:.2f} mm."
+        )
+        if warnings:
+            text += "\n" + "\n".join(warnings)
+        self.fit_status.setText(text)
+        set_role(self.fit_status, "warning" if warnings else "hint")
 
     def _on_system(self, system_id: str) -> None:
         self.session.set_plate_system(system_id)
@@ -658,6 +782,7 @@ class PlatePanel(QWidget):
         self.steps_table.resizeRowsToContents()
 
     def refresh(self) -> None:
+        self.refresh_library()
         plan = self.session.plate_plan
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)

@@ -24,7 +24,10 @@ from ..geometry.mirror import (
     estimate_profile,
     mirror_coverage,
 )
+from ..geometry.mesh_io import MeshLoadError
 from ..geometry.plate import PlatePlan, compute_plate_plan
+from ..geometry.plate_fit import FittedPlate, plate_targets, rigid_fit
+from ..plate_assets import PlateAsset, asset_by_id, load_asset_mesh, load_assets
 from ..geometry.resection import (
     CutPlane,
     PlanePlacement,
@@ -141,6 +144,15 @@ class Session(QObject):
         self.bending_kit = load_kits()[0]
         self.fit: FitReport | None = None
         self.steps: list[BendStep] = []
+        #: The selected plate asset and its placement on the planned path.
+        #: When an asset is selected the viewport and every export show its
+        #: real mesh; there is no proxy geometry left in either path.
+        self.plate_asset: PlateAsset | None = None
+        self.fitted_plate: FittedPlate | None = None
+        self.plate_clearance_mm: float = 0.5
+        self.plate_fit_warnings: list[str] = []
+        if load_assets():
+            self.plate_asset = load_assets()[0]
 
         self._undo: list[_Snapshot] = []
 
@@ -163,6 +175,7 @@ class Session(QObject):
         self.plate_points.clear()
         self.plate_normals.clear()
         self.plate_plan = None
+        self.fitted_plate = None
         self.cut_applied = False
         self.report = None
         self.symmetry_plane = None
@@ -462,6 +475,7 @@ class Session(QObject):
         self.update_reconstruction()
         # Moving a cut changes how many screw holes land on retained bone, so
         # the plate verdict has to be recomputed and re-shown with it.
+        self.update_plate_fit()
         self._update_fit()
         self.plate_changed.emit()
 
@@ -621,6 +635,67 @@ class Session(QObject):
             setattr(self.plate, key, value)
         self.update_plate_plan()
 
+    def set_plate_asset(self, asset_id: str | None) -> None:
+        """Choose which plate model is being planned, by catalogue id."""
+        self.plate_asset = None if asset_id is None else asset_by_id(asset_id)
+        if self.plate_asset is not None:
+            # The path is resampled at the asset's own screw-hole pitch, so
+            # the holes that get fitted are the holes the plate really has.
+            self.plate.pitch_mm = self.plate_asset.hole_pitch_mm
+            self.plate.width_mm = self.plate_asset.width_mm
+            self.plate.thickness_mm = self.plate_asset.thickness_mm
+        self.update_plate_plan()
+
+    def set_plate_clearance(self, clearance_mm: float) -> None:
+        """How far the plate's inner face stands off the bone, in mm."""
+        self.plate_clearance_mm = max(float(clearance_mm), 0.0)
+        self.update_plate_fit()
+
+    def update_plate_fit(self) -> None:
+        """Place the selected asset on the planned path as a rigid body.
+
+        Rigid means rigid: the mesh is rotated and translated and nothing
+        else, so thickness, hole diameter and hole-to-hole spacing come
+        through untouched. What the rigid placement cannot reach is reported
+        as residual rather than scaled away.
+        """
+        self.fitted_plate = None
+        self.plate_fit_warnings = []
+        asset = self.plate_asset
+        plan = self.plate_plan
+        if asset is None or plan is None or len(plan.nodes) < 2:
+            return
+        try:
+            mesh = load_asset_mesh(asset)
+        except MeshLoadError as error:
+            self.plate_fit_warnings = [str(error)]
+            self.message.emit(f"Plate asset could not be loaded: {error}")
+            return
+
+        targets = plate_targets(
+            plan.nodes,
+            plan.normals,
+            plan.binormals,
+            self.plate_clearance_mm,
+            asset.thickness_mm,
+        )
+        self.fitted_plate = rigid_fit(
+            mesh.points,
+            mesh.triangles,
+            asset.hole_centres_mm,
+            asset.hole_axes,
+            targets,
+            plan.normals,
+            plan.binormals,
+        )
+        self.plate_fit_warnings = list(self.fitted_plate.warnings)
+        if self.fitted_plate.max_residual_mm > 2.0:
+            self.plate_fit_warnings.append(
+                f"Rigid placement leaves the plate up to "
+                f"{self.fitted_plate.max_residual_mm:.1f} mm off the planned "
+                "path. This plate has to be bent to follow it."
+            )
+
     def update_plate_plan(self) -> None:
         self.plate_plan = None
         if len(self.plate_points) >= 2:
@@ -634,6 +709,7 @@ class Session(QObject):
                     f"Plate path is {total:.1f} mm, shorter than one "
                     f"{self.plate.pitch_mm:.1f} mm screw-hole pitch."
                 )
+        self.update_plate_fit()
         self._update_fit()
         self.plate_changed.emit()
 

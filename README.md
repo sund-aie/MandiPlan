@@ -113,6 +113,43 @@ it writes. The phantom is a synthetic mandible-like arc whose geometry is known
 in closed form — 78.19 mm of arc, a 12 × 18 mm elliptical cross-section — so you
 can check what the application reports against what it should report.
 
+## The plate library
+
+Choosing a plate changes the geometry, not just a number. Every entry in
+`mandiplan/data/plates/` is a real watertight solid with drilled screw holes,
+loaded and placed as itself; there is no proxy rectangle left anywhere in the
+viewport or in any export.
+
+**Everything shipped here is generic.** These are parametric approximations
+built by `tools/make_plate_assets.py` from published dimensional classes — not
+any manufacturer's implant, and not usable as a device selection. The
+interface labels each one "Generic parametric approximation", and every export
+made with one carries that label, its provenance and its licence in the file.
+
+To add a licensed exact asset, drop the mesh and a catalogue entry into
+`mandiplan/data/plates/`. STL, PLY and OBJ are read, in ascii or binary, with
+an explicit `units` or `unit_scale` field. An entry may only set
+`"exact": true` if it also carries provenance and a licence — `plate_assets`
+refuses the claim otherwise, so a copied entry cannot quietly promote itself.
+A mesh whose size does not match the length its metadata claims is refused
+outright, which is the guard against a metre-authored file loading a thousand
+times too small.
+
+That the holes are real is checked, not asserted. A watertight solid's genus
+counts its handles and a through-hole is a handle, so the test suite requires
+`genus == hole_count` for every asset. A swept ribbon has genus 0.
+
+Placement is currently rigid: rotation and translation only, fitted by a
+Procrustes match of the plate's own hole frame onto the planned path. Nothing
+is scaled, sheared or stretched, so thickness, hole diameter and hole-to-hole
+spacing survive exactly — verified to 1e-9 mm. What the rigid placement cannot
+reach is reported as residual rather than scaled away, and a residual over
+2 mm raises a visible warning that the plate needs bending. Controlled bending
+is the next stage.
+
+    python3 tools/make_plate_assets.py     # regenerate the assets
+    python3 tools/screenshot.py --plate    # fit one and capture it
+
 ## Where a resection plane gets its orientation
 
 A cut is stored as a `PlanePlacement` — an arc position along the mandible

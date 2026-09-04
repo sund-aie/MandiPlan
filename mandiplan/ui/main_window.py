@@ -30,6 +30,7 @@ from ..constants import APP_NAME, DISCLAIMER
 from ..dicom_io import DicomLoadError
 from ..exporting import (
     write_bend_csv,
+    write_plate_stl,
     write_plan_summary_csv,
     write_steps_csv,
     write_surface_stl,
@@ -215,6 +216,7 @@ class MainWindow(QMainWindow):
         self.volume_panel.load_requested.connect(self.open_dicom_folder)
         for panel in (self.arch_panel, self.resection_panel, self.plate_panel):
             panel.mode_requested.connect(self.set_mode)
+        self.plate_panel.overlays_changed.connect(self.view3d.set_plate_overlays)
         self.plate_panel.export_csv_requested.connect(self.export_bend_csv)
         self.plate_panel.export_stl_requested.connect(self.export_template_stl)
         self.plate_panel.export_steps_requested.connect(self.export_steps_csv)
@@ -229,6 +231,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         for text, slot in (
             ("Export plate bend table (CSV)…", self.export_bend_csv),
+            ("Export fitted plate (STL)…", self.export_plate_stl),
             ("Export bending template (STL)…", self.export_template_stl),
             ("Export bench steps (CSV)…", self.export_steps_csv),
             ("Export reconstruction target (STL)…", self.export_graft_stl),
@@ -739,7 +742,12 @@ class MainWindow(QMainWindow):
         )
         if path:
             write_bend_csv(
-                path, plan, self.session.plate.width_mm, self.session.plate.thickness_mm
+                path,
+                plan,
+                self.session.plate.width_mm,
+                self.session.plate.thickness_mm,
+                asset=self.session.plate_asset,
+                fitted=self.session.fitted_plate,
             )
             self.show_message(f"Bend table written to {path}")
 
@@ -756,6 +764,22 @@ class MainWindow(QMainWindow):
                 path, plan, self.session.plate.width_mm, self.session.plate.thickness_mm
             )
             self.show_message(f"Bending template written to {path}")
+
+    def export_plate_stl(self) -> None:
+        """Export the fitted plate: the real asset mesh, as displayed."""
+        fitted = self.session.fitted_plate
+        if fitted is None:
+            self.show_message(
+                "Select a plate and draw a plate path before exporting the plate."
+            )
+            return
+        asset = self.session.plate_asset
+        default = f"{asset.id}-fitted.stl" if asset else "plate_fitted.stl"
+        path = self._save_path("Export fitted plate", "STL files (*.stl)", default)
+        if path:
+            write_plate_stl(path, fitted)
+            status = asset.status_label.lower() if asset else "plate"
+            self.show_message(f"Fitted plate ({status}) written to {path}")
 
     def export_steps_csv(self) -> None:
         if not self.session.steps:

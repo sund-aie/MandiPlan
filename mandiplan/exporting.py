@@ -86,15 +86,61 @@ def _write_header(handle, lines: list[str]) -> None:
         handle.write(f"# {line}\n")
 
 
-def write_bend_csv(path: str | Path, plan: PlatePlan, width_mm: float, thickness_mm: float) -> Path:
+def asset_provenance_lines(asset=None, fitted=None) -> list[str]:
+    """Which plate this plan was made with, and what that plate actually is.
+
+    A plan that names a plate has to say whether that plate is a licensed
+    exact asset or a generic approximation, and how it was placed. Anything
+    less invites the file being read as a device selection.
+    """
+    if asset is None:
+        return ["plate asset: none selected"]
+    lines = [
+        f"plate asset id: {asset.id}",
+        f"plate asset: {asset.name}",
+        f"plate asset status: {asset.status_label}",
+        f"plate asset exact geometry: {str(asset.exact).lower()}",
+        f"plate asset source: {asset.provenance}",
+        f"plate asset licence: {asset.licence}",
+        f"plate thickness: {asset.thickness_mm:.2f} mm",
+        f"plate holes: {asset.hole_count} at {asset.hole_pitch_mm:.2f} mm pitch",
+    ]
+    if fitted is not None:
+        lines.append(
+            "plate placement: rigid (rotation and translation only; no scaling)"
+        )
+        lines.append(
+            f"plate placement residual: max {fitted.max_residual_mm:.2f} mm, "
+            f"rms {fitted.rms_residual_mm:.2f} mm"
+        )
+        for warning in fitted.warnings:
+            lines.append(f"plate fit warning: {warning}")
+    if not asset.exact:
+        lines.append(
+            "NOTE: this plate is a generic parametric approximation. It is not "
+            "manufacturer-specific and must not be read as a device selection."
+        )
+    return lines
+
+
+def write_bend_csv(
+    path: str | Path,
+    plan: PlatePlan,
+    width_mm: float,
+    thickness_mm: float,
+    asset=None,
+    fitted=None,
+) -> Path:
     """Write the plate bend table, units in the column names."""
     path = Path(path)
     lines = [
         "MandiPlan reconstruction-plate bend instructions",
         f"screw-hole pitch: {plan.pitch_mm:.2f} mm",
-        f"plate ribbon: {width_mm:.2f} mm wide x {thickness_mm:.2f} mm thick",
+        f"bending template ribbon: {width_mm:.2f} mm wide x {thickness_mm:.2f} mm thick",
         f"nodes: {len(plan.nodes)}",
         f"total plate length along the path: {plan.total_length_mm:.2f} mm",
+        "",
+        *asset_provenance_lines(asset, fitted),
         "",
         *_SIGN_CONVENTIONS,
     ]
@@ -162,10 +208,30 @@ def write_plan_summary_csv(path: str | Path, rows: list[tuple[str, str]], title:
     return path
 
 
+def write_plate_stl(path: str | Path, fitted) -> Path:
+    """Write the fitted plate — the real asset mesh under its placement.
+
+    This is the same geometry the viewport draws. There is no separate proxy
+    to fall out of step with it.
+    """
+    path = Path(path)
+    writer = vtk.vtkSTLWriter()
+    writer.SetFileName(str(path))
+    writer.SetFileTypeToBinary()
+    writer.SetInputData(triangles_to_polydata(fitted.points, fitted.triangles))
+    writer.Write()
+    return stamp_stl(path)
+
+
 def write_template_stl(
     path: str | Path, plan: PlatePlan, width_mm: float, thickness_mm: float
 ) -> Path:
-    """Write the bending template as a binary STL."""
+    """Write a plain swept bending template as a binary STL.
+
+    This is a bending aid, not the implant: a rectangular ribbon along the
+    planned path, for marking a blank. It is never what the plate looks like —
+    use :func:`write_plate_stl` for the plate itself.
+    """
     path = Path(path)
     points, triangles = ribbon_mesh(plan, width_mm, thickness_mm)
     writer = vtk.vtkSTLWriter()

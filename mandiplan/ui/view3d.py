@@ -32,7 +32,6 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import (  # noqa: E402
     QVTKRenderWindowInteractor,
 )
 
-from ..geometry.plate import ribbon_mesh  # noqa: E402
 from ..geometry.resection import resected_mask  # noqa: E402
 from .convert_helpers import empty_polydata, points_to_polydata  # noqa: E402
 from .modes import Mode  # noqa: E402
@@ -188,6 +187,17 @@ class View3D(QWidget):
         self.plate_actor.GetProperty().SetSpecularPower(28)
         self.renderer.AddActor(self.plate_actor)
 
+        self.show_hole_centres = True
+        self.show_screw_trajectories = False
+
+        self.screw_mapper = vtk.vtkPolyDataMapper()
+        self.screw_actor = vtk.vtkActor()
+        self.screw_actor.SetMapper(self.screw_mapper)
+        self.screw_actor.GetProperty().SetColor(*MARK_COLOUR)
+        self.screw_actor.GetProperty().SetLineWidth(2)
+        self.screw_actor.VisibilityOff()
+        self.renderer.AddActor(self.screw_actor)
+
         self.node_glyph = vtk.vtkGlyph3D()
         sphere = vtk.vtkSphereSource()
         sphere.SetRadius(1.1)
@@ -322,19 +332,58 @@ class View3D(QWidget):
         self.render()
 
     def refresh_plate(self) -> None:
-        plan = self.session.plate_plan
-        if plan is None:
-            self.plate_mapper.SetInputData(empty_polydata())
-            self.node_glyph.SetInputData(points_to_polydata(self.session.plate_points))
-        else:
-            from ..render.convert import triangles_to_polydata
+        """Draw the selected plate asset, fitted to the planned path.
 
-            points, triangles = ribbon_mesh(
-                plan, self.session.plate.width_mm, self.session.plate.thickness_mm
+        There is no proxy geometry here. If a plate is selected, what is drawn
+        is that plate's own mesh under its placement transform; if none is
+        selected the actor is emptied rather than filled with a stand-in.
+        """
+        from ..render.convert import polyline_to_polydata, triangles_to_polydata
+
+        session = self.session
+        fitted = session.fitted_plate
+        plan = session.plate_plan
+
+        if fitted is None:
+            self.plate_mapper.SetInputData(empty_polydata())
+        else:
+            self.plate_mapper.SetInputData(
+                triangles_to_polydata(fitted.points, fitted.triangles)
             )
-            self.plate_mapper.SetInputData(triangles_to_polydata(points, triangles))
-            self.node_glyph.SetInputData(points_to_polydata(plan.nodes))
+
+        # Hole markers are the plate's real hole centres after fitting, and
+        # they are an overlay: the hole geometry stays visible underneath.
+        if fitted is not None and self.show_hole_centres:
+            self.node_glyph.SetInputData(points_to_polydata(fitted.hole_centres))
+        elif plan is None:
+            self.node_glyph.SetInputData(points_to_polydata(session.plate_points))
+        else:
+            self.node_glyph.SetInputData(empty_polydata())
+
+        if fitted is not None and self.show_screw_trajectories:
+            segments = fitted.screw_trajectories()
+            merged = []
+            for start, end in segments:
+                merged.append(polyline_to_polydata(np.vstack([start, end])))
+            appended = vtk.vtkAppendPolyData()
+            for piece in merged:
+                appended.AddInputData(piece)
+            appended.Update()
+            self.screw_mapper.SetInputData(appended.GetOutput())
+            self.screw_actor.VisibilityOn()
+        else:
+            self.screw_mapper.SetInputData(empty_polydata())
+            self.screw_actor.VisibilityOff()
         self.render()
+
+    def set_plate_overlays(
+        self, plate: bool, holes: bool, screws: bool
+    ) -> None:
+        """Independent display toggles for the plate and its overlays."""
+        self.show_hole_centres = holes
+        self.show_screw_trajectories = screws
+        self.plate_actor.SetVisibility(bool(plate))
+        self.refresh_plate()
 
     def set_mode(self, mode: Mode) -> None:
         self.mode = mode

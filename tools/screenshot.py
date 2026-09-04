@@ -133,6 +133,53 @@ def sweep_cut(window, out_dir: Path, yaw_deg: float = 20.0) -> list[Path]:
     return written
 
 
+def fit_plate(window, out_dir: Path, asset_id: str | None = None) -> list[Path]:
+    """Draw a plate path along the bone and capture the fitted plate."""
+    import numpy as np
+    from PyQt6.QtWidgets import QApplication
+
+    session = window.session
+    frames = session.frames
+    if frames is None or session.surface is None:
+        raise RuntimeError("load a volume and lay an arch curve first")
+
+    if asset_id:
+        session.set_plate_asset(asset_id)
+    # Walk the arch and drop path points on the bone beneath each station.
+    for s_mm in np.linspace(
+        frames.length_mm * 0.12, frames.length_mm * 0.88, 12
+    ):
+        point = frames.point_at(float(s_mm))
+        session.add_plate_point(point)
+    QApplication.processEvents()
+
+    asset = session.plate_asset
+    fitted = session.fitted_plate
+    if fitted is None:
+        raise RuntimeError("the plate did not fit; nothing to capture")
+    print(
+        f"  plate: {asset.name}\n"
+        f"  status: {asset.status_label}\n"
+        f"  holes: {asset.hole_count} at {asset.hole_pitch_mm:.1f} mm pitch, "
+        f"{asset.hole_diameter_mm:.1f} mm diameter\n"
+        f"  rigid placement residual: max {fitted.max_residual_mm:.2f} mm, "
+        f"rms {fitted.rms_residual_mm:.2f} mm"
+    )
+    window.view3d.set_plate_overlays(True, False, False)
+    window.view3d.set_view_direction("superior")
+    # Three-quarter view: from directly above the plate is edge-on, and the
+    # screw holes are the whole point of showing it.
+    camera = window.view3d.renderer.GetActiveCamera()
+    camera.Elevation(-38)
+    camera.Azimuth(18)
+    camera.OrthogonalizeViewUp()
+    window.view3d.reset_camera()
+    QApplication.processEvents()
+    return capture(
+        window, out_dir / "plate-fitted.png", out_dir / "plate-fitted-viewport.png"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", default="artifacts/screenshots", type=Path)
@@ -152,9 +199,22 @@ def main(argv: list[str] | None = None) -> int:
             "the jaw, to show it re-angling with the local anatomy"
         ),
     )
+    parser.add_argument(
+        "--plate",
+        action="store_true",
+        help="draw a plate path and capture the fitted plate asset",
+    )
+    parser.add_argument("--asset", default=None, help="plate asset id to fit")
     args = parser.parse_args(argv)
 
-    _, window = build_window(args.width, args.height, args.phantom or args.cut_sweep)
+    _, window = build_window(
+        args.width, args.height, args.phantom or args.cut_sweep or args.plate
+    )
+    if args.plate:
+        for path in fit_plate(window, Path(args.out), args.asset):
+            print(path)
+        window.close()
+        return 0
     if args.cut_sweep:
         for path in sweep_cut(window, Path(args.out)):
             print(path)
