@@ -72,3 +72,39 @@ def test_the_status_bar_carries_no_disclaimer_banner():
     """
     source = (PACKAGE / "ui" / "main_window.py").read_text(encoding="utf-8")
     assert "self.banner" not in source
+
+
+# -- no generative model anywhere in the geometry path -------------------
+
+#: Plate geometry, plate selection, bending, screw placement and osteotomy
+#: geometry are deterministic computational geometry. A language model cannot
+#: guarantee a hole diameter, preserve hole spacing, or bound a deformation,
+#: and putting one in that path would add latency and false confidence without
+#: solving anything. This test keeps that decision enforced rather than
+#: remembered.
+_GENERATIVE_MODULES = (
+    "anthropic",
+    "openai",
+    "llama_cpp",
+    "transformers",
+    "torch",
+    "tensorflow",
+    "onnxruntime",
+    "sentence_transformers",
+    "langchain",
+    "ollama",
+    "google.generativeai",
+)
+
+
+def test_no_language_model_is_used_to_make_geometry():
+    offenders = []
+    for path in PACKAGE.rglob("*.py"):
+        for name in _imported_modules(path):
+            root = name.split(".")[0]
+            if any(root == m.split(".")[0] for m in _GENERATIVE_MODULES):
+                offenders.append((path.name, name))
+    assert not offenders, (
+        f"generative model imports in the geometry path: {offenders}. Plate "
+        "fitting is a computational-geometry problem and stays deterministic."
+    )

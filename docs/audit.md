@@ -91,3 +91,22 @@ glyphs. The plate actor itself is currently pale blue,
    frame while the operator's angular offsets survive the move.
 3. Replace `ribbon_mesh` at both call sites with a real asset mesh. Removing it
    from `view3d` alone would leave the export writing a rectangle.
+
+
+## Deliberately not used: a language model
+
+Plate geometry, plate selection, bending, screw placement and osteotomy
+geometry are all deterministic computational geometry, and they stay that way.
+A language model cannot guarantee a hole diameter, preserve hole spacing,
+bound a deformation, or give a reliable safety boundary; putting one in that
+path would add latency and false confidence without solving the problem.
+
+`tests/test_no_network.py::test_no_language_model_is_used_to_make_geometry`
+enforces this by AST-parsing every module under `mandiplan/` and failing on an
+import of any generative-model library. The decision is kept rather than
+remembered.
+
+The methods actually used: mesh asset loading, landmark and path fitting,
+rigid transforms (Procrustes), parallel-transport frames, constrained bending
+with protected rigid zones, collision and clearance analysis, and export
+provenance metadata.
