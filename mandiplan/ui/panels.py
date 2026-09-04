@@ -519,6 +519,13 @@ class PlatePanel(QWidget):
         self.clearance.setToolTip(
             "How far the plate's inner face stands off the bone surface"
         )
+        self.bend_plate = QCheckBox("Bend the plate to the path")
+        self.bend_plate.setChecked(True)
+        self.bend_plate.setToolTip(
+            "Sweep the inter-hole bridges onto the path. Screw-hole "
+            "neighbourhoods stay rigid, so hole diameter and plate thickness "
+            "are unchanged."
+        )
         self.show_plate = QCheckBox("Plate mesh")
         self.show_plate.setChecked(True)
         self.show_holes = QCheckBox("Hole centres")
@@ -604,6 +611,7 @@ class PlatePanel(QWidget):
         library.addRow("Model", self.model_box)
         library.addRow("", self.status_badge)
         library.addRow("Standoff", self.clearance)
+        library.addRow("Bending", self.bend_plate)
         toggles = QHBoxLayout()
         toggles.addWidget(self.show_plate)
         toggles.addWidget(self.show_holes)
@@ -655,6 +663,7 @@ class PlatePanel(QWidget):
         self.family_box.currentIndexChanged.connect(self._on_family)
         self.model_box.currentIndexChanged.connect(self._on_model)
         self.clearance.valueChanged.connect(session.set_plate_clearance)
+        self.bend_plate.toggled.connect(session.set_plate_bending)
         for box in (self.show_plate, self.show_holes, self.show_screws):
             box.toggled.connect(self._emit_overlays)
         self.system_box.currentIndexChanged.connect(
@@ -735,15 +744,36 @@ class PlatePanel(QWidget):
             self.fit_status.setText("Draw a plate path to fit this plate to it.")
             set_role(self.fit_status, "hint")
             return
-        text = (
-            f"Fitted rigidly to {fitted.holes_used} of {asset.hole_count} holes. "
-            f"Residual: max {fitted.max_residual_mm:.2f} mm, "
-            f"rms {fitted.rms_residual_mm:.2f} mm."
-        )
-        if warnings:
-            text += "\n" + "\n".join(warnings)
+        bent = self.session.bent_plate
+        problems = self.session.plate_fit_problems
+        if bent is None:
+            text = (
+                f"Placed rigidly on {fitted.holes_used} of {asset.hole_count} "
+                f"holes. Residual: max {fitted.max_residual_mm:.2f} mm, "
+                f"rms {fitted.rms_residual_mm:.2f} mm."
+            )
+        else:
+            finite = [a for a in bent.bend_angles_deg if a == a]
+            worst = max(finite) if finite else 0.0
+            text = (
+                f"Bent onto the path. Screw holes held rigid; bridges swept. "
+                f"Largest bend at a hole {worst:.1f}°."
+            )
+        contact = self.session.plate_contact
+        if contact is not None and len(contact.clearance_mm):
+            text += (
+                f"\nBone clearance {contact.clearance_mm.min():.2f} to "
+                f"{contact.clearance_mm.max():.2f} mm."
+            )
+        for line in problems:
+            text += f"\nProblem: {line}"
+        for line in warnings:
+            text += f"\n{line}"
         self.fit_status.setText(text)
-        set_role(self.fit_status, "warning" if warnings else "hint")
+        set_role(
+            self.fit_status,
+            "danger" if problems else ("warning" if warnings else "hint"),
+        )
 
     def _on_system(self, system_id: str) -> None:
         self.session.set_plate_system(system_id)

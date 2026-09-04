@@ -139,13 +139,38 @@ That the holes are real is checked, not asserted. A watertight solid's genus
 counts its handles and a through-hole is a handle, so the test suite requires
 `genus == hole_count` for every asset. A swept ribbon has genus 0.
 
-Placement is currently rigid: rotation and translation only, fitted by a
-Procrustes match of the plate's own hole frame onto the planned path. Nothing
-is scaled, sheared or stretched, so thickness, hole diameter and hole-to-hole
-spacing survive exactly — verified to 1e-9 mm. What the rigid placement cannot
-reach is reported as residual rather than scaled away, and a residual over
-2 mm raises a visible warning that the plate needs bending. Controlled bending
-is the next stage.
+Fitting happens in two stages.
+
+**Rigid placement** puts the plate where it belongs: rotation and translation
+only, by a Procrustes match of the plate's own hole frame onto the planned
+path. Nothing is scaled, sheared or stretched, so thickness, hole diameter and
+hole-to-hole spacing survive exactly — verified to 1e-9 mm. What rigid
+placement cannot reach is reported as residual rather than scaled away.
+
+**Controlled bending** then follows the path. The plate is divided along its
+own length: the neighbourhood of every screw hole is a protected zone that
+moves by a single rigid transform, and only the bridges between holes are
+re-swept onto the path. A hole bent out of round is a hole no screw passes
+through, so this is checked and not assumed — at bend radii from 400 mm down
+to 60 mm the hole walls move by under a nanometre, and thickness and
+watertightness are unchanged with genus still equal to the hole count. Frames
+along the path are parallel-transported, so the plate's faces do not twist as
+the path turns. Turn off bending in the inspector to see the rigid placement
+alone.
+
+**Validation** runs on the result and refuses what cannot be made:
+
+| check | outcome |
+| --- | --- |
+| turn at a screw hole above the plate's per-node limit | problem |
+| bend radius below the plate's minimum | problem |
+| plate folding onto itself — non-neighbouring holes overlapping | problem |
+| plate inside bone at a screw position | problem |
+| standoff over 2 mm | warning |
+| screw hole more than 35° off the bone surface | warning |
+
+Every one of these, and the placement residual, is written into the exported
+CSV alongside the plate's identity and provenance.
 
     python3 tools/make_plate_assets.py     # regenerate the assets
     python3 tools/screenshot.py --plate    # fit one and capture it

@@ -26,7 +26,18 @@ from ..geometry.mirror import (
 )
 from ..geometry.mesh_io import MeshLoadError
 from ..geometry.plate import PlatePlan, compute_plate_plan
-from ..geometry.plate_fit import FittedPlate, plate_targets, rigid_fit
+from ..geometry.plate_bend import (
+    BentPlate,
+    ClearanceReport,
+    bend_to_path,
+    clearance_report,
+)
+from ..geometry.plate_fit import (
+    FittedPlate,
+    extend_targets,
+    plate_targets,
+    rigid_fit,
+)
 from ..plate_assets import PlateAsset, asset_by_id, load_asset_mesh, load_assets
 from ..geometry.resection import (
     CutPlane,
@@ -149,8 +160,12 @@ class Session(QObject):
         #: real mesh; there is no proxy geometry left in either path.
         self.plate_asset: PlateAsset | None = None
         self.fitted_plate: FittedPlate | None = None
+        self.bent_plate: BentPlate | None = None
+        self.plate_contact: ClearanceReport | None = None
         self.plate_clearance_mm: float = 0.5
+        self.plate_bending_enabled: bool = True
         self.plate_fit_warnings: list[str] = []
+        self.plate_fit_problems: list[str] = []
         if load_assets():
             self.plate_asset = load_assets()[0]
 
@@ -176,6 +191,8 @@ class Session(QObject):
         self.plate_normals.clear()
         self.plate_plan = None
         self.fitted_plate = None
+        self.bent_plate = None
+        self.plate_contact = None
         self.cut_applied = False
         self.report = None
         self.symmetry_plane = None
@@ -660,7 +677,10 @@ class Session(QObject):
         as residual rather than scaled away.
         """
         self.fitted_plate = None
+        self.bent_plate = None
+        self.plate_contact = None
         self.plate_fit_warnings = []
+        self.plate_fit_problems = []
         asset = self.plate_asset
         plan = self.plate_plan
         if asset is None or plan is None or len(plan.nodes) < 2:
@@ -689,12 +709,74 @@ class Session(QObject):
             plan.binormals,
         )
         self.plate_fit_warnings = list(self.fitted_plate.warnings)
-        if self.fitted_plate.max_residual_mm > 2.0:
+        if self.fitted_plate.max_residual_mm > 2.0 and not self.plate_bending_enabled:
             self.plate_fit_warnings.append(
                 f"Rigid placement leaves the plate up to "
                 f"{self.fitted_plate.max_residual_mm:.1f} mm off the planned "
                 "path. This plate has to be bent to follow it."
             )
+        if self.plate_bending_enabled:
+            self._bend_plate(asset, plan, targets)
+        self._check_contact(asset, plan)
+
+    def set_plate_bending(self, enabled: bool) -> None:
+        """Bend the plate onto the path, or leave it rigidly placed."""
+        self.plate_bending_enabled = bool(enabled)
+        self.update_plate_fit()
+        self.plate_changed.emit()
+
+    def _bend_plate(self, asset, plan, targets) -> None:
+        """Bend the placed plate onto the path, holding the holes rigid."""
+        fitted = self.fitted_plate
+        if fitted is None or asset.hole_count < 2:
+            return
+        try:
+            paired, normals, _ = extend_targets(
+                asset.hole_count, targets, plan.normals, plan.binormals
+            )
+            self.bent_plate = bend_to_path(
+                fitted.points,
+                fitted.triangles,
+                fitted.hole_centres,
+                fitted.hole_axes,
+                paired,
+                normals,
+                protected_radius_mm=asset.deformation.protected_radius_mm,
+                min_bend_radius_mm=asset.deformation.min_bend_radius_mm,
+                max_bend_deg_per_node=asset.deformation.max_bend_deg_per_node,
+            )
+        except ValueError as error:
+            self.plate_fit_warnings.append(f"The plate could not be bent: {error}")
+            return
+        self.plate_fit_warnings.extend(self.bent_plate.warnings)
+        self.plate_fit_problems.extend(self.bent_plate.problems)
+
+    def _check_contact(self, asset, plan) -> None:
+        """Measure the fitted plate against the bone it has to sit on."""
+        placed = self.bent_plate or self.fitted_plate
+        if placed is None:
+            return
+        holes = len(placed.hole_centres)
+        nodes, normals = plan.nodes, plan.normals
+        if len(nodes) < 1 or holes < 1:
+            return
+        self.plate_contact = clearance_report(
+            placed.hole_centres,
+            placed.hole_axes,
+            nodes,
+            normals,
+            asset.thickness_mm,
+            target_clearance_mm=self.plate_clearance_mm,
+        )
+        self.plate_fit_warnings.extend(self.plate_contact.warnings)
+        self.plate_fit_problems.extend(self.plate_contact.problems)
+
+    def plate_mesh(self):
+        """The plate as it will be displayed and exported: bent if bent."""
+        placed = self.bent_plate or self.fitted_plate
+        if placed is None:
+            return None
+        return placed
 
     def update_plate_plan(self) -> None:
         self.plate_plan = None

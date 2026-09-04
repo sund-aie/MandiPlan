@@ -217,3 +217,47 @@ def hole_spacings_mm(hole_centres: np.ndarray) -> np.ndarray:
     """Centre-to-centre distance between consecutive holes."""
     centres = np.asarray(hole_centres, dtype=float).reshape(-1, 3)
     return np.linalg.norm(np.diff(centres, axis=0), axis=1)
+
+
+def extend_targets(
+    hole_count: int,
+    targets: np.ndarray,
+    normals: np.ndarray,
+    binormals: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """One target station per screw hole, centred on the available path.
+
+    Bending pairs every hole with a station. When the plate has more holes
+    than the path has stations, the path is continued straight beyond its ends
+    at the same spacing rather than being stretched to fit — a plate that
+    overhangs the planned path stays straight where it overhangs, which is
+    what it does on the bench.
+    """
+    targets = np.asarray(targets, dtype=float).reshape(-1, 3)
+    normals = np.asarray(normals, dtype=float).reshape(-1, 3)
+    binormals = np.asarray(binormals, dtype=float).reshape(-1, 3)
+    stations = len(targets)
+    if stations < 2:
+        raise ValueError("need at least two path stations")
+    if hole_count <= stations:
+        keep = _centred_slice(stations, hole_count)
+        return targets[keep], normals[keep], binormals[keep]
+
+    before = (hole_count - stations) // 2
+    after = hole_count - stations - before
+    lead = targets[1] - targets[0]
+    tail = targets[-1] - targets[-2]
+
+    head_points = [targets[0] - lead * (i + 1) for i in range(before)][::-1]
+    tail_points = [targets[-1] + tail * (i + 1) for i in range(after)]
+    out_points = np.vstack([*head_points, targets, *tail_points]) if (
+        head_points or tail_points
+    ) else targets
+
+    def pad(field):
+        return np.vstack(
+            [np.repeat(field[:1], before, axis=0), field,
+             np.repeat(field[-1:], after, axis=0)]
+        )
+
+    return out_points, pad(normals), pad(binormals)

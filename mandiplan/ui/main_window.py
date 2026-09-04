@@ -748,6 +748,8 @@ class MainWindow(QMainWindow):
                 self.session.plate.thickness_mm,
                 asset=self.session.plate_asset,
                 fitted=self.session.fitted_plate,
+                bent=self.session.bent_plate,
+                contact=self.session.plate_contact,
             )
             self.show_message(f"Bend table written to {path}")
 
@@ -767,7 +769,7 @@ class MainWindow(QMainWindow):
 
     def export_plate_stl(self) -> None:
         """Export the fitted plate: the real asset mesh, as displayed."""
-        fitted = self.session.fitted_plate
+        fitted = self.session.plate_mesh()
         if fitted is None:
             self.show_message(
                 "Select a plate and draw a plate path before exporting the plate."

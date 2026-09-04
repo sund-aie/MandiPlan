@@ -341,7 +341,7 @@ class View3D(QWidget):
         from ..render.convert import polyline_to_polydata, triangles_to_polydata
 
         session = self.session
-        fitted = session.fitted_plate
+        fitted = session.plate_mesh()
         plan = session.plate_plan
 
         if fitted is None:

@@ -86,7 +86,7 @@ def _write_header(handle, lines: list[str]) -> None:
         handle.write(f"# {line}\n")
 
 
-def asset_provenance_lines(asset=None, fitted=None) -> list[str]:
+def asset_provenance_lines(asset=None, fitted=None, bent=None, contact=None) -> list[str]:
     """Which plate this plan was made with, and what that plate actually is.
 
     A plan that names a plate has to say whether that plate is a licensed
@@ -115,6 +115,30 @@ def asset_provenance_lines(asset=None, fitted=None) -> list[str]:
         )
         for warning in fitted.warnings:
             lines.append(f"plate fit warning: {warning}")
+    if bent is not None:
+        lines.append(
+            "plate deformation: controlled bending; screw-hole neighbourhoods "
+            "held rigid, inter-hole bridges swept onto the path"
+        )
+        finite = [a for a in bent.bend_angles_deg if a == a]
+        if finite:
+            lines.append(f"plate maximum bend at a hole: {max(finite):.1f} deg")
+        for problem in bent.problems:
+            lines.append(f"plate deformation problem: {problem}")
+    else:
+        lines.append("plate deformation: none (rigid placement only)")
+    if contact is not None:
+        lines.append(
+            f"plate-to-bone clearance: min {contact.clearance_mm.min():.2f} mm, "
+            f"max {contact.clearance_mm.max():.2f} mm"
+        )
+        lines.append(
+            f"screw holes colliding with bone: {int(contact.collisions.sum())}; "
+            f"over-gapped: {int(contact.excessive_gaps.sum())}; "
+            f"poorly angled: {int(contact.poor_screw_angles.sum())}"
+        )
+        for problem in contact.problems:
+            lines.append(f"plate contact problem: {problem}")
     if not asset.exact:
         lines.append(
             "NOTE: this plate is a generic parametric approximation. It is not "
@@ -130,6 +154,8 @@ def write_bend_csv(
     thickness_mm: float,
     asset=None,
     fitted=None,
+    bent=None,
+    contact=None,
 ) -> Path:
     """Write the plate bend table, units in the column names."""
     path = Path(path)
@@ -140,7 +166,7 @@ def write_bend_csv(
         f"nodes: {len(plan.nodes)}",
         f"total plate length along the path: {plan.total_length_mm:.2f} mm",
         "",
-        *asset_provenance_lines(asset, fitted),
+        *asset_provenance_lines(asset, fitted, bent, contact),
         "",
         *_SIGN_CONVENTIONS,
     ]

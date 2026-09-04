@@ -145,25 +145,55 @@ def fit_plate(window, out_dir: Path, asset_id: str | None = None) -> list[Path]:
 
     if asset_id:
         session.set_plate_asset(asset_id)
-    # Walk the arch and drop path points on the bone beneath each station.
+    # Walk the arch and drop path points on the buccal cortex, the way a
+    # surgeon clicks them. Points taken from the arch centreline itself are
+    # inside the bone, and projecting those onto the surface snaps to whichever
+    # wall happens to be nearest, giving a path that zigzags through the tube.
     for s_mm in np.linspace(
         frames.length_mm * 0.12, frames.length_mm * 0.88, 12
     ):
-        point = frames.point_at(float(s_mm))
-        session.add_plate_point(point)
+        s_mm = float(s_mm)
+        _, _, buccolingual = frames.frame_at(s_mm)
+        session.add_plate_point(frames.point_at(s_mm) + buccolingual * 12.0)
     QApplication.processEvents()
 
+    if asset_id is None:
+        # Pick the shortest plate that actually covers the path, rather than
+        # leaving a long bar overhanging both ends.
+        from mandiplan.plate_assets import best_asset_for
+
+        needed = session.plate_plan.total_length_mm
+        chosen = best_asset_for(needed)
+        if chosen is not None:
+            session.set_plate_asset(chosen.id)
+            print(f"  path {needed:.1f} mm -> auto-selected {chosen.id}")
+
     asset = session.plate_asset
-    fitted = session.fitted_plate
+    fitted = session.plate_mesh()
     if fitted is None:
         raise RuntimeError("the plate did not fit; nothing to capture")
+    bent = session.bent_plate
+    if bent is not None:
+        finite = [a for a in bent.bend_angles_deg if a == a]
+        print(
+            f"  bent onto the path; largest bend at a hole "
+            f"{max(finite) if finite else 0.0:.1f} deg"
+        )
+    contact = session.plate_contact
+    if contact is not None:
+        print(
+            f"  bone clearance {contact.clearance_mm.min():.2f} to "
+            f"{contact.clearance_mm.max():.2f} mm; "
+            f"collisions {int(contact.collisions.sum())}"
+        )
+    rigid = session.fitted_plate
     print(
         f"  plate: {asset.name}\n"
         f"  status: {asset.status_label}\n"
         f"  holes: {asset.hole_count} at {asset.hole_pitch_mm:.1f} mm pitch, "
         f"{asset.hole_diameter_mm:.1f} mm diameter\n"
-        f"  rigid placement residual: max {fitted.max_residual_mm:.2f} mm, "
-        f"rms {fitted.rms_residual_mm:.2f} mm"
+        f"  rigid placement residual: max {rigid.max_residual_mm:.2f} mm, "
+        f"rms {rigid.rms_residual_mm:.2f} mm"
     )
     window.view3d.set_plate_overlays(True, False, False)
     window.view3d.set_view_direction("superior")
