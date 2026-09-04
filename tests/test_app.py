@@ -180,11 +180,28 @@ def test_placing_a_cut_by_numbers_from_the_panel(window):
         np.sin(np.radians(15.0)), abs=1e-3
     )
 
-    # Moving the cut afterwards must leave that angulation untouched.
+    # Moving the cut afterwards carries the angulation with it, measured
+    # against the jaw: the world normal follows the curve, the obliquity
+    # relative to the local arch does not change.
+    def obliquity() -> float:
+        tangent_here, _, _ = session.frames.frame_at(session.plane_arc_position(1))
+        return float(
+            np.degrees(
+                np.arccos(
+                    abs(np.clip(np.dot(tangent_here, session.planes[1].normal), -1, 1))
+                )
+            )
+        )
+
+    # Measured with both yaw and tilt applied, so it is the full obliquity.
+    reference = obliquity()
     angled = session.planes[1].normal.copy()
     origin_before = session.planes[1].origin.copy()
     panel.position.setValue(target - 8.0)
-    assert np.allclose(session.planes[1].normal, angled)
+    assert obliquity() == pytest.approx(reference, abs=0.5)
+    assert session.placement(1).yaw_deg == pytest.approx(20.0)
+    assert session.placement(1).tilt_deg == pytest.approx(15.0)
+    assert not np.allclose(session.planes[1].normal, angled)
     assert not np.allclose(session.planes[1].origin, origin_before)
 
     panel.yaw.setValue(0.0)
@@ -463,11 +480,18 @@ def test_the_plane_widget_draws_no_handles(window):
     # The widget logic is intact: the plane still draws and still responds.
     assert rep.GetDrawPlane()
     assert widget.GetEnabled()
-    normal = session.planes[0].normal.copy()
+    before = session.placement(0)
     moved = np.asarray(rep.GetOrigin(), dtype=float) + np.array([2.0, 0.0, 0.0])
     window.view3d.plane_translated.emit(0, moved)
     assert np.allclose(session.planes[0].origin, moved)
-    assert np.allclose(session.planes[0].normal, normal)
+    # A drag is a translation: the angular offsets are carried, not cleared,
+    # and the normal is re-derived from the frame where the cut landed.
+    after = session.placement(0)
+    assert (after.yaw_deg, after.tilt_deg, after.roll_deg) == (
+        before.yaw_deg,
+        before.tilt_deg,
+        before.roll_deg,
+    )
 
 
 # -- camera interaction ------------------------------------------------------

@@ -242,6 +242,9 @@ class ResectionPanel(QWidget):
         self.tilt = QDoubleSpinBox()
         self.tilt.setRange(-89.0, 89.0)
         self.tilt.setSuffix("° tilt")
+        self.roll = QDoubleSpinBox()
+        self.roll.setRange(-180.0, 180.0)
+        self.roll.setSuffix("° roll")
         self.offsets = {}
         for key, label in (("x", " mm L/R"), ("y", " mm A/P"), ("z", " mm S/I")):
             spin = QDoubleSpinBox()
@@ -280,6 +283,7 @@ class ResectionPanel(QWidget):
         numbers.addRow("Position", self.position)
         numbers.addRow("Obliquity", self.yaw)
         numbers.addRow("Inclination", self.tilt)
+        numbers.addRow("Roll", self.roll)
         for key in ("x", "y", "z"):
             numbers.addRow("Offset" if key == "x" else "", self.offsets[key])
         numeric_box = QGroupBox("Place the cut by numbers")
@@ -287,9 +291,12 @@ class ResectionPanel(QWidget):
         layout.addWidget(numeric_box)
         layout.addWidget(
             _hint(
-                "Position runs along the arch curve. Yaw turns the cut about the "
-                "superior axis, tilt about the buccolingual direction; the offsets "
-                "shift it in patient axes. Dragging the handle updates these."
+                "Position runs along the arch curve; the cut re-angles itself to "
+                "the jaw as it moves. Yaw, tilt and roll are measured against the "
+                "local mandibular frame at the cut — the arch tangent, transported "
+                "superior, and buccolingual — so an obliquity you dial in here is "
+                "kept relative to the anatomy wherever you move the cut to. The "
+                "offsets shift it in patient axes. Dragging in 3-D updates these."
             )
         )
         layout.addWidget(self.landmark_button)
@@ -311,7 +318,7 @@ class ResectionPanel(QWidget):
         # moving a cut must never re-angle it.
         for spin in (self.position, *self.offsets.values()):
             spin.valueChanged.connect(self._apply_translation)
-        for spin in (self.yaw, self.tilt):
+        for spin in (self.yaw, self.tilt, self.roll):
             spin.valueChanged.connect(self._apply_rotation)
         session.resection_changed.connect(self.refresh)
         session.arch_changed.connect(self.refresh)
@@ -325,12 +332,16 @@ class ResectionPanel(QWidget):
         index = self._current_plane()
         if index >= len(session.planes) or session.frames is None:
             return
+        placement = session.placement(index)
         self._loading = True
         try:
             self.position.setRange(0.0, session.frames.length_mm)
-            self.position.setValue(session.plane_arc_position(index))
-            for key in ("x", "y", "z"):
-                self.offsets[key].setValue(0.0)
+            self.position.setValue(placement.s_mm)
+            self.yaw.setValue(placement.yaw_deg)
+            self.tilt.setValue(placement.tilt_deg)
+            self.roll.setValue(placement.roll_deg)
+            for key, value in zip(("x", "y", "z"), placement.offset_mm):
+                self.offsets[key].setValue(float(value))
         finally:
             self._loading = False
 
@@ -352,7 +363,9 @@ class ResectionPanel(QWidget):
         index = self._current_plane()
         if index >= len(self.session.planes):
             return
-        self.session.rotate_plane(index, self.yaw.value(), self.tilt.value())
+        self.session.rotate_plane(
+            index, self.yaw.value(), self.tilt.value(), self.roll.value()
+        )
 
     def _flip(self, index: int) -> None:
         if index < len(self.session.planes):
@@ -377,7 +390,13 @@ class ResectionPanel(QWidget):
     def refresh(self) -> None:
         session = self.session
         enabled = bool(session.planes) and session.frames is not None
-        for widget in (self.position, self.yaw, self.tilt, *self.offsets.values()):
+        for widget in (
+            self.position,
+            self.yaw,
+            self.tilt,
+            self.roll,
+            *self.offsets.values(),
+        ):
             widget.setEnabled(enabled)
         if self.plane_box.count() != len(session.planes):
             self._loading = True

@@ -8,6 +8,7 @@ positive half-spaces, i.e. the bone between them.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -35,6 +36,102 @@ class CutPlane:
         return (pts - self.origin) @ self.normal
 
 
+@dataclass
+class PlanePlacement:
+    """Where a cut sits on the jaw and how it is angled there.
+
+    This, not a world-space normal, is the authoritative state of a cutting
+    plane. Keeping the position and the angulation as separate numbers is what
+    lets a cut travel along the mandible while holding the obliquity the
+    surgeon dialled in: the base orientation is re-derived from the local
+    mandibular frame at the new position, and the offsets are re-applied to
+    that new frame.
+
+    ``s_mm``
+        Arc length along the arch curve. This is the only translation state.
+    ``yaw_deg``, ``tilt_deg``, ``roll_deg``
+        Angular offsets **relative to the local mandibular frame**, never to
+        global axes. See :func:`plane_from_placement` for the convention.
+    ``offset_mm``
+        A further translation of the origin in patient axes
+        (x = left, y = posterior, z = superior), for fine adjustment off the
+        curve itself.
+    ``flipped``
+        Which side the cut removes. A plane normal points into the fragment
+        being resected; with two cuts the second one faces back down the
+        curve, so it carries ``flipped=True``. Held here rather than as a sign
+        on the normal so it survives translation.
+    """
+
+    s_mm: float = 0.0
+    yaw_deg: float = 0.0
+    tilt_deg: float = 0.0
+    roll_deg: float = 0.0
+    offset_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    flipped: bool = False
+
+    def replace(self, **changes) -> "PlanePlacement":
+        """A copy with some fields changed."""
+        return dataclasses.replace(self, **changes)
+
+
+def plane_from_placement(frames, placement: PlanePlacement):
+    """Resolve a placement into a world-space ``(origin, normal)``.
+
+    Local mandibular frame
+    ----------------------
+    At arc position ``s_mm`` the arch curve gives a right-handed triad:
+
+    ``T``  the arch tangent, direction of travel toward increasing arc length
+    ``U``  patient superior, parallel-transported along the curve so it never
+           spins or flips as the curve climbs into the angle and ramus
+    ``B``  ``T x U``, the buccolingual direction
+
+    Convention for the cut
+    ----------------------
+    **The plane normal is T**: the default cut is perpendicular to the local
+    arch. That is the osteotomy a saw makes held square to the bone at that
+    point, and it is what makes the same plane look right in the anterior
+    body, at the angle and in the ramus without being re-dialled.
+
+    The offsets are then applied to that frame, in this order, each about an
+    axis of the frame as already rotated:
+
+    1. ``roll_deg`` about ``T`` — spins U and B about the direction of travel.
+       A plane is invariant under rotation about its own normal, so roll does
+       not move the cut by itself; it chooses the axes that yaw and tilt then
+       act about, which is how a surgeon reaches an oblique that is neither
+       purely axial nor purely vertical.
+    2. ``yaw_deg`` about the rolled ``U`` — swings the cut in the axial sense,
+       positive counter-clockwise seen from superior.
+    3. ``tilt_deg`` about the twice-rotated ``B`` — tips the cut superiorly or
+       inferiorly, positive tipping the normal toward superior.
+
+    Returns ``(origin, normal)``, the normal pointing into the fragment that
+    will be removed.
+    """
+    s_mm = frames.clamp(placement.s_mm)
+    tangent, up, binormal = frames.frame_at(s_mm)
+
+    roll = np.radians(placement.roll_deg)
+    up = _rotate(up, tangent, roll)
+    binormal = _rotate(binormal, tangent, roll)
+
+    yaw = np.radians(placement.yaw_deg)
+    normal = _rotate(tangent, up, yaw)
+    binormal = _rotate(binormal, up, yaw)
+
+    normal = _rotate(normal, binormal, np.radians(placement.tilt_deg))
+    normal = normal / np.linalg.norm(normal)
+    if placement.flipped:
+        normal = -normal
+
+    origin = frames.point_at(s_mm) + np.asarray(
+        placement.offset_mm, dtype=float
+    ).reshape(3)
+    return origin, normal
+
+
 def plane_from_frame(
     frames,
     s_mm: float,
@@ -42,31 +139,16 @@ def plane_from_frame(
     tilt_deg: float = 0.0,
     offset_mm=(0.0, 0.0, 0.0),
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Build a cut plane from a position along the arch curve and two angles.
-
-    Dragging a plane widget is quick but not repeatable; an osteotomy that has
-    to be described, checked or handed over needs numbers. The plane starts
-    perpendicular to the arch curve at ``s_mm`` and is then turned:
-
-    ``yaw_deg``
-        rotation about the superior axis, which makes the cut oblique in the
-        axial plane. Positive is counter-clockwise seen from above.
-    ``tilt_deg``
-        rotation about the buccolingual direction, which tips the cut
-        superiorly or inferiorly. Positive tips the normal toward superior.
-    ``offset_mm``
-        a further translation of the plane's origin in patient axes
-        (x = left, y = posterior, z = superior).
-
-    Returns ``(origin, normal)`` with the normal pointing the way the curve
-    runs, i.e. toward increasing arc length.
-    """
-    index = frames.index_of(s_mm)
-    origin = frames.points[index] + np.asarray(offset_mm, dtype=float).reshape(3)
-    normal = _rotate(frames.tangents[index], SUPERIOR, np.radians(yaw_deg))
-    buccolingual = _rotate(frames.normals[index], SUPERIOR, np.radians(yaw_deg))
-    normal = _rotate(normal, buccolingual, np.radians(tilt_deg))
-    return origin, normal / np.linalg.norm(normal)
+    """Backwards-compatible wrapper over :func:`plane_from_placement`."""
+    return plane_from_placement(
+        frames,
+        PlanePlacement(
+            s_mm=s_mm,
+            yaw_deg=yaw_deg,
+            tilt_deg=tilt_deg,
+            offset_mm=tuple(np.asarray(offset_mm, dtype=float).reshape(3)),
+        ),
+    )
 
 
 def _rotate(vector, axis, angle_rad: float) -> np.ndarray:

@@ -25,7 +25,13 @@ from ..geometry.mirror import (
     mirror_coverage,
 )
 from ..geometry.plate import PlatePlan, compute_plate_plan
-from ..geometry.resection import CutPlane, ResectionReport, build_report, plane_from_frame
+from ..geometry.resection import (
+    CutPlane,
+    PlanePlacement,
+    ResectionReport,
+    build_report,
+    plane_from_placement,
+)
 from ..geometry.spline import ArchCurve
 from ..geometry.threshold import estimate_bone_threshold
 from ..geometry.volume import Volume
@@ -59,6 +65,7 @@ class PlateSettings:
 class _Snapshot:
     arch_seeds: list
     planes: list
+    placements: list
     landmarks: list
     plate_points: list
     plate_normals: list
@@ -113,6 +120,8 @@ class Session(QObject):
         self.cross_section_s: float = 0.0
 
         self.planes: list[CutPlane] = []
+        #: Authoritative cut state; ``planes`` is derived from this.
+        self.placements: list[PlanePlacement] = []
         self.landmarks: list[tuple[str, np.ndarray]] = []
         self.cut_applied = False
         self.report: ResectionReport | None = None
@@ -149,6 +158,7 @@ class Session(QObject):
         self.panoramic = None
         self.cross_section = None
         self.planes.clear()
+        self.placements.clear()
         self.landmarks.clear()
         self.plate_points.clear()
         self.plate_normals.clear()
@@ -220,8 +230,24 @@ class Session(QObject):
             self.frames = None
             self.panoramic = None
             self.cross_section = None
+        self._resolve_all_planes()
         self.arch_changed.emit()
         self.update_reformats()
+
+    def _resolve_all_planes(self) -> None:
+        """Rebuild every cut from its placement against the current frames.
+
+        Editing the arch curve moves the frames underneath the cuts. Because
+        the placements are anatomical rather than world-space, the cuts follow
+        the corrected curve instead of being left behind on the old one.
+        """
+        if self.frames is None:
+            return
+        for index, placement in enumerate(self.placements):
+            if index < len(self.planes):
+                clamped = placement.replace(s_mm=self.frames.clamp(placement.s_mm))
+                self.placements[index] = clamped
+                self.planes[index] = self._resolve(clamped, self.planes[index].label)
 
     def set_cpr_settings(self, **kwargs) -> None:
         for key, value in kwargs.items():
@@ -262,7 +288,15 @@ class Session(QObject):
 
     # -- resection ---------------------------------------------------------
 
+    # A cut plane's authoritative state is its :class:`PlanePlacement` — where
+    # it sits on the arch and how it is angled relative to the local
+    # mandibular frame there. ``self.planes`` is the world-space rendering of
+    # that, rebuilt from the placement whenever either changes. Storing the
+    # world normal instead is what made a cut slide along the jaw carrying a
+    # fixed global angulation.
+
     def add_plane(self, origin, normal, label: str | None = None) -> None:
+        """Add a cut, converting a picked world point into a placement."""
         if len(self.planes) >= constants.MAX_RESECTION_PLANES:
             self.message.emit(
                 f"MandiPlan plans up to {constants.MAX_RESECTION_PLANES} cutting planes."
@@ -270,11 +304,46 @@ class Session(QObject):
             return
         self._push_undo()
         index = len(self.planes) + 1
-        self.planes.append(
-            CutPlane(origin=origin, normal=normal, label=label or f"Cut {index}")
-        )
+        placement = self._placement_for(origin, normal)
+        self.placements.append(placement)
+        self.planes.append(self._resolve(placement, label or f"Cut {index}"))
         self.cut_applied = False
         self.update_resection_report()
+
+    def _placement_for(self, origin, normal) -> PlanePlacement:
+        """The placement whose resolved plane best matches a world point.
+
+        Used when a cut is created by picking on the bone rather than by
+        entering numbers: the arc position comes from the nearest point on the
+        curve, and the side the cut removes from which way the picked normal
+        faces along it.
+        """
+        if self.frames is None:
+            return PlanePlacement()
+        origin = np.asarray(origin, dtype=float).reshape(3)
+        d = np.linalg.norm(self.frames.points - origin, axis=1)
+        s_mm = float(self.frames.s[int(np.argmin(d))])
+        tangent, _, _ = self.frames.frame_at(s_mm)
+        flipped = bool(np.dot(np.asarray(normal, dtype=float).reshape(3), tangent) < 0)
+        return PlanePlacement(s_mm=s_mm, flipped=flipped)
+
+    def _resolve(self, placement: PlanePlacement, label: str) -> CutPlane:
+        origin, normal = plane_from_placement(self.frames, placement)
+        return CutPlane(origin=origin, normal=normal, label=label)
+
+    def set_placement(self, index: int, placement: PlanePlacement) -> None:
+        """Replace a cut's placement and rebuild its plane from it."""
+        if self.frames is None or index >= len(self.placements):
+            return
+        self.placements[index] = placement
+        self.planes[index] = self._resolve(placement, self.planes[index].label)
+        self.cut_applied = False
+        self.fragment_surface = None
+        self.retained_surface = None
+        self.update_resection_report()
+
+    def placement(self, index: int) -> PlanePlacement:
+        return self.placements[index]
 
     def set_plane(self, index: int, origin, normal) -> None:
         plane = self.planes[index]
@@ -284,63 +353,88 @@ class Session(QObject):
     def translate_plane(
         self, index: int, s_mm: float, offset_mm=(0.0, 0.0, 0.0)
     ) -> None:
-        """Move a cut plane along the jaw. Its angulation is left alone.
+        """Move a cut along the jaw, keeping its angulation relative to the jaw.
 
-        Sliding a cut to a new position is not a request to re-angle it. The
-        normal is deliberately not recomputed from the arch tangent here, so a
-        cut you have angled by hand keeps that angle as you move it.
+        Only ``s_mm`` and the patient-axis offset change. The base orientation
+        is re-derived from the local mandibular frame at the new position and
+        the stored yaw, tilt and roll are re-applied to that new frame, so a
+        cut dialled to 20 degrees oblique at the body arrives at the angle
+        still 20 degrees oblique to the jaw there — not carrying the body's
+        world-space orientation with it.
         """
-        if self.frames is None or index >= len(self.planes):
+        if self.frames is None or index >= len(self.placements):
             return
-        origin, _ = plane_from_frame(self.frames, s_mm, 0.0, 0.0, offset_mm)
-        plane = self.planes[index]
-        self._replace_plane(index, origin, plane.normal)
+        self.set_placement(
+            index,
+            self.placements[index].replace(
+                s_mm=self.frames.clamp(s_mm),
+                offset_mm=tuple(np.asarray(offset_mm, dtype=float).reshape(3)),
+            ),
+        )
 
     def set_plane_origin(self, index: int, origin) -> None:
-        """Move a cut plane to a world point, keeping its angulation."""
-        if index >= len(self.planes):
-            return
-        self._replace_plane(index, np.asarray(origin, dtype=float), self.planes[index].normal)
+        """Move a cut to the arch position nearest a world point.
 
-    def rotate_plane(self, index: int, yaw_deg: float, tilt_deg: float) -> None:
-        """Re-angle a cut plane about its own position. Its origin is left alone."""
-        if self.frames is None or index >= len(self.planes):
+        Dragging in the 3-D view is a translation: the arc position follows
+        the drag, and the angular offsets are untouched and re-applied to the
+        frame at wherever the cut lands.
+        """
+        if self.frames is None or index >= len(self.placements):
             return
-        plane = self.planes[index]
-        s_mm = self.plane_arc_position(index)
-        _, normal = plane_from_frame(self.frames, s_mm, yaw_deg, tilt_deg)
-        # Keep the side the plane removes: the frame normal follows the curve,
-        # so flip it when this plane was facing the other way.
-        if np.dot(normal, plane.normal) < 0:
-            normal = -normal
-        self._replace_plane(index, plane.origin, normal)
+        origin = np.asarray(origin, dtype=float).reshape(3)
+        d = np.linalg.norm(self.frames.points - origin, axis=1)
+        nearest = int(np.argmin(d))
+        s_mm = float(self.frames.s[nearest])
+        # Whatever of the drag does not lie along the curve is kept as an
+        # off-curve offset, so the plane still ends up under the cursor.
+        offset = origin - self.frames.points[nearest]
+        self.set_placement(
+            index,
+            self.placements[index].replace(s_mm=s_mm, offset_mm=tuple(offset)),
+        )
 
-    def _replace_plane(self, index: int, origin, normal) -> None:
-        label = self.planes[index].label
-        self.planes[index] = CutPlane(origin=origin, normal=normal, label=label)
-        self.cut_applied = False
-        self.fragment_surface = None
-        self.retained_surface = None
-        self.update_resection_report()
+    def rotate_plane(
+        self,
+        index: int,
+        yaw_deg: float,
+        tilt_deg: float,
+        roll_deg: float | None = None,
+    ) -> None:
+        """Re-angle a cut about its own position, relative to the local frame.
+
+        Only the angular offsets change; ``s_mm`` and the patient-axis offset
+        are untouched, so the cut does not move.
+        """
+        if self.frames is None or index >= len(self.placements):
+            return
+        placement = self.placements[index]
+        self.set_placement(
+            index,
+            placement.replace(
+                yaw_deg=float(yaw_deg),
+                tilt_deg=float(tilt_deg),
+                roll_deg=placement.roll_deg if roll_deg is None else float(roll_deg),
+            ),
+        )
 
     def plane_arc_position(self, index: int) -> float:
         """Where a cut plane sits along the arch curve, in mm."""
-        if self.frames is None or index >= len(self.planes):
+        if self.frames is None or index >= len(self.placements):
             return float("nan")
-        d = np.linalg.norm(self.frames.points - self.planes[index].origin, axis=1)
-        return float(self.frames.s[int(np.argmin(d))])
+        return float(self.placements[index].s_mm)
 
     def flip_plane(self, index: int) -> None:
+        """Swap which side of the cut is removed."""
+        if index >= len(self.placements):
+            return
         self._push_undo()
-        plane = self.planes[index]
-        self.planes[index] = CutPlane(
-            origin=plane.origin, normal=-plane.normal, label=plane.label
-        )
-        self.update_resection_report()
+        placement = self.placements[index]
+        self.set_placement(index, placement.replace(flipped=not placement.flipped))
 
     def clear_planes(self) -> None:
         self._push_undo()
         self.planes.clear()
+        self.placements.clear()
         self.cut_applied = False
         self.fragment_surface = None
         self.retained_surface = None
@@ -550,6 +644,7 @@ class Session(QObject):
             _Snapshot(
                 arch_seeds=copy.deepcopy(self.arch_seeds),
                 planes=copy.deepcopy(self.planes),
+                placements=copy.deepcopy(self.placements),
                 landmarks=copy.deepcopy(self.landmarks),
                 plate_points=copy.deepcopy(self.plate_points),
                 plate_normals=copy.deepcopy(self.plate_normals),
@@ -569,6 +664,7 @@ class Session(QObject):
         state = self._undo.pop()
         self.arch_seeds = state.arch_seeds
         self.planes = state.planes
+        self.placements = state.placements
         self.landmarks = state.landmarks
         self.plate_points = state.plate_points
         self.plate_normals = state.plate_normals

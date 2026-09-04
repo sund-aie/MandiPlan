@@ -4,8 +4,13 @@ The arch curve is a planar curve in the axial (x, y) plane.  Sampling it at
 uniform arc length gives, at every station ``i``:
 
     t_i  unit tangent (direction of travel along the arch)
-    n_i  = normalize(t_i x z_hat)   -- the buccolingual direction
-    z_hat = (0, 0, 1)               -- the superior axis
+    u_i  patient superior, parallel-transported along the curve
+    n_i  = t_i x u_i                -- the buccolingual direction
+
+For a curve lying in the axial plane ``u_i`` stays exactly ``z_hat`` and
+``n_i`` is the ``t_i x z_hat`` this module used before the frame was
+transported, so the reformat is unchanged. Transport matters where the curve
+leaves the axial plane, which is where a fixed global up-axis degenerates.
 
 The panoramic reformat has arc length ``s`` (mm) on its x-axis and world
 ``z`` (mm) on its y-axis, so *both* axes are millimetres and measurement in
@@ -28,13 +33,34 @@ AGGREGATION_MODES = ("max", "mean")
 
 @dataclass
 class ArchFrames:
-    """Arc-length-uniform stations along the arch curve, with local frames."""
+    """Arc-length-uniform stations along the arch curve, with local frames.
+
+    The local mandibular frame at each station is a right-handed triad:
+
+    ``tangents`` (T)
+        Unit direction of travel along the arch, toward increasing arc length.
+    ``ups`` (U)
+        The anatomical superior reference, parallel-transported along the
+        curve from patient superior at ``s = 0`` and kept perpendicular to T.
+        Transport is what stops the frame from spinning or flipping where the
+        curve leaves the axial plane and climbs the ramus.
+    ``normals`` (B)
+        Buccolingual, ``T x U``. Named ``normals`` for the panoramic reformat,
+        which has used it as the slab direction since before the frame was a
+        full triad.
+
+    For a curve lying in an axial plane every rotation between consecutive
+    tangents is about the superior axis, so transporting patient-superior
+    returns patient-superior exactly and ``normals`` is identical to the
+    ``T x z`` this class used to compute. Nothing in the reformat changes.
+    """
 
     s: np.ndarray  # (M,) cumulative arc length, mm
     points: np.ndarray  # (M, 3) world mm
-    tangents: np.ndarray  # (M, 3) unit
-    normals: np.ndarray  # (M, 3) unit, buccolingual
+    tangents: np.ndarray  # (M, 3) unit, direction of travel
+    normals: np.ndarray  # (M, 3) unit, buccolingual (T x U)
     step_mm: float
+    ups: np.ndarray | None = None  # (M, 3) unit, transported superior
 
     @property
     def length_mm(self) -> float:
@@ -42,6 +68,27 @@ class ArchFrames:
 
     def index_of(self, s_mm: float) -> int:
         return int(np.clip(round(float(s_mm) / self.step_mm), 0, len(self.s) - 1))
+
+    def clamp(self, s_mm: float) -> float:
+        """``s_mm`` brought inside the curve's valid range."""
+        return float(np.clip(float(s_mm), 0.0, self.length_mm))
+
+    def frame_at(self, s_mm: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """The local mandibular triad ``(T, U, B)`` at an arc position."""
+        i = self.index_of(s_mm)
+        tangent = self.tangents[i]
+        up = SUPERIOR if self.ups is None else self.ups[i]
+        # Re-orthogonalise defensively: callers may have built frames by hand.
+        up = up - float(np.dot(up, tangent)) * tangent
+        norm = np.linalg.norm(up)
+        if norm < 1e-9:
+            raise ValueError(f"degenerate arch frame at s = {s_mm:.2f} mm")
+        up = up / norm
+        return tangent, up, np.cross(tangent, up)
+
+    def point_at(self, s_mm: float) -> np.ndarray:
+        """The point on the arch curve at an arc position, in world mm."""
+        return self.points[self.index_of(s_mm)].copy()
 
 
 @dataclass
@@ -83,24 +130,69 @@ class Reformat:
         return (y_mm - self.y0) / self.pixel_mm
 
 
+def parallel_transport(tangents: np.ndarray, up=SUPERIOR) -> np.ndarray:
+    """Carry an up-vector along a curve without letting it spin about it.
+
+    At each step the frame is rotated by exactly the rotation that takes the
+    previous tangent onto the current one — the minimal rotation, so no twist
+    is added. Building the up-axis from a fixed global reference instead
+    (``t x z`` and friends) degenerates wherever the curve runs parallel to
+    that reference, which on a mandible is the ramus.
+    """
+    tangents = np.asarray(tangents, dtype=float).reshape(-1, 3)
+    up = np.asarray(up, dtype=float).reshape(3)
+
+    seed = up - float(np.dot(up, tangents[0])) * tangents[0]
+    if np.linalg.norm(seed) < 1e-9:
+        # The curve starts along the reference direction; any perpendicular
+        # will do as a seed, and transport keeps it consistent from there.
+        helper = np.array([1.0, 0.0, 0.0])
+        if abs(float(np.dot(helper, tangents[0]))) > 0.9:
+            helper = np.array([0.0, 1.0, 0.0])
+        seed = helper - float(np.dot(helper, tangents[0])) * tangents[0]
+    ups = np.empty_like(tangents)
+    ups[0] = seed / np.linalg.norm(seed)
+
+    for i in range(1, len(tangents)):
+        previous, current = tangents[i - 1], tangents[i]
+        axis = np.cross(previous, current)
+        sine = float(np.linalg.norm(axis))
+        carried = ups[i - 1]
+        if sine > 1e-12:
+            axis = axis / sine
+            angle = float(np.arctan2(sine, float(np.dot(previous, current))))
+            cos, sin = np.cos(angle), np.sin(angle)
+            carried = (
+                carried * cos
+                + np.cross(axis, carried) * sin
+                + axis * float(np.dot(axis, carried)) * (1.0 - cos)
+            )
+        # Rounding accumulates over thousands of stations; re-project.
+        carried = carried - float(np.dot(carried, current)) * current
+        ups[i] = carried / np.linalg.norm(carried)
+    return ups
+
+
 def build_frames(curve: ArchCurve, step_mm: float, up=SUPERIOR) -> ArchFrames:
-    """Resample ``curve`` at uniform arc length and build buccolingual frames."""
+    """Resample ``curve`` at uniform arc length and build local frames.
+
+    The frame is transported rather than derived from a global axis, so a
+    curve that climbs out of the axial plane into the angle and ramus keeps a
+    continuous, non-flipping frame instead of being refused.
+    """
     samples = curve.resample(step_mm)
-    up = np.asarray(up, dtype=float)
-    normals = np.cross(samples.tangents, up)
+    ups = parallel_transport(samples.tangents, up)
+    normals = np.cross(samples.tangents, ups)
     norm = np.linalg.norm(normals, axis=1, keepdims=True)
     if np.any(norm < 1e-9):
-        raise ValueError(
-            "arch curve is locally parallel to the superior axis; "
-            "seed points must lie in an axial plane"
-        )
-    normals = normals / norm
+        raise ValueError("arch curve has a degenerate tangent; check the seed points")
     return ArchFrames(
         s=samples.s,
         points=samples.points,
         tangents=samples.tangents,
-        normals=normals,
+        normals=normals / norm,
         step_mm=samples.step_mm,
+        ups=ups,
     )
 
 

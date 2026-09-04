@@ -113,6 +113,51 @@ it writes. The phantom is a synthetic mandible-like arc whose geometry is known
 in closed form — 78.19 mm of arc, a 12 × 18 mm elliptical cross-section — so you
 can check what the application reports against what it should report.
 
+## Where a resection plane gets its orientation
+
+A cut is stored as a `PlanePlacement` — an arc position along the mandible
+plus three angles — and never as a world-space normal. The world plane is
+re-derived from that placement every time either changes.
+
+At arc position `s` the arch curve gives a right-handed local mandibular
+frame:
+
+| axis | meaning | how it is built |
+| --- | --- | --- |
+| `T` | direction of travel along the arch | unit tangent of the arch spline |
+| `U` | anatomical superior reference | patient superior, parallel-transported along the curve from `s = 0` |
+| `B` | buccolingual | `T x U` |
+
+`U` is *transported*, not taken from a global axis. At each step the frame is
+rotated by exactly the rotation carrying the previous tangent onto the current
+one — the minimal rotation, which adds no twist. Building the up-axis from a
+fixed reference instead (`T x z` and similar) degenerates wherever the curve
+runs parallel to that reference, which on a mandible is the ramus; the
+previous implementation refused such a curve outright.
+
+**The default cut normal is `T`** — perpendicular to the local arch. That is
+the osteotomy a saw makes held square to the bone at that point.
+
+The three offsets are then applied to that frame, each about an axis of the
+frame as already rotated: `roll` about `T`, then `yaw` about the rolled `U`,
+then `tilt` about the twice-rotated `B`. Roll does not move the cut by itself
+— a plane is invariant under rotation about its own normal — it chooses the
+axes yaw and tilt subsequently act about.
+
+Because the angles are stored relative to this frame, **moving a cut along the
+jaw carries its obliquity with it**. Dial 20 degrees at the body, drag to the
+angle, and the plane arrives still 20 degrees oblique to the arch there, with
+a different world-space normal. Translation writes only `s_mm` and the
+patient-axis offset; rotation writes only the angles. Which side the cut
+removes is a flag on the placement, so it survives translation too.
+
+To see it:
+
+    python3 tools/screenshot.py --cut-sweep
+
+That prints the normal and the obliquity at three positions and writes
+`artifacts/screenshots/cut-{body,angle,ramus}-viewport.png`.
+
 ## The interface
 
 A three-zone workspace. A compact command bar across the top carries the
