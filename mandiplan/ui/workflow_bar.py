@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .theme import set_role
+
 from ..workflow import workflow_status
 
 DONE = QColor(24, 128, 56)
@@ -72,7 +74,7 @@ class WorkflowBar(QWidget):
         self._page = 0
 
         self.heading = QLabel("Step 1 of 5")
-        self.heading.setStyleSheet("font-weight: bold;")
+        set_role(self.heading, "section")
         self.back = QPushButton("◀ Back")
         self.next = QPushButton("Next ▶")
         for button in (self.back, self.next):
@@ -80,7 +82,7 @@ class WorkflowBar(QWidget):
         self.dots = _Dots()
         self.detail = QLabel("")
         self.detail.setWordWrap(True)
-        self.detail.setStyleSheet("color: #5f6368; font-size: 11px;")
+        set_role(self.detail, "hint")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)

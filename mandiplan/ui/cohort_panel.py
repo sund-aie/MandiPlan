@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .theme import set_role
+
 from ..cohort import cohort_lines, installed_case_total, load_cohort
 
 
@@ -31,25 +33,43 @@ class CohortPanel(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
         self.heading = QLabel("Cohort")
-        self.heading.setStyleSheet("font-weight: 600;")
-        self.close_button = QPushButton("✕")
+        set_role(self.heading, "section")
+        # Collapsed by default. The provenance matters, but it is reference
+        # material: it must not push the planning controls off the panel.
+        self.disclosure = QPushButton("Show")
+        self.disclosure.setCheckable(True)
+        self.disclosure.setFlat(True)
+        self.disclosure.setToolTip("Show the datasets behind the shape library")
+        self.close_button = QPushButton("\u2715")
         self.close_button.setFixedSize(22, 22)
         self.close_button.setToolTip("Dismiss")
         self.body = QLabel("")
         self.body.setWordWrap(True)
         self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.body.setStyleSheet("font-size: 11px;")
+        self.body.setVisible(False)
+        set_role(self.body, "hint")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 10)
         row = QHBoxLayout()
         row.addWidget(self.heading, 1)
+        row.addWidget(self.disclosure)
         row.addWidget(self.close_button)
         layout.addLayout(row)
         layout.addWidget(self.body)
 
+        self.disclosure.toggled.connect(self._on_disclosure)
         self.close_button.clicked.connect(self._dismiss)
         self.refresh()
+
+    def _on_disclosure(self, shown: bool) -> None:
+        self.body.setVisible(shown)
+        self.disclosure.setText("Hide" if shown else "Show")
+
+    def expand(self) -> None:
+        """Open the panel, e.g. when reached from the Help menu."""
+        self.show()
+        self.disclosure.setChecked(True)
 
     def _dismiss(self) -> None:
         self.hide()

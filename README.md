@@ -115,11 +115,33 @@ can check what the application reports against what it should report.
 
 ## The interface
 
-A light, flat layout: an off-white ground, one accent colour used only for the
-active tool and primary actions, soft shadows instead of borders, and rounded
-panels. The 3-D viewport is the dominant element and the planning controls sit
-beside it as a collapsible panel — the **Panel** button in the toolbar hides
-them and gives the whole window to the view.
+A three-zone workspace. A compact command bar across the top carries the
+identity, the workflow tools and, on the right, the view controls, undo, fit,
+help and the inspector toggle. The 3-D planning viewport is the centre and
+keeps most of the window. A context inspector sits on the right; it is
+width-limited, resizeable, and collapses entirely with the panel button or
+Ctrl+B when you want the whole window for the anatomy.
+
+The palette is deliberately quiet. One accent blue marks the active tool and
+primary actions and appears nowhere else; the viewport is a flat cool
+near-white so the ivory bone reads against it without a border around the
+view. Planning state is carried by hue rather than saturation — muted warm red
+for the resected fragment, muted teal for the mirrored segment, titanium grey
+for the plate, amber only while a landmark is being edited.
+
+Icons are drawn in code (`mandiplan/ui/icons.py`), so there are no image files
+to ship and nothing to fetch. Design tokens live in `mandiplan/ui/theme.py`;
+change a colour there and the whole application follows.
+
+To capture the interface:
+
+    python3 tools/screenshot.py --phantom
+
+That writes `artifacts/screenshots/workspace.png` and, separately,
+`workspace-viewport.png`. The viewport is captured through VTK because Qt
+cannot read back an OpenGL surface — in the window grab the 3-D view appears
+as noise, which is a screenshot artifact and not what you see on screen.
+
 
 ## The workflow
 

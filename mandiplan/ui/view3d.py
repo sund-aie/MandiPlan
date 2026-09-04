@@ -36,15 +36,17 @@ from ..geometry.plate import ribbon_mesh  # noqa: E402
 from ..geometry.resection import resected_mask  # noqa: E402
 from .convert_helpers import empty_polydata, points_to_polydata  # noqa: E402
 from .modes import Mode  # noqa: E402
-from .theme import VIEWPORT_BACKGROUND, VIEWPORT_BACKGROUND_TOP  # noqa: E402
+from .theme import VIEWPORT_BACKGROUND  # noqa: E402
 
-BONE_COLOUR = (0.95, 0.93, 0.88)
-RESECT_COLOUR = (0.85, 0.25, 0.25)
-PLATE_COLOUR = (0.55, 0.70, 0.95)
-ARCH_COLOUR = (0.35, 0.85, 0.60)
-MARK_COLOUR = (1.0, 0.75, 0.2)
-GRAFT_COLOUR = (0.45, 0.85, 0.70)
-BRIDGE_COLOUR = (0.95, 0.78, 0.45)
+# Anatomy and planning state read by hue, not by saturation: bone is the only
+# opaque body, everything else is a muted translucent overlay on it.
+BONE_COLOUR = (0.949, 0.929, 0.882)      # ivory, not harsh white
+RESECT_COLOUR = (0.804, 0.416, 0.361)    # muted warm red: the defect
+PLATE_COLOUR = (0.722, 0.733, 0.757)     # titanium-like neutral metallic grey
+ARCH_COLOUR = (0.278, 0.600, 0.502)      # muted green: the planning curve
+MARK_COLOUR = (0.902, 0.678, 0.200)      # amber, active editing state only
+GRAFT_COLOUR = (0.400, 0.667, 0.647)     # muted teal: the mirrored segment
+BRIDGE_COLOUR = (0.839, 0.706, 0.478)    # muted sand: the reconstruction bridge
 
 
 class _VtkWidget(QVTKRenderWindowInteractor):
@@ -106,9 +108,10 @@ class View3D(QWidget):
         layout.addWidget(self.interactor)
 
         self.renderer = vtk.vtkRenderer()
+        # Flat, not graduated: a gradient here reads as decoration and makes
+        # the ivory bone sit differently against the top and bottom of frame.
         self.renderer.SetBackground(*VIEWPORT_BACKGROUND)
-        self.renderer.SetBackground2(*VIEWPORT_BACKGROUND_TOP)
-        self.renderer.GradientBackgroundOn()
+        self.renderer.GradientBackgroundOff()
         self.interactor.GetRenderWindow().AddRenderer(self.renderer)
         self._build_pipeline()
 
@@ -181,6 +184,8 @@ class View3D(QWidget):
         self.plate_actor = vtk.vtkActor()
         self.plate_actor.SetMapper(self.plate_mapper)
         self.plate_actor.GetProperty().SetColor(*PLATE_COLOUR)
+        self.plate_actor.GetProperty().SetSpecular(0.45)
+        self.plate_actor.GetProperty().SetSpecularPower(28)
         self.renderer.AddActor(self.plate_actor)
 
         self.node_glyph = vtk.vtkGlyph3D()

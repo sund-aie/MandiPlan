@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QAction, QActionGroup, QColor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QSizePolicy,
     QSlider,
     QSplitter,
     QTabWidget,
@@ -46,8 +47,9 @@ from .panels import (
     ResectionPanel,
     VolumePanel,
 )
+from .icons import icon
 from .session import Session
-from .theme import card
+from .theme import card, set_role
 from .view3d import View3D
 from .workflow_bar import WorkflowBar
 
@@ -116,7 +118,7 @@ class MainWindow(QMainWindow):
             view.title = name.capitalize()
             slider = QSlider(Qt.Orientation.Horizontal)
             label = QLabel("—")
-            label.setStyleSheet("color: #5f6368; font-size: 11px;")
+            set_role(label, "hint")
             grid.addWidget(view, 0, column)
             grid.addWidget(slider, 1, column)
             grid.addWidget(label, 2, column)
@@ -202,8 +204,11 @@ class MainWindow(QMainWindow):
             QDockWidget.DockWidgetFeature.DockWidgetMovable
             | QDockWidget.DockWidgetFeature.DockWidgetClosable
         )
-        self.planning_dock.setMinimumWidth(400)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.planning_dock)
+        # Width-limited and resizeable: the viewport is the subject of the
+        # window, so the inspector may never grow to dominate it.
+        self.planning_dock.setMinimumWidth(340)
+        self.planning_dock.setMaximumWidth(560)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.planning_dock)
 
         self.toolbox.currentChanged.connect(self.workflow_bar.set_page)
         self.workflow_bar.step_selected.connect(self.toolbox.setCurrentIndex)
@@ -245,46 +250,7 @@ class MainWindow(QMainWindow):
         undo_action.triggered.connect(self.session.undo)
         edit_menu.addAction(undo_action)
 
-        toolbar = self.addToolBar("Mode")
-        toolbar.setMovable(False)
-        self.mode_actions: dict[Mode, QAction] = {}
-        group = QActionGroup(self)
-        group.setExclusive(True)
-        for mode in Mode:
-            action = QAction(mode.value, self)
-            action.setCheckable(True)
-            action.triggered.connect(lambda _c, m=mode: self.set_mode(m))
-            group.addAction(action)
-            toolbar.addAction(action)
-            self.mode_actions[mode] = action
-        toolbar.addSeparator()
-        for label, direction in (
-            ("Front", "anterior"),
-            ("Left", "left"),
-            ("Right", "right"),
-            ("Top", "superior"),
-        ):
-            action = QAction(label, self)
-            action.triggered.connect(
-                lambda _c, d=direction: self.view3d.set_view_direction(d)
-            )
-            toolbar.addAction(action)
-        self.panel_action = QAction("Panel", self)
-        self.panel_action.setCheckable(True)
-        self.panel_action.setChecked(True)
-        self.panel_action.setToolTip(
-            "Collapse the planning panel and give the whole window to the 3-D view"
-        )
-        self.panel_action.toggled.connect(self.planning_dock.setVisible)
-        self.planning_dock.visibilityChanged.connect(self.panel_action.setChecked)
-        toolbar.addSeparator()
-        toolbar.addAction(self.panel_action)
-
-        add_plane = QAction("Add cutting plane", self)
-        add_plane.triggered.connect(self.add_cut_plane)
-        toolbar.addSeparator()
-        toolbar.addAction(add_plane)
-        self.resection_panel.add_plane.clicked.connect(self.add_cut_plane)
+        self._build_toolbar()
 
         help_menu = self.menuBar().addMenu("&Help")
         cohort_action = QAction("Cohort and data sources", self)
@@ -294,10 +260,108 @@ class MainWindow(QMainWindow):
         about.triggered.connect(self.show_about)
         help_menu.addAction(about)
 
+    def _build_toolbar(self) -> None:
+        """Compact command bar: identity, workflow tools, then view controls.
+
+        Only primary workflow actions live here. Everything secondary belongs
+        in the inspector, so the bar stays scannable at a glance.
+        """
+        toolbar = self.addToolBar("Workspace")
+        toolbar.setMovable(False)
+        toolbar.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        toolbar.setIconSize(QSize(18, 18))
+
+        wordmark = QLabel(APP_NAME)
+        set_role(wordmark, "wordmark")
+        toolbar.addWidget(wordmark)
+        toolbar.addSeparator()
+
+        # -- workflow tools, mutually exclusive ----------------------------
+        self.mode_actions: dict[Mode, QAction] = {}
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        mode_icons = {
+            Mode.NAVIGATE: ("navigate", "1"),
+            Mode.ARCH: ("arch", "2"),
+            Mode.PLATE: ("plate", "3"),
+            Mode.LANDMARK: ("landmark", "4"),
+            Mode.MEASURE: ("measure", "5"),
+            Mode.ANGLE: ("angle", "6"),
+        }
+        for mode in Mode:
+            glyph, key = mode_icons[mode]
+            action = QAction(icon(glyph), mode.value, self)
+            action.setCheckable(True)
+            action.setShortcut(key)
+            action.setToolTip(f"{mode.value} ({key}) — {mode.hint}")
+            action.triggered.connect(lambda _c, m=mode: self.set_mode(m))
+            group.addAction(action)
+            toolbar.addAction(action)
+            self.mode_actions[mode] = action
+
+        toolbar.addSeparator()
+        add_plane = QAction(icon("resection"), "Add cut", self)
+        add_plane.setShortcut("Ctrl+Shift+A")
+        add_plane.setToolTip("Add a resection cutting plane (Ctrl+Shift+A)")
+        add_plane.triggered.connect(self.add_cut_plane)
+        toolbar.addAction(add_plane)
+        self.resection_panel.add_plane.clicked.connect(self.add_cut_plane)
+
+        # -- right-hand group: history, view, help, panel -------------------
+        spacer = QWidget()
+        spacer.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        toolbar.addWidget(spacer)
+
+        for label, direction, key in (
+            ("Front", "anterior", "Ctrl+1"),
+            ("Left", "left", "Ctrl+2"),
+            ("Right", "right", "Ctrl+3"),
+            ("Top", "superior", "Ctrl+4"),
+        ):
+            action = QAction(label, self)
+            action.setShortcut(key)
+            action.setToolTip(f"Look from the {label.lower()} ({key})")
+            action.triggered.connect(
+                lambda _c, d=direction: self.view3d.set_view_direction(d)
+            )
+            toolbar.addAction(action)
+
+        toolbar.addSeparator()
+        self.undo_action_tb = QAction(icon("undo"), "", self)
+        self.undo_action_tb.setToolTip("Undo the last planning step (Ctrl+Z)")
+        self.undo_action_tb.triggered.connect(self.session.undo)
+        toolbar.addAction(self.undo_action_tb)
+
+        fit_action = QAction(icon("fit"), "", self)
+        fit_action.setShortcut("Ctrl+0")
+        fit_action.setToolTip("Fit the whole model in the view (Ctrl+0)")
+        fit_action.triggered.connect(self.view3d.reset_camera)
+        toolbar.addAction(fit_action)
+
+        help_action = QAction(icon("help"), "", self)
+        help_action.setToolTip("Cohort, data sources and about")
+        help_action.triggered.connect(self.show_cohort)
+        toolbar.addAction(help_action)
+
+        self.panel_action = QAction(icon("panel"), "", self)
+        self.panel_action.setCheckable(True)
+        self.panel_action.setChecked(True)
+        self.panel_action.setShortcut("Ctrl+B")
+        self.panel_action.setToolTip(
+            "Hide the inspector and give the whole window to the 3-D view (Ctrl+B)"
+        )
+        self.panel_action.toggled.connect(self.planning_dock.setVisible)
+        self.planning_dock.visibilityChanged.connect(self.panel_action.setChecked)
+        toolbar.addAction(self.panel_action)
+
     def _build_status_bar(self) -> None:
         self.hint_label = QLabel("")
         self.measure_label = QLabel("")
-        self.measure_label.setStyleSheet("color: #1a73e8; font-weight: 500;")
+        set_role(self.measure_label, "value")
         bar = self.statusBar()
         # The hint shares its slot with transient messages, which is fine; the
         # measurement is permanent, because Qt hides normal status-bar widgets
@@ -354,7 +418,8 @@ class MainWindow(QMainWindow):
 
     def show_cohort(self) -> None:
         self.cohort_panel.refresh()
-        self.cohort_panel.show()
+        self.cohort_panel.expand()
+        self.planning_dock.setVisible(True)
 
     def show_about(self) -> None:
         QMessageBox.information(

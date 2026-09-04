@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .theme import ACCENT, DANGER, SURFACE_SUNKEN, set_role
+
 _SLIDER_STEPS = 2000
 
 
@@ -54,7 +56,7 @@ class HistogramView(QWidget):
 
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(248, 249, 250))
+        painter.fillRect(self.rect(), QColor(SURFACE_SUNKEN))
         if self._counts is None or self._counts.sum() == 0:
             return
         log_counts = np.log10(self._counts + 1.0)
@@ -62,12 +64,14 @@ class HistogramView(QWidget):
         n = len(log_counts)
         w = self.width() / n
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(26, 115, 232, 110))
+        bars = QColor(ACCENT)
+        bars.setAlpha(110)
+        painter.setBrush(bars)
         for i, value in enumerate(log_counts):
             h = value / peak * (self.height() - 6)
             painter.drawRect(int(i * w), int(self.height() - h), max(int(w) + 1, 1), int(h))
 
-        pen = QPen(QColor(197, 34, 31))
+        pen = QPen(QColor(DANGER))
         pen.setWidth(2)
         painter.setPen(pen)
         x = int(self._value_to_x(self._threshold))
@@ -109,7 +113,7 @@ class ThresholdPanel(QWidget):
             "CBCT gray values are not Hounsfield units — set this by eye on the bone."
         )
         self.note.setWordWrap(True)
-        self.note.setStyleSheet("color: #5f6368; font-size: 11px;")
+        set_role(self.note, "hint")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)

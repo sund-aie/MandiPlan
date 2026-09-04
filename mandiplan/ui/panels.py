@@ -29,12 +29,22 @@ from ..geometry.plate import bend_table_rows
 from ..plate_catalog import load_kits, load_systems
 from .histogram import ThresholdPanel
 from .modes import Mode
+from .theme import set_role
 
 
 def _hint(text: str) -> QLabel:
     label = QLabel(text)
     label.setWordWrap(True)
-    label.setStyleSheet("color: #5f6368; font-size: 11px;")
+    set_role(label, "hint")
+    return label
+
+
+def _empty_state(text: str) -> QLabel:
+    """What a panel says before it has anything to show."""
+    label = QLabel(text)
+    label.setWordWrap(True)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    set_role(label, "empty")
     return label
 
 
@@ -64,7 +74,11 @@ class VolumePanel(QWidget):
         self.session = session
 
         self.load_button = QPushButton("Open DICOM folder…")
-        self.info = QLabel("No volume loaded.")
+        self.load_button.setProperty("primary", True)
+        self.info = _empty_state(
+            "Import a CBCT scan to begin.\nFile \u203a Open DICOM folder, or the "
+            "button above."
+        )
         self.info.setWordWrap(True)
         self.threshold_panel = ThresholdPanel()
         self.largest = QCheckBox("Keep largest connected component")
@@ -93,9 +107,14 @@ class VolumePanel(QWidget):
     def refresh_volume(self) -> None:
         session = self.session
         if session.volume is None:
-            self.info.setText("No volume loaded.")
+            self.info.setText(
+                "Import a CBCT scan to begin.\nFile \u203a Open DICOM folder, or the "
+                "button above."
+            )
+            set_role(self.info, "empty")
             return
         self.info.setText("\n".join(session.info.lines(session.volume)))
+        set_role(self.info, "hint")
         counts, edges = session.volume.histogram()
         self.threshold_panel.configure(counts, edges, session.threshold)
 
@@ -609,9 +628,7 @@ class PlatePanel(QWidget):
         lines.extend(f"Problem: {p}" for p in fit.problems)
         lines.extend(f"Note: {w}" for w in fit.warnings[:4])
         self.fit_info.setText("\n".join(lines))
-        self.fit_info.setStyleSheet(
-            "color: #c5221f;" if fit.problems else "color: #188038;"
-        )
+        set_role(self.fit_info, "danger" if fit.problems else "hint")
 
         rows = steps_as_rows(self.session.steps)
         self.steps_table.setRowCount(len(rows))
