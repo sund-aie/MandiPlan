@@ -495,7 +495,7 @@ class ReconstructionPanel(QWidget):
 class PlatePanel(QWidget):
     mode_requested = pyqtSignal(object)
     #: plate mesh, hole centres, screw trajectories
-    overlays_changed = pyqtSignal(bool, bool, bool)
+    overlays_changed = pyqtSignal(bool, bool, bool, bool)
     export_csv_requested = pyqtSignal()
     export_stl_requested = pyqtSignal()
     export_steps_requested = pyqtSignal()
@@ -519,6 +519,22 @@ class PlatePanel(QWidget):
         self.clearance.setToolTip(
             "How far the plate's inner face stands off the bone surface"
         )
+        self.show_distortion = QCheckBox("Show holes as bending leaves them")
+        self.show_distortion.setChecked(True)
+        self.show_distortion.setToolTip(
+            "Screw holes do not stay round through contouring. Show the "
+            "predicted oval, or the catalogue's nominal circle."
+        )
+        self.use_insets = QCheckBox("Bending insets fitted")
+        self.use_insets.setTristate(True)
+        self.use_insets.setCheckState(Qt.CheckState.PartiallyChecked)
+        self.use_insets.setToolTip(
+            "Insets fill the threaded holes while the plate is contoured and "
+            "keep them round. Leave partially checked to follow the kit's own "
+            "default."
+        )
+        self.hole_report = QLabel("")
+        self.hole_report.setWordWrap(True)
         self.bend_plate = QCheckBox("Bend the plate to the path")
         self.bend_plate.setChecked(True)
         self.bend_plate.setToolTip(
@@ -531,6 +547,11 @@ class PlatePanel(QWidget):
         self.show_holes = QCheckBox("Hole centres")
         self.show_holes.setChecked(True)
         self.show_screws = QCheckBox("Screw trajectories")
+        self.show_marking = QCheckBox("Etched marking")
+        self.show_marking.setChecked(True)
+        self.show_marking.setToolTip(
+            "The laser mark on the plate face, at its real 100 um etch depth"
+        )
         self.properties = QLabel("")
         self.properties.setWordWrap(True)
         self.fit_status = QLabel("")
@@ -612,15 +633,23 @@ class PlatePanel(QWidget):
         library.addRow("", self.status_badge)
         library.addRow("Standoff", self.clearance)
         library.addRow("Bending", self.bend_plate)
+        library.addRow("", self.show_distortion)
+        library.addRow("", self.use_insets)
         toggles = QHBoxLayout()
         toggles.addWidget(self.show_plate)
         toggles.addWidget(self.show_holes)
         toggles.addWidget(self.show_screws)
+        toggles.addWidget(self.show_marking)
         library.addRow("Show", toggles)
         library_box = QGroupBox("Plate library")
         library_box.setLayout(library)
         layout.addWidget(library_box)
         layout.addWidget(self.fit_status)
+        holes_box = QGroupBox("Screw holes after bending")
+        holes_layout = QVBoxLayout()
+        holes_layout.addWidget(self.hole_report)
+        holes_box.setLayout(holes_layout)
+        layout.addWidget(holes_box)
 
         properties_box = QGroupBox("Plate properties")
         properties_layout = QVBoxLayout()
@@ -664,7 +693,14 @@ class PlatePanel(QWidget):
         self.model_box.currentIndexChanged.connect(self._on_model)
         self.clearance.valueChanged.connect(session.set_plate_clearance)
         self.bend_plate.toggled.connect(session.set_plate_bending)
-        for box in (self.show_plate, self.show_holes, self.show_screws):
+        self.show_distortion.toggled.connect(session.set_hole_distortion_shown)
+        self.use_insets.stateChanged.connect(self._on_insets)
+        for box in (
+            self.show_plate,
+            self.show_holes,
+            self.show_screws,
+            self.show_marking,
+        ):
             box.toggled.connect(self._emit_overlays)
         self.system_box.currentIndexChanged.connect(
             lambda i: self._on_system(self.system_box.itemData(i))
@@ -715,11 +751,21 @@ class PlatePanel(QWidget):
             self.session.set_plate_asset(asset_id)
         self.refresh_library()
 
+    def _on_insets(self, state: int) -> None:
+        """Tri-state: follow the kit, force insets on, or force them off."""
+        value = {
+            Qt.CheckState.PartiallyChecked.value: None,
+            Qt.CheckState.Checked.value: True,
+            Qt.CheckState.Unchecked.value: False,
+        }.get(int(state))
+        self.session.set_bending_insets(value)
+
     def _emit_overlays(self) -> None:
         self.overlays_changed.emit(
             self.show_plate.isChecked(),
             self.show_holes.isChecked(),
             self.show_screws.isChecked(),
+            self.show_marking.isChecked(),
         )
 
     def refresh_library(self) -> None:
@@ -773,6 +819,29 @@ class PlatePanel(QWidget):
         set_role(
             self.fit_status,
             "danger" if problems else ("warning" if warnings else "hint"),
+        )
+        self._refresh_hole_report()
+
+    def _refresh_hole_report(self) -> None:
+        """What this bending plan does to the screw holes, hole by hole."""
+        report = self.session.hole_distortion
+        if report is None:
+            self.hole_report.setText(
+                "Draw a plate path and bend the plate to see what the bends "
+                "do to its screw holes."
+            )
+            set_role(self.hole_report, "hint")
+            return
+        lines = list(report.summary_lines())
+        compromised = [h for h in report.holes if not h.takes_locking_screw]
+        for hole in compromised[:4]:
+            lines.append(hole.describe())
+        if len(compromised) > 4:
+            lines.append(f"...and {len(compromised) - 4} more.")
+        self.hole_report.setText("\n".join(lines))
+        set_role(
+            self.hole_report,
+            "danger" if report.problems else ("warning" if compromised else "hint"),
         )
 
     def _on_system(self, system_id: str) -> None:

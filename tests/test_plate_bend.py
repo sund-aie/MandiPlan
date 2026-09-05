@@ -79,8 +79,16 @@ def hole_wall_radii(asset, mesh, bent, hole: int):
 
 
 @pytest.mark.parametrize("radius_mm", [400.0, 200.0, 90.0, 60.0])
-def test_bending_never_deforms_a_screw_hole(asset, mesh, radius_mm):
-    """The headline guarantee. Holes are rigid; only the bridges bend."""
+def test_the_geometric_bend_alone_does_not_deform_a_screw_hole(asset, mesh, radius_mm):
+    """The idealised bend holds the holes rigid; only the bridges are swept.
+
+    This is the geometry stage, not the whole story. Real contouring does take
+    holes out of round, and that is applied on top of this by
+    ``hole_distortion`` according to the alloy and the bending kit — see
+    tests/test_hole_distortion.py. Separating them is deliberate: the shape
+    the plate is being bent *to* is one question, and what the instrument does
+    to it on the way is another.
+    """
     bent = bend(asset, mesh, radius_mm)
     nominal = asset.hole_diameter_mm / 2.0
     for hole in range(asset.hole_count):

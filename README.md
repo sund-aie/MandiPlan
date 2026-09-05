@@ -175,6 +175,72 @@ CSV alongside the plate's identity and provenance.
     python3 tools/make_plate_assets.py     # regenerate the assets
     python3 tools/screenshot.py --plate    # fit one and capture it
 
+## What bending does to the screw holes
+
+An earlier version of this application held every screw hole perfectly
+circular through bending and presented that as a feature. That was wrong. AO
+Surgery Reference is explicit:
+
+> Without bending insets, the holes become deformed during contouring of the
+> plate, and precise seating of the locking screws cannot be guaranteed.
+
+and, on preformed plates:
+
+> The minimal intraoperative bending required in preformed plates preserves
+> the optimal threaded-hole shape, resulting in a plate with increased fatigue
+> life compared to standard reconstruction plates.
+
+So MandiPlan predicts the distortion, applies it to the plate's geometry so
+you can see it, and says what it means for the screw. The prediction depends
+on the alloy, on where the bends fall relative to the holes, and on the kit —
+which is the point. Two 12° bends in a CP-Ti Grade 4 bar:
+
+| kit | bends **between** holes | bends **through** holes |
+| --- | --- | --- |
+| Three-point pliers | 0 µm, fatigue 100% | **409 µm, fatigue 7%** |
+| Bending irons | 115 µm, fatigue 47% | 232 µm, fatigue 22% |
+| Bar press with insets | 11 µm, fatigue 93% | 14 µm, fatigue 91% |
+
+The pliers concentrate a bend into about five millimetres, so they are the
+most precise instrument *between* holes and the most destructive *through*
+one. The irons spread the bend over most of a pitch, which is gentler through
+a hole but catches the neighbours even when you aim between them. The press
+fits insets, and insets are what the technique is really about.
+
+Each hole is reported as its major and minor axis, how far out of round it is
+in micrometres, and a verdict: round enough for a locking screw, marginal, or
+use a non-locking screw. Turn `Show holes as bending leaves them` off in the
+inspector to see the catalogue's nominal circles instead.
+
+### Materials
+
+Each plate family declares an alloy, and the alloy decides how it behaves
+under an iron. The space lattice is recorded because it is the reason:
+
+| alloy | standard | lattice | yield | elongation | springback (overbend to hold 20° at R30) |
+| --- | --- | --- | --- | --- | --- |
+| Ti-6Al-4V ELI | ASTM F136 | HCP + BCC | 795 MPa | 10% | 27.0° |
+| CP-Ti Grade 4 | ASTM F67 | HCP | 483 MPa | 15% | 24.1° |
+| CP-Ti Grade 2 | ASTM F67 | HCP | 275 MPa | 20% | 22.2° |
+| 316LVM steel | ASTM F138 | FCC | 190 MPa | 40% | 20.8° |
+
+FCC austenite has twelve slip systems, which is why 316LVM is by far the most
+forgiving to bend. Alpha titanium is HCP with few slip systems, so it work-
+hardens fast and springs back. Ti-6Al-4V is alpha+beta: strongest, least
+ductile, springs back hardest, cracks soonest.
+
+These are **published standard minima and nominal handbook values, not
+measurements of the plate in your hand.** A real lot is usually stronger.
+
+### The etched marking
+
+Real plates carry a laser mark on the outer face. MandiPlan renders it at its
+true depth — **100 µm**, about the thickness of a sheet of paper. Nothing on a
+titanium implant is marked at nanometre scale; a nanometre is ten thousand
+times finer than the etch, below the surface roughness of the plate and far
+below what any optical instrument resolves. What you can see on a real plate
+is the etch, and that is what is drawn.
+
 ## Where a resection plane gets its orientation
 
 A cut is stored as a `PlanePlacement` — an arc position along the mandible

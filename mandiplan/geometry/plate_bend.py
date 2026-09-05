@@ -44,6 +44,12 @@ class BentPlate:
     hole_centres: np.ndarray  # (H, 3) world mm
     hole_axes: np.ndarray  # (H, 3) unit
     bend_angles_deg: np.ndarray  # (H,) turn at each hole station
+    #: Arc position of each hole along the plate, mm. Bends are located
+    #: against these to work out which holes a bend actually lands on.
+    hole_s_mm: np.ndarray | None = None
+    #: Tangent along the plate at each hole, for orienting hole ovalisation.
+    hole_tangents: np.ndarray | None = None
+    distortion: object | None = None
     warnings: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
 
@@ -274,12 +280,15 @@ def bend_to_path(
     if fold:
         problems.append(fold)
 
+    hole_tangents = _unit(np.gradient(hole_origin, axis=0))
     return BentPlate(
         points=bent,
         triangles=np.asarray(triangles, dtype=np.int64),
         hole_centres=hole_origin,
         hole_axes=hole_up,
         bend_angles_deg=bend_angles,
+        hole_s_mm=s_src,
+        hole_tangents=hole_tangents,
         warnings=warnings,
         problems=problems,
     )

@@ -26,6 +26,7 @@ from ..geometry.mirror import (
 )
 from ..geometry.mesh_io import MeshLoadError
 from ..geometry.plate import PlatePlan, compute_plate_plan
+from ..geometry.hole_distortion import ovalise_mesh, predict_distortion
 from ..geometry.plate_bend import (
     BentPlate,
     ClearanceReport,
@@ -38,6 +39,7 @@ from ..geometry.plate_fit import (
     plate_targets,
     rigid_fit,
 )
+from ..materials import Alloy, alloy_by_id
 from ..plate_assets import PlateAsset, asset_by_id, load_asset_mesh, load_assets
 from ..geometry.resection import (
     CutPlane,
@@ -164,6 +166,11 @@ class Session(QObject):
         self.plate_contact: ClearanceReport | None = None
         self.plate_clearance_mm: float = 0.5
         self.plate_bending_enabled: bool = True
+        #: Show the screw holes as bending would actually leave them, rather
+        #: than perfectly round. Real holes go oval; see hole_distortion.
+        self.show_hole_distortion: bool = True
+        self.use_bending_insets: bool | None = None
+        self.hole_distortion = None
         self.plate_fit_warnings: list[str] = []
         self.plate_fit_problems: list[str] = []
         if load_assets():
@@ -679,6 +686,7 @@ class Session(QObject):
         self.fitted_plate = None
         self.bent_plate = None
         self.plate_contact = None
+        self.hole_distortion = None
         self.plate_fit_warnings = []
         self.plate_fit_problems = []
         asset = self.plate_asset
@@ -750,6 +758,62 @@ class Session(QObject):
             return
         self.plate_fit_warnings.extend(self.bent_plate.warnings)
         self.plate_fit_problems.extend(self.bent_plate.problems)
+        self._predict_hole_distortion(asset)
+
+    def set_hole_distortion_shown(self, shown: bool) -> None:
+        """Show the holes as bending leaves them, or as the catalogue drew them."""
+        self.show_hole_distortion = bool(shown)
+        self.update_plate_fit()
+        self.plate_changed.emit()
+
+    def set_bending_insets(self, use: bool | None) -> None:
+        """Whether bending insets are fitted into the threaded holes."""
+        self.use_bending_insets = use
+        self.update_plate_fit()
+        self.plate_changed.emit()
+
+    def _predict_hole_distortion(self, asset) -> None:
+        """Work out what this bending plan does to the screw holes.
+
+        Holes do not stay round through contouring unless something holds
+        them. Which holes suffer depends on where the bends fall and on what
+        the kit does: a tight three-point plier concentrates a bend into a few
+        millimetres, a press spreads it and fits insets as well.
+        """
+        bent = self.bent_plate
+        if bent is None or bent.hole_s_mm is None:
+            return
+        angles = np.nan_to_num(bent.bend_angles_deg)
+        report = predict_distortion(
+            bent.hole_s_mm,
+            asset.hole_diameter_mm,
+            asset.thickness_mm,
+            angles,
+            bent.hole_s_mm,
+            self.plate_alloy(),
+            self.bending_kit,
+            use_insets=self.use_bending_insets,
+        )
+        self.hole_distortion = report
+        bent.distortion = report
+        self.plate_fit_warnings.extend(report.warnings)
+        self.plate_fit_problems.extend(report.problems)
+
+        if self.show_hole_distortion and bent.hole_tangents is not None:
+            bent.points = ovalise_mesh(
+                bent.points,
+                bent.hole_centres,
+                bent.hole_axes,
+                bent.hole_tangents,
+                report.holes,
+                asset.hole_diameter_mm,
+            )
+
+    def plate_alloy(self) -> Alloy:
+        """The alloy the selected plate is made of."""
+        asset = self.plate_asset
+        material = getattr(asset, "material_id", None) if asset else None
+        return alloy_by_id(material or "cp-ti-grade-4")
 
     def _check_contact(self, asset, plan) -> None:
         """Measure the fitted plate against the bone it has to sit on."""

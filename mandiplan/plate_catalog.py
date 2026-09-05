@@ -78,6 +78,16 @@ class BendingKit:
     can_twist: bool
     marking: str
     notes: str = ""
+    #: Does this kit fit inserts into the threaded holes while contouring?
+    bending_insets: bool = False
+    insets_available: bool = False
+    #: Arc length over which the instrument spreads a bend, in mm. Small is a
+    #: tight local kink; large is a broad curve.
+    bend_localisation_mm: float = 10.0
+    #: Fraction of hole deformation this kit removes, 0 to 1.
+    hole_protection: float = 0.0
+    #: What the plate looks like after this kit has been on it.
+    signature: str = ""
 
     def can_make(self, bend_kind: str) -> bool:
         return bend_kind in self.handles
@@ -124,6 +134,11 @@ def load_kits() -> tuple[BendingKit, ...]:
             can_twist=bool(entry["can_twist"]),
             marking=entry["marking"],
             notes=entry.get("notes", ""),
+            bending_insets=bool(entry.get("bending_insets", False)),
+            insets_available=bool(entry.get("insets_available", False)),
+            bend_localisation_mm=float(entry.get("bend_localisation_mm", 10.0)),
+            hole_protection=float(entry.get("hole_protection", 0.0)),
+            signature=entry.get("signature", ""),
         )
         for entry in raw["kits"]
     )

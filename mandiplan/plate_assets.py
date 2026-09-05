@@ -85,6 +85,11 @@ class PlateAsset:
     system_id: str | None = None
     preform_radius_mm: float | None = None
     preform_angle_deg: float | None = None
+    #: Alloy id from mandiplan.materials.
+    material_id: str = "cp-ti-grade-4"
+    #: False for adaptation and trauma profiles that cannot bridge a defect.
+    load_bearing: bool = True
+    dimensional_class: str = ""
     audit: dict = field(default_factory=dict)
     root: Path = DATA_DIR
 
@@ -103,8 +108,15 @@ class PlateAsset:
     def __str__(self) -> str:
         return f"{self.name} ({self.status_label})"
 
+    @property
+    def alloy(self):
+        from .materials import alloy_by_id
+
+        return alloy_by_id(self.material_id)
+
     def summary_lines(self) -> list[str]:
         """What the inspector shows under Plate Properties."""
+        alloy = self.alloy
         lines = [
             f"{self.name}",
             f"{self.status_label}",
@@ -112,7 +124,18 @@ class PlateAsset:
             f"{self.hole_count} holes at {self.hole_pitch_mm:.1f} mm pitch, "
             f"{self.hole_diameter_mm:.1f} mm diameter",
             f"Nominal length {self.length_mm:.1f} mm",
+            "",
+            *alloy.summary_lines(),
+            f"Springback: overbend {alloy.overbend_deg(10.0, 30.0, self.thickness_mm):.1f}° "
+            f"to hold 10° at a 30 mm radius",
         ]
+        if not self.load_bearing:
+            lines.append(
+                "NOT load-bearing — trauma and adaptation only; this profile "
+                "will not carry a mandible across a continuity defect."
+            )
+        if self.dimensional_class:
+            lines.append(f"Class: {self.dimensional_class}")
         if self.preform_angle_deg:
             lines.append(f"Preformed angle {self.preform_angle_deg:.0f}°")
         elif self.preform_radius_mm:
@@ -135,6 +158,10 @@ class PlateAsset:
             "plate_asset_units": "mm",
             "plate_hole_count": str(self.hole_count),
             "plate_thickness_mm": f"{self.thickness_mm:.3f}",
+            "plate_material": self.alloy.name,
+            "plate_material_standard": self.alloy.standard,
+            "plate_material_lattice": self.alloy.lattice,
+            "plate_load_bearing": str(self.load_bearing).lower(),
         }
 
 
@@ -211,6 +238,9 @@ def _asset_from_entry(entry: dict, root: Path) -> PlateAsset:
         system_id=entry.get("system_id"),
         preform_radius_mm=entry.get("preform_radius_mm"),
         preform_angle_deg=entry.get("preform_angle_deg"),
+        material_id=entry.get("material_id", "cp-ti-grade-4"),
+        load_bearing=bool(entry.get("load_bearing", True)),
+        dimensional_class=entry.get("dimensional_class", ""),
         audit=entry.get("audit", {}),
         root=root,
     )

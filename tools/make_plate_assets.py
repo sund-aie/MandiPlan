@@ -76,6 +76,17 @@ class PlateProfile:
     max_bend_deg_per_node: float = 15.0
     notes: str = ""
     system_id: str = ""
+    #: Alloy id from mandiplan/materials.py.
+    material_id: str = "cp-ti-grade-4"
+    #: True for plates that carry the mandible across a defect. A 1.0-1.5 mm
+    #: adaptation plate is not one, and saying so matters.
+    load_bearing: bool = True
+    #: Dimensional class this profile is drawn from, for the record.
+    dimensional_class: str = ""
+    #: Half-width of the waist between lobes, mm. Only needed when the lobes
+    #: are too far apart to overlap, as on a narrow low-profile plate: there
+    #: the silhouette is separated lobes joined by a straight waisted bridge.
+    waist_half_width_mm: float | None = None
 
     @property
     def lobe_radius_mm(self) -> float:
@@ -97,6 +108,8 @@ PROFILES: tuple[PlateProfile, ...] = (
         hole_diameter_mm=2.9,
         hole_counts=(8, 12, 16, 20),
         system_id="recon-2.4-bar",
+        material_id="cp-ti-grade-4",
+        dimensional_class="2.4 mm load-bearing reconstruction class",
         notes="Load-bearing bar for a segmental defect. Bicortical screws.",
     ),
     PlateProfile(
@@ -109,7 +122,103 @@ PROFILES: tuple[PlateProfile, ...] = (
         hole_diameter_mm=3.2,
         hole_counts=(10, 16),
         system_id="recon-2.7-bar",
+        material_id="cp-ti-grade-4",
+        dimensional_class="2.7 mm load-bearing reconstruction class",
         notes="Heavier bar for a long defect or a poor-quality bone bed.",
+    ),
+    PlateProfile(
+        family="generic-recon-2.0",
+        name="Generic 2.0 mm reconstruction plate, straight",
+        category="reconstruction bar",
+        hole_pitch_mm=8.0,
+        width_mm=10.0,
+        thickness_mm=2.0,
+        hole_diameter_mm=2.5,
+        hole_counts=(10, 14, 20),
+        material_id="ti-6al-4v-eli",
+        dimensional_class=(
+            "2.0 mm primary-reconstruction class; published technique guides "
+            "treat 2.0 mm as the thinnest load-bearing reconstruction profile"
+        ),
+        notes=(
+            "Thinner load-bearing profile in the stronger alloy. Less bulk "
+            "under the soft tissue; springs back harder and cracks sooner "
+            "than a CP-titanium bar of the same shape."
+        ),
+    ),
+    PlateProfile(
+        family="generic-recon-2.5",
+        name="Generic 2.5 mm reconstruction plate, straight",
+        category="reconstruction bar",
+        hole_pitch_mm=9.0,
+        width_mm=13.5,
+        thickness_mm=2.5,
+        hole_diameter_mm=2.9,
+        hole_counts=(12, 18, 24),
+        material_id="cp-ti-grade-4",
+        dimensional_class=(
+            "2.5 mm heavy reconstruction class; published systems in this "
+            "class run from 6 to 29 screw holes at uniform 2.5 mm thickness"
+        ),
+        notes="Heavy bar for a long continuity defect. Stiff to contour.",
+    ),
+    PlateProfile(
+        family="generic-lowprofile-1.8",
+        name="Generic 1.8 mm low-profile reconstruction plate",
+        category="reconstruction bar",
+        hole_pitch_mm=7.5,
+        width_mm=6.0,
+        thickness_mm=1.8,
+        hole_diameter_mm=2.2,
+        hole_counts=(8, 12, 16, 24),
+        material_id="ti-6al-4v-eli",
+        dimensional_class="1.8 mm x 6 mm low-profile class, 4 to 24 holes",
+        notes=(
+            "Narrow, low-profile bar for a thin soft-tissue envelope. The "
+            "6 mm width leaves little material either side of a hole, so "
+            "bending through one is especially unforgiving."
+        ),
+        waist_half_width_mm=1.8,
+    ),
+    PlateProfile(
+        family="generic-adaptation-1.0",
+        name="Generic 1.0 mm adaptation plate",
+        category="adaptation and trauma",
+        hole_pitch_mm=6.0,
+        width_mm=5.0,
+        thickness_mm=1.0,
+        hole_diameter_mm=2.0,
+        hole_counts=(4, 6, 8),
+        material_id="cp-ti-grade-2",
+        load_bearing=False,
+        dimensional_class="1.0 mm trauma and adaptation class",
+        min_bend_radius_mm=4.0,
+        max_bend_deg_per_node=30.0,
+        notes=(
+            "NOT load-bearing. Trauma and orthognathic fixation only; it "
+            "will not carry a mandible across a continuity defect."
+        ),
+        waist_half_width_mm=1.5,
+    ),
+    PlateProfile(
+        family="generic-adaptation-1.5",
+        name="Generic 1.5 mm adaptation plate",
+        category="adaptation and trauma",
+        hole_pitch_mm=7.0,
+        width_mm=6.0,
+        thickness_mm=1.5,
+        hole_diameter_mm=2.2,
+        hole_counts=(6, 8, 12),
+        material_id="cp-ti-grade-4",
+        load_bearing=False,
+        dimensional_class="1.5 mm intermediate trauma class",
+        min_bend_radius_mm=6.0,
+        max_bend_deg_per_node=25.0,
+        notes=(
+            "Intermediate trauma profile. Used with a vascularised bone "
+            "graft, not as a bridging device on its own."
+        ),
+        waist_half_width_mm=1.8,
     ),
     PlateProfile(
         family="generic-body-curved",
@@ -121,9 +230,13 @@ PROFILES: tuple[PlateProfile, ...] = (
         hole_diameter_mm=2.9,
         hole_counts=(10, 14),
         preform_radius_mm=55.0,
+        material_id="cp-ti-grade-4",
+        dimensional_class="preformed body class",
         notes=(
             "Preformed to a 55 mm in-plane radius, roughly the lateral "
-            "curvature of an adult mandibular body."
+            "curvature of an adult mandibular body. Preforming is the point: "
+            "less bending on the table means the threaded holes keep their "
+            "shape and the plate keeps its fatigue life."
         ),
     ),
     PlateProfile(
@@ -136,22 +249,55 @@ PROFILES: tuple[PlateProfile, ...] = (
         hole_diameter_mm=2.9,
         hole_counts=(10, 14),
         preform_angle_deg=115.0,
+        material_id="cp-ti-grade-4",
+        dimensional_class="preformed angle class",
         notes=(
             "Preformed with a 115 degree turn at the middle, for a defect "
             "crossing the angle into the ramus."
+        ),
+    ),
+    PlateProfile(
+        family="generic-hemimandibular",
+        name="Generic hemimandibular reconstruction plate, preformed",
+        category="hemimandibular",
+        hole_pitch_mm=9.0,
+        width_mm=12.5,
+        thickness_mm=2.8,
+        hole_diameter_mm=2.9,
+        hole_counts=(22,),
+        preform_angle_deg=120.0,
+        material_id="cp-ti-grade-4",
+        dimensional_class=(
+            "hemimandibular class; published contoured plates in this class "
+            "use a 5 + 17 hole split about the angle at 2.8 mm profile height"
+        ),
+        notes=(
+            "One half of the mandible, ramus to symphysis, preformed about "
+            "the angle. Very stiff; shape by press rather than by hand."
         ),
     ),
 )
 
 
 def lobed_outline(
-    centres: np.ndarray, lobe_radius: float, segments: int = LOBE_SEGMENTS
+    centres: np.ndarray,
+    lobe_radius: float,
+    segments: int = LOBE_SEGMENTS,
+    waist_half_width: float | None = None,
 ) -> np.ndarray:
-    """The boundary of a chain of overlapping circles, as a closed loop.
+    """The silhouette of a chain of lobes centred on the screw holes.
 
-    Returns (N, 2) points counter-clockwise. The lobes must overlap — that is
-    what produces the scalloped waist between screw holes; a chain of
-    separated circles is not a plate.
+    Returns (N, 2) points counter-clockwise. Two cases, both real:
+
+    * **Overlapping lobes** — a wide bar whose lobes are more than half a
+      pitch in radius. The boundary is the arcs between the points where
+      neighbouring lobes cross, which gives the scalloped waist of a
+      reconstruction bar.
+    * **Separated lobes** — a narrow low-profile plate whose lobes do not
+      reach each other. They are joined by a straight waisted bridge of
+      ``waist_half_width``, which is the ladder silhouette those plates
+      actually have. The waist has to be narrower than the lobe, or the plate
+      is simply a constant-width bar with no waist at all.
     """
     centres = np.asarray(centres, dtype=float).reshape(-1)
     if len(centres) == 1:
@@ -161,15 +307,32 @@ def lobed_outline(
         )
 
     pitch = float(np.diff(centres).min())
-    if 2.0 * lobe_radius <= pitch:
-        raise ValueError(
-            f"lobes of radius {lobe_radius} mm do not overlap at a {pitch} mm "
-            "pitch; a plate outline needs a continuous silhouette"
+    overlapping = 2.0 * lobe_radius > pitch
+
+    if overlapping:
+        # Where neighbouring lobes cross, measured from a lobe's own centre.
+        theta = math.atan2(
+            math.sqrt(lobe_radius**2 - (pitch / 2.0) ** 2), pitch / 2.0
         )
-    # Where neighbouring lobes cross, measured from a lobe's own centre.
-    theta = math.atan2(
-        math.sqrt(lobe_radius**2 - (pitch / 2.0) ** 2), pitch / 2.0
-    )
+    else:
+        if waist_half_width is None:
+            raise ValueError(
+                f"lobes of radius {lobe_radius} mm do not reach each other at a "
+                f"{pitch} mm pitch, so this profile needs a waist_half_width_mm "
+                "to join them"
+            )
+        if not 0.0 < waist_half_width < lobe_radius:
+            raise ValueError(
+                f"waist half-width {waist_half_width} mm must be between 0 and "
+                f"the lobe radius {lobe_radius} mm"
+            )
+        # Where the straight waist meets the lobe.
+        theta = math.asin(waist_half_width / lobe_radius)
+        if 2.0 * lobe_radius * math.cos(theta) >= pitch:
+            raise ValueError(
+                "the waist is too wide to fit between these lobes; widen the "
+                "pitch or narrow the waist"
+            )
 
     upper: list[tuple[float, float]] = []
     for i, centre in enumerate(centres):
@@ -180,8 +343,9 @@ def lobed_outline(
             (centre + lobe_radius * math.cos(a), lobe_radius * math.sin(a))
             for a in angles
         ]
-        # Consecutive arcs meet exactly at the crossing point; keep it once.
-        upper.extend(arc if i == 0 else arc[1:])
+        # Overlapping lobes meet exactly at the crossing point, so it is kept
+        # once; separated lobes are joined by the straight waist instead.
+        upper.extend(arc if (i == 0 or not overlapping) else arc[1:])
 
     lower = [(x, -y) for x, y in reversed(upper[1:-1])]
     return np.array(upper + lower, dtype=float)
@@ -220,7 +384,10 @@ def build_plate(profile: PlateProfile, holes: int) -> tuple[vtk.vtkPolyData, np.
     centres = np.arange(holes, dtype=float) * pitch
     centres -= centres.mean()  # centre the plate on its own origin
 
-    outline = lobed_outline(centres, profile.lobe_radius_mm)
+    outline = lobed_outline(
+        centres, profile.lobe_radius_mm,
+        waist_half_width=profile.waist_half_width_mm,
+    )
     # Hole loops wind the other way so the triangulator reads them as holes.
     hole_loops = [
         _circle(c, 0.0, profile.hole_radius_mm, HOLE_SEGMENTS)[::-1] for c in centres
@@ -395,6 +562,10 @@ def catalogue_entry(
         "provenance": PROVENANCE,
         "licence": LICENCE,
         "system_id": profile.system_id or None,
+        "material_id": profile.material_id,
+        "load_bearing": profile.load_bearing,
+        "dimensional_class": profile.dimensional_class,
+        "waist_half_width_mm": profile.waist_half_width_mm,
         "audit": report,
         "notes": profile.notes,
     }

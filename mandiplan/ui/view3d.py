@@ -189,6 +189,17 @@ class View3D(QWidget):
 
         self.show_hole_centres = True
         self.show_screw_trajectories = False
+        self.show_marking = True
+
+        # The etched mark on the plate face. Drawn dark and recessed rather
+        # than cut out of the solid, so the plate stays watertight for export.
+        self.marking_mapper = vtk.vtkPolyDataMapper()
+        self.marking_actor = vtk.vtkActor()
+        self.marking_actor.SetMapper(self.marking_mapper)
+        self.marking_actor.GetProperty().SetColor(0.20, 0.21, 0.23)
+        self.marking_actor.GetProperty().SetAmbient(0.35)
+        self.marking_actor.VisibilityOff()
+        self.renderer.AddActor(self.marking_actor)
 
         self.screw_mapper = vtk.vtkPolyDataMapper()
         self.screw_actor = vtk.vtkActor()
@@ -360,6 +371,18 @@ class View3D(QWidget):
         else:
             self.node_glyph.SetInputData(empty_polydata())
 
+        asset = session.plate_asset
+        if fitted is not None and asset is not None and self.show_marking:
+            from ..render.marking import marking_for_plate
+
+            self.marking_mapper.SetInputData(
+                marking_for_plate(asset, fitted.hole_centres, fitted.hole_axes)
+            )
+            self.marking_actor.VisibilityOn()
+        else:
+            self.marking_mapper.SetInputData(empty_polydata())
+            self.marking_actor.VisibilityOff()
+
         if fitted is not None and self.show_screw_trajectories:
             segments = fitted.screw_trajectories()
             merged = []
@@ -377,11 +400,12 @@ class View3D(QWidget):
         self.render()
 
     def set_plate_overlays(
-        self, plate: bool, holes: bool, screws: bool
+        self, plate: bool, holes: bool, screws: bool, marking: bool = True
     ) -> None:
         """Independent display toggles for the plate and its overlays."""
         self.show_hole_centres = holes
         self.show_screw_trajectories = screws
+        self.show_marking = marking
         self.plate_actor.SetVisibility(bool(plate))
         self.refresh_plate()
 

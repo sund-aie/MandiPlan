@@ -167,6 +167,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": "recon-2.4-bar",
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.4 mm load-bearing reconstruction class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 1769.8028,
@@ -397,6 +401,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": "recon-2.4-bar",
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.4 mm load-bearing reconstruction class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 2635.3347,
@@ -687,6 +695,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": "recon-2.4-bar",
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.4 mm load-bearing reconstruction class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 3500.8666,
@@ -1037,6 +1049,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": "recon-2.4-bar",
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.4 mm load-bearing reconstruction class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 4366.3985,
@@ -1237,6 +1253,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": "recon-2.7-bar",
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.7 mm load-bearing reconstruction class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 2951.4723,
@@ -1527,6 +1547,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": "recon-2.7-bar",
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.7 mm load-bearing reconstruction class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 4695.0909,
@@ -1537,6 +1561,3900 @@
         "genus": 16
       },
       "notes": "Heavier bar for a long defect or a poor-quality bone bed."
+    },
+    {
+      "id": "generic-recon-2.0-10h",
+      "name": "Generic 2.0 mm reconstruction plate, straight, 10 holes",
+      "family": "generic-recon-2.0",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.0-10h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 2.0,
+      "width_mm": 10.0,
+      "hole_count": 10,
+      "hole_pitch_mm": 8.0,
+      "hole_diameter_mm": 2.5,
+      "length_mm": 82.0,
+      "hole_centres_mm": [
+        [
+          -36.0,
+          0.0,
+          0.0
+        ],
+        [
+          -28.0,
+          0.0,
+          0.0
+        ],
+        [
+          -20.0,
+          0.0,
+          0.0
+        ],
+        [
+          -12.0,
+          0.0,
+          0.0
+        ],
+        [
+          -4.0,
+          0.0,
+          0.0
+        ],
+        [
+          4.0,
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0,
+          0.0
+        ],
+        [
+          28.0,
+          0.0,
+          0.0
+        ],
+        [
+          36.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -36.0,
+          0.0,
+          0.0
+        ],
+        [
+          -28.0,
+          0.0,
+          0.0
+        ],
+        [
+          -20.0,
+          0.0,
+          0.0
+        ],
+        [
+          -12.0,
+          0.0,
+          0.0
+        ],
+        [
+          -4.0,
+          0.0,
+          0.0
+        ],
+        [
+          4.0,
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0,
+          0.0
+        ],
+        [
+          28.0,
+          0.0,
+          0.0
+        ],
+        [
+          36.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 2.875,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "ti-6al-4v-eli",
+      "load_bearing": true,
+      "dimensional_class": "2.0 mm primary-reconstruction class; published technique guides treat 2.0 mm as the thinnest load-bearing reconstruction profile",
+      "waist_half_width_mm": null,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 1324.8725,
+        "surface_area_mm2": 1878.3014,
+        "points": 1720,
+        "triangles": 3476,
+        "euler_characteristic": -18,
+        "genus": 10
+      },
+      "notes": "Thinner load-bearing profile in the stronger alloy. Less bulk under the soft tissue; springs back harder and cracks sooner than a CP-titanium bar of the same shape."
+    },
+    {
+      "id": "generic-recon-2.0-14h",
+      "name": "Generic 2.0 mm reconstruction plate, straight, 14 holes",
+      "family": "generic-recon-2.0",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.0-14h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 2.0,
+      "width_mm": 10.0,
+      "hole_count": 14,
+      "hole_pitch_mm": 8.0,
+      "hole_diameter_mm": 2.5,
+      "length_mm": 114.0,
+      "hole_centres_mm": [
+        [
+          -52.0,
+          0.0,
+          0.0
+        ],
+        [
+          -44.0,
+          0.0,
+          0.0
+        ],
+        [
+          -36.0,
+          0.0,
+          0.0
+        ],
+        [
+          -28.0,
+          0.0,
+          0.0
+        ],
+        [
+          -20.0,
+          0.0,
+          0.0
+        ],
+        [
+          -12.0,
+          0.0,
+          0.0
+        ],
+        [
+          -4.0,
+          0.0,
+          0.0
+        ],
+        [
+          4.0,
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0,
+          0.0
+        ],
+        [
+          28.0,
+          0.0,
+          0.0
+        ],
+        [
+          36.0,
+          0.0,
+          0.0
+        ],
+        [
+          44.0,
+          0.0,
+          0.0
+        ],
+        [
+          52.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -52.0,
+          0.0,
+          0.0
+        ],
+        [
+          -44.0,
+          0.0,
+          0.0
+        ],
+        [
+          -36.0,
+          0.0,
+          0.0
+        ],
+        [
+          -28.0,
+          0.0,
+          0.0
+        ],
+        [
+          -20.0,
+          0.0,
+          0.0
+        ],
+        [
+          -12.0,
+          0.0,
+          0.0
+        ],
+        [
+          -4.0,
+          0.0,
+          0.0
+        ],
+        [
+          4.0,
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0,
+          0.0
+        ],
+        [
+          28.0,
+          0.0,
+          0.0
+        ],
+        [
+          36.0,
+          0.0,
+          0.0
+        ],
+        [
+          44.0,
+          0.0,
+          0.0
+        ],
+        [
+          52.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 2.875,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "ti-6al-4v-eli",
+      "load_bearing": true,
+      "dimensional_class": "2.0 mm primary-reconstruction class; published technique guides treat 2.0 mm as the thinnest load-bearing reconstruction profile",
+      "waist_half_width_mm": null,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 1848.3797,
+        "surface_area_mm2": 2612.8939,
+        "points": 2408,
+        "triangles": 4868,
+        "euler_characteristic": -26,
+        "genus": 14
+      },
+      "notes": "Thinner load-bearing profile in the stronger alloy. Less bulk under the soft tissue; springs back harder and cracks sooner than a CP-titanium bar of the same shape."
+    },
+    {
+      "id": "generic-recon-2.0-20h",
+      "name": "Generic 2.0 mm reconstruction plate, straight, 20 holes",
+      "family": "generic-recon-2.0",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.0-20h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 2.0,
+      "width_mm": 10.0,
+      "hole_count": 20,
+      "hole_pitch_mm": 8.0,
+      "hole_diameter_mm": 2.5,
+      "length_mm": 162.0,
+      "hole_centres_mm": [
+        [
+          -76.0,
+          0.0,
+          0.0
+        ],
+        [
+          -68.0,
+          0.0,
+          0.0
+        ],
+        [
+          -60.0,
+          0.0,
+          0.0
+        ],
+        [
+          -52.0,
+          0.0,
+          0.0
+        ],
+        [
+          -44.0,
+          0.0,
+          0.0
+        ],
+        [
+          -36.0,
+          0.0,
+          0.0
+        ],
+        [
+          -28.0,
+          0.0,
+          0.0
+        ],
+        [
+          -20.0,
+          0.0,
+          0.0
+        ],
+        [
+          -12.0,
+          0.0,
+          0.0
+        ],
+        [
+          -4.0,
+          0.0,
+          0.0
+        ],
+        [
+          4.0,
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0,
+          0.0
+        ],
+        [
+          28.0,
+          0.0,
+          0.0
+        ],
+        [
+          36.0,
+          0.0,
+          0.0
+        ],
+        [
+          44.0,
+          0.0,
+          0.0
+        ],
+        [
+          52.0,
+          0.0,
+          0.0
+        ],
+        [
+          60.0,
+          0.0,
+          0.0
+        ],
+        [
+          68.0,
+          0.0,
+          0.0
+        ],
+        [
+          76.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -76.0,
+          0.0,
+          0.0
+        ],
+        [
+          -68.0,
+          0.0,
+          0.0
+        ],
+        [
+          -60.0,
+          0.0,
+          0.0
+        ],
+        [
+          -52.0,
+          0.0,
+          0.0
+        ],
+        [
+          -44.0,
+          0.0,
+          0.0
+        ],
+        [
+          -36.0,
+          0.0,
+          0.0
+        ],
+        [
+          -28.0,
+          0.0,
+          0.0
+        ],
+        [
+          -20.0,
+          0.0,
+          0.0
+        ],
+        [
+          -12.0,
+          0.0,
+          0.0
+        ],
+        [
+          -4.0,
+          0.0,
+          0.0
+        ],
+        [
+          4.0,
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0,
+          0.0
+        ],
+        [
+          28.0,
+          0.0,
+          0.0
+        ],
+        [
+          36.0,
+          0.0,
+          0.0
+        ],
+        [
+          44.0,
+          0.0,
+          0.0
+        ],
+        [
+          52.0,
+          0.0,
+          0.0
+        ],
+        [
+          60.0,
+          0.0,
+          0.0
+        ],
+        [
+          68.0,
+          0.0,
+          0.0
+        ],
+        [
+          76.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 2.875,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "ti-6al-4v-eli",
+      "load_bearing": true,
+      "dimensional_class": "2.0 mm primary-reconstruction class; published technique guides treat 2.0 mm as the thinnest load-bearing reconstruction profile",
+      "waist_half_width_mm": null,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 2633.6404,
+        "surface_area_mm2": 3714.7826,
+        "points": 3440,
+        "triangles": 6956,
+        "euler_characteristic": -38,
+        "genus": 20
+      },
+      "notes": "Thinner load-bearing profile in the stronger alloy. Less bulk under the soft tissue; springs back harder and cracks sooner than a CP-titanium bar of the same shape."
+    },
+    {
+      "id": "generic-recon-2.5-12h",
+      "name": "Generic 2.5 mm reconstruction plate, straight, 12 holes",
+      "family": "generic-recon-2.5",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.5-12h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 2.5,
+      "width_mm": 13.5,
+      "hole_count": 12,
+      "hole_pitch_mm": 9.0,
+      "hole_diameter_mm": 2.9,
+      "length_mm": 112.5,
+      "hole_centres_mm": [
+        [
+          -49.5,
+          0.0,
+          0.0
+        ],
+        [
+          -40.5,
+          0.0,
+          0.0
+        ],
+        [
+          -31.5,
+          0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          0.0,
+          0.0
+        ],
+        [
+          -13.5,
+          0.0,
+          0.0
+        ],
+        [
+          -4.5,
+          0.0,
+          0.0
+        ],
+        [
+          4.5,
+          0.0,
+          0.0
+        ],
+        [
+          13.5,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          31.5,
+          0.0,
+          0.0
+        ],
+        [
+          40.5,
+          0.0,
+          0.0
+        ],
+        [
+          49.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -49.5,
+          0.0,
+          0.0
+        ],
+        [
+          -40.5,
+          0.0,
+          0.0
+        ],
+        [
+          -31.5,
+          0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          0.0,
+          0.0
+        ],
+        [
+          -13.5,
+          0.0,
+          0.0
+        ],
+        [
+          -4.5,
+          0.0,
+          0.0
+        ],
+        [
+          4.5,
+          0.0,
+          0.0
+        ],
+        [
+          13.5,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          31.5,
+          0.0,
+          0.0
+        ],
+        [
+          40.5,
+          0.0,
+          0.0
+        ],
+        [
+          49.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 3.335,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.5 mm heavy reconstruction class; published systems in this class run from 6 to 29 screw holes at uniform 2.5 mm thickness",
+      "waist_half_width_mm": null,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 3232.8744,
+        "surface_area_mm2": 3506.9981,
+        "points": 2064,
+        "triangles": 4172,
+        "euler_characteristic": -22,
+        "genus": 12
+      },
+      "notes": "Heavy bar for a long continuity defect. Stiff to contour."
+    },
+    {
+      "id": "generic-recon-2.5-18h",
+      "name": "Generic 2.5 mm reconstruction plate, straight, 18 holes",
+      "family": "generic-recon-2.5",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.5-18h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 2.5,
+      "width_mm": 13.5,
+      "hole_count": 18,
+      "hole_pitch_mm": 9.0,
+      "hole_diameter_mm": 2.9,
+      "length_mm": 166.5,
+      "hole_centres_mm": [
+        [
+          -76.5,
+          0.0,
+          0.0
+        ],
+        [
+          -67.5,
+          0.0,
+          0.0
+        ],
+        [
+          -58.5,
+          0.0,
+          0.0
+        ],
+        [
+          -49.5,
+          0.0,
+          0.0
+        ],
+        [
+          -40.5,
+          0.0,
+          0.0
+        ],
+        [
+          -31.5,
+          0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          0.0,
+          0.0
+        ],
+        [
+          -13.5,
+          0.0,
+          0.0
+        ],
+        [
+          -4.5,
+          0.0,
+          0.0
+        ],
+        [
+          4.5,
+          0.0,
+          0.0
+        ],
+        [
+          13.5,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          31.5,
+          0.0,
+          0.0
+        ],
+        [
+          40.5,
+          0.0,
+          0.0
+        ],
+        [
+          49.5,
+          0.0,
+          0.0
+        ],
+        [
+          58.5,
+          0.0,
+          0.0
+        ],
+        [
+          67.5,
+          0.0,
+          0.0
+        ],
+        [
+          76.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -76.5,
+          0.0,
+          0.0
+        ],
+        [
+          -67.5,
+          0.0,
+          0.0
+        ],
+        [
+          -58.5,
+          0.0,
+          0.0
+        ],
+        [
+          -49.5,
+          0.0,
+          0.0
+        ],
+        [
+          -40.5,
+          0.0,
+          0.0
+        ],
+        [
+          -31.5,
+          0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          0.0,
+          0.0
+        ],
+        [
+          -13.5,
+          0.0,
+          0.0
+        ],
+        [
+          -4.5,
+          0.0,
+          0.0
+        ],
+        [
+          4.5,
+          0.0,
+          0.0
+        ],
+        [
+          13.5,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          31.5,
+          0.0,
+          0.0
+        ],
+        [
+          40.5,
+          0.0,
+          0.0
+        ],
+        [
+          49.5,
+          0.0,
+          0.0
+        ],
+        [
+          58.5,
+          0.0,
+          0.0
+        ],
+        [
+          67.5,
+          0.0,
+          0.0
+        ],
+        [
+          76.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 3.335,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.5 mm heavy reconstruction class; published systems in this class run from 6 to 29 screw holes at uniform 2.5 mm thickness",
+      "waist_half_width_mm": null,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 4810.3844,
+        "surface_area_mm2": 5200.9897,
+        "points": 3096,
+        "triangles": 6260,
+        "euler_characteristic": -34,
+        "genus": 18
+      },
+      "notes": "Heavy bar for a long continuity defect. Stiff to contour."
+    },
+    {
+      "id": "generic-recon-2.5-24h",
+      "name": "Generic 2.5 mm reconstruction plate, straight, 24 holes",
+      "family": "generic-recon-2.5",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.5-24h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 2.5,
+      "width_mm": 13.5,
+      "hole_count": 24,
+      "hole_pitch_mm": 9.0,
+      "hole_diameter_mm": 2.9,
+      "length_mm": 220.5,
+      "hole_centres_mm": [
+        [
+          -103.5,
+          0.0,
+          0.0
+        ],
+        [
+          -94.5,
+          0.0,
+          0.0
+        ],
+        [
+          -85.5,
+          0.0,
+          0.0
+        ],
+        [
+          -76.5,
+          0.0,
+          0.0
+        ],
+        [
+          -67.5,
+          0.0,
+          0.0
+        ],
+        [
+          -58.5,
+          0.0,
+          0.0
+        ],
+        [
+          -49.5,
+          0.0,
+          0.0
+        ],
+        [
+          -40.5,
+          0.0,
+          0.0
+        ],
+        [
+          -31.5,
+          0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          0.0,
+          0.0
+        ],
+        [
+          -13.5,
+          0.0,
+          0.0
+        ],
+        [
+          -4.5,
+          0.0,
+          0.0
+        ],
+        [
+          4.5,
+          0.0,
+          0.0
+        ],
+        [
+          13.5,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          31.5,
+          0.0,
+          0.0
+        ],
+        [
+          40.5,
+          0.0,
+          0.0
+        ],
+        [
+          49.5,
+          0.0,
+          0.0
+        ],
+        [
+          58.5,
+          0.0,
+          0.0
+        ],
+        [
+          67.5,
+          0.0,
+          0.0
+        ],
+        [
+          76.5,
+          0.0,
+          0.0
+        ],
+        [
+          85.5,
+          0.0,
+          0.0
+        ],
+        [
+          94.5,
+          0.0,
+          0.0
+        ],
+        [
+          103.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -103.5,
+          0.0,
+          0.0
+        ],
+        [
+          -94.5,
+          0.0,
+          0.0
+        ],
+        [
+          -85.5,
+          0.0,
+          0.0
+        ],
+        [
+          -76.5,
+          0.0,
+          0.0
+        ],
+        [
+          -67.5,
+          0.0,
+          0.0
+        ],
+        [
+          -58.5,
+          0.0,
+          0.0
+        ],
+        [
+          -49.5,
+          0.0,
+          0.0
+        ],
+        [
+          -40.5,
+          0.0,
+          0.0
+        ],
+        [
+          -31.5,
+          0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          0.0,
+          0.0
+        ],
+        [
+          -13.5,
+          0.0,
+          0.0
+        ],
+        [
+          -4.5,
+          0.0,
+          0.0
+        ],
+        [
+          4.5,
+          0.0,
+          0.0
+        ],
+        [
+          13.5,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          31.5,
+          0.0,
+          0.0
+        ],
+        [
+          40.5,
+          0.0,
+          0.0
+        ],
+        [
+          49.5,
+          0.0,
+          0.0
+        ],
+        [
+          58.5,
+          0.0,
+          0.0
+        ],
+        [
+          67.5,
+          0.0,
+          0.0
+        ],
+        [
+          76.5,
+          0.0,
+          0.0
+        ],
+        [
+          85.5,
+          0.0,
+          0.0
+        ],
+        [
+          94.5,
+          0.0,
+          0.0
+        ],
+        [
+          103.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 3.335,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "2.5 mm heavy reconstruction class; published systems in this class run from 6 to 29 screw holes at uniform 2.5 mm thickness",
+      "waist_half_width_mm": null,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 6387.8943,
+        "surface_area_mm2": 6894.9813,
+        "points": 4128,
+        "triangles": 8348,
+        "euler_characteristic": -46,
+        "genus": 24
+      },
+      "notes": "Heavy bar for a long continuity defect. Stiff to contour."
+    },
+    {
+      "id": "generic-lowprofile-1.8-8h",
+      "name": "Generic 1.8 mm low-profile reconstruction plate, 8 holes",
+      "family": "generic-lowprofile-1.8",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-lowprofile-1.8-8h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.8,
+      "width_mm": 6.0,
+      "hole_count": 8,
+      "hole_pitch_mm": 7.5,
+      "hole_diameter_mm": 2.2,
+      "length_mm": 58.5,
+      "hole_centres_mm": [
+        [
+          -26.25,
+          0.0,
+          0.0
+        ],
+        [
+          -18.75,
+          0.0,
+          0.0
+        ],
+        [
+          -11.25,
+          0.0,
+          0.0
+        ],
+        [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        [
+          3.75,
+          0.0,
+          0.0
+        ],
+        [
+          11.25,
+          0.0,
+          0.0
+        ],
+        [
+          18.75,
+          0.0,
+          0.0
+        ],
+        [
+          26.25,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -26.25,
+          0.0,
+          0.0
+        ],
+        [
+          -18.75,
+          0.0,
+          0.0
+        ],
+        [
+          -11.25,
+          0.0,
+          0.0
+        ],
+        [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        [
+          3.75,
+          0.0,
+          0.0
+        ],
+        [
+          11.25,
+          0.0,
+          0.0
+        ],
+        [
+          18.75,
+          0.0,
+          0.0
+        ],
+        [
+          26.25,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 2.53,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "ti-6al-4v-eli",
+      "load_bearing": true,
+      "dimensional_class": "1.8 mm x 6 mm low-profile class, 4 to 24 holes",
+      "waist_half_width_mm": 1.8,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 437.7788,
+        "surface_area_mm2": 827.9465,
+        "points": 1404,
+        "triangles": 2836,
+        "euler_characteristic": -14,
+        "genus": 8
+      },
+      "notes": "Narrow, low-profile bar for a thin soft-tissue envelope. The 6 mm width leaves little material either side of a hole, so bending through one is especially unforgiving."
+    },
+    {
+      "id": "generic-lowprofile-1.8-12h",
+      "name": "Generic 1.8 mm low-profile reconstruction plate, 12 holes",
+      "family": "generic-lowprofile-1.8",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-lowprofile-1.8-12h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.8,
+      "width_mm": 6.0,
+      "hole_count": 12,
+      "hole_pitch_mm": 7.5,
+      "hole_diameter_mm": 2.2,
+      "length_mm": 88.5,
+      "hole_centres_mm": [
+        [
+          -41.25,
+          0.0,
+          0.0
+        ],
+        [
+          -33.75,
+          0.0,
+          0.0
+        ],
+        [
+          -26.25,
+          0.0,
+          0.0
+        ],
+        [
+          -18.75,
+          0.0,
+          0.0
+        ],
+        [
+          -11.25,
+          0.0,
+          0.0
+        ],
+        [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        [
+          3.75,
+          0.0,
+          0.0
+        ],
+        [
+          11.25,
+          0.0,
+          0.0
+        ],
+        [
+          18.75,
+          0.0,
+          0.0
+        ],
+        [
+          26.25,
+          0.0,
+          0.0
+        ],
+        [
+          33.75,
+          0.0,
+          0.0
+        ],
+        [
+          41.25,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -41.25,
+          0.0,
+          0.0
+        ],
+        [
+          -33.75,
+          0.0,
+          0.0
+        ],
+        [
+          -26.25,
+          0.0,
+          0.0
+        ],
+        [
+          -18.75,
+          0.0,
+          0.0
+        ],
+        [
+          -11.25,
+          0.0,
+          0.0
+        ],
+        [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        [
+          3.75,
+          0.0,
+          0.0
+        ],
+        [
+          11.25,
+          0.0,
+          0.0
+        ],
+        [
+          18.75,
+          0.0,
+          0.0
+        ],
+        [
+          26.25,
+          0.0,
+          0.0
+        ],
+        [
+          33.75,
+          0.0,
+          0.0
+        ],
+        [
+          41.25,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 2.53,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "ti-6al-4v-eli",
+      "load_bearing": true,
+      "dimensional_class": "1.8 mm x 6 mm low-profile class, 4 to 24 holes",
+      "waist_half_width_mm": 1.8,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 662.8072,
+        "surface_area_mm2": 1246.6577,
+        "points": 2108,
+        "triangles": 4260,
+        "euler_characteristic": -22,
+        "genus": 12
+      },
+      "notes": "Narrow, low-profile bar for a thin soft-tissue envelope. The 6 mm width leaves little material either side of a hole, so bending through one is especially unforgiving."
+    },
+    {
+      "id": "generic-lowprofile-1.8-16h",
+      "name": "Generic 1.8 mm low-profile reconstruction plate, 16 holes",
+      "family": "generic-lowprofile-1.8",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-lowprofile-1.8-16h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.8,
+      "width_mm": 6.0,
+      "hole_count": 16,
+      "hole_pitch_mm": 7.5,
+      "hole_diameter_mm": 2.2,
+      "length_mm": 118.5,
+      "hole_centres_mm": [
+        [
+          -56.25,
+          0.0,
+          0.0
+        ],
+        [
+          -48.75,
+          0.0,
+          0.0
+        ],
+        [
+          -41.25,
+          0.0,
+          0.0
+        ],
+        [
+          -33.75,
+          0.0,
+          0.0
+        ],
+        [
+          -26.25,
+          0.0,
+          0.0
+        ],
+        [
+          -18.75,
+          0.0,
+          0.0
+        ],
+        [
+          -11.25,
+          0.0,
+          0.0
+        ],
+        [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        [
+          3.75,
+          0.0,
+          0.0
+        ],
+        [
+          11.25,
+          0.0,
+          0.0
+        ],
+        [
+          18.75,
+          0.0,
+          0.0
+        ],
+        [
+          26.25,
+          0.0,
+          0.0
+        ],
+        [
+          33.75,
+          0.0,
+          0.0
+        ],
+        [
+          41.25,
+          0.0,
+          0.0
+        ],
+        [
+          48.75,
+          0.0,
+          0.0
+        ],
+        [
+          56.25,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -56.25,
+          0.0,
+          0.0
+        ],
+        [
+          -48.75,
+          0.0,
+          0.0
+        ],
+        [
+          -41.25,
+          0.0,
+          0.0
+        ],
+        [
+          -33.75,
+          0.0,
+          0.0
+        ],
+        [
+          -26.25,
+          0.0,
+          0.0
+        ],
+        [
+          -18.75,
+          0.0,
+          0.0
+        ],
+        [
+          -11.25,
+          0.0,
+          0.0
+        ],
+        [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        [
+          3.75,
+          0.0,
+          0.0
+        ],
+        [
+          11.25,
+          0.0,
+          0.0
+        ],
+        [
+          18.75,
+          0.0,
+          0.0
+        ],
+        [
+          26.25,
+          0.0,
+          0.0
+        ],
+        [
+          33.75,
+          0.0,
+          0.0
+        ],
+        [
+          41.25,
+          0.0,
+          0.0
+        ],
+        [
+          48.75,
+          0.0,
+          0.0
+        ],
+        [
+          56.25,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 2.53,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "ti-6al-4v-eli",
+      "load_bearing": true,
+      "dimensional_class": "1.8 mm x 6 mm low-profile class, 4 to 24 holes",
+      "waist_half_width_mm": 1.8,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 887.8357,
+        "surface_area_mm2": 1665.369,
+        "points": 2812,
+        "triangles": 5684,
+        "euler_characteristic": -30,
+        "genus": 16
+      },
+      "notes": "Narrow, low-profile bar for a thin soft-tissue envelope. The 6 mm width leaves little material either side of a hole, so bending through one is especially unforgiving."
+    },
+    {
+      "id": "generic-lowprofile-1.8-24h",
+      "name": "Generic 1.8 mm low-profile reconstruction plate, 24 holes",
+      "family": "generic-lowprofile-1.8",
+      "category": "reconstruction bar",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-lowprofile-1.8-24h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.8,
+      "width_mm": 6.0,
+      "hole_count": 24,
+      "hole_pitch_mm": 7.5,
+      "hole_diameter_mm": 2.2,
+      "length_mm": 178.5,
+      "hole_centres_mm": [
+        [
+          -86.25,
+          0.0,
+          0.0
+        ],
+        [
+          -78.75,
+          0.0,
+          0.0
+        ],
+        [
+          -71.25,
+          0.0,
+          0.0
+        ],
+        [
+          -63.75,
+          0.0,
+          0.0
+        ],
+        [
+          -56.25,
+          0.0,
+          0.0
+        ],
+        [
+          -48.75,
+          0.0,
+          0.0
+        ],
+        [
+          -41.25,
+          0.0,
+          0.0
+        ],
+        [
+          -33.75,
+          0.0,
+          0.0
+        ],
+        [
+          -26.25,
+          0.0,
+          0.0
+        ],
+        [
+          -18.75,
+          0.0,
+          0.0
+        ],
+        [
+          -11.25,
+          0.0,
+          0.0
+        ],
+        [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        [
+          3.75,
+          0.0,
+          0.0
+        ],
+        [
+          11.25,
+          0.0,
+          0.0
+        ],
+        [
+          18.75,
+          0.0,
+          0.0
+        ],
+        [
+          26.25,
+          0.0,
+          0.0
+        ],
+        [
+          33.75,
+          0.0,
+          0.0
+        ],
+        [
+          41.25,
+          0.0,
+          0.0
+        ],
+        [
+          48.75,
+          0.0,
+          0.0
+        ],
+        [
+          56.25,
+          0.0,
+          0.0
+        ],
+        [
+          63.75,
+          0.0,
+          0.0
+        ],
+        [
+          71.25,
+          0.0,
+          0.0
+        ],
+        [
+          78.75,
+          0.0,
+          0.0
+        ],
+        [
+          86.25,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -86.25,
+          0.0,
+          0.0
+        ],
+        [
+          -78.75,
+          0.0,
+          0.0
+        ],
+        [
+          -71.25,
+          0.0,
+          0.0
+        ],
+        [
+          -63.75,
+          0.0,
+          0.0
+        ],
+        [
+          -56.25,
+          0.0,
+          0.0
+        ],
+        [
+          -48.75,
+          0.0,
+          0.0
+        ],
+        [
+          -41.25,
+          0.0,
+          0.0
+        ],
+        [
+          -33.75,
+          0.0,
+          0.0
+        ],
+        [
+          -26.25,
+          0.0,
+          0.0
+        ],
+        [
+          -18.75,
+          0.0,
+          0.0
+        ],
+        [
+          -11.25,
+          0.0,
+          0.0
+        ],
+        [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        [
+          3.75,
+          0.0,
+          0.0
+        ],
+        [
+          11.25,
+          0.0,
+          0.0
+        ],
+        [
+          18.75,
+          0.0,
+          0.0
+        ],
+        [
+          26.25,
+          0.0,
+          0.0
+        ],
+        [
+          33.75,
+          0.0,
+          0.0
+        ],
+        [
+          41.25,
+          0.0,
+          0.0
+        ],
+        [
+          48.75,
+          0.0,
+          0.0
+        ],
+        [
+          56.25,
+          0.0,
+          0.0
+        ],
+        [
+          63.75,
+          0.0,
+          0.0
+        ],
+        [
+          71.25,
+          0.0,
+          0.0
+        ],
+        [
+          78.75,
+          0.0,
+          0.0
+        ],
+        [
+          86.25,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 2.53,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "ti-6al-4v-eli",
+      "load_bearing": true,
+      "dimensional_class": "1.8 mm x 6 mm low-profile class, 4 to 24 holes",
+      "waist_half_width_mm": 1.8,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 1337.8926,
+        "surface_area_mm2": 2502.7915,
+        "points": 4220,
+        "triangles": 8532,
+        "euler_characteristic": -46,
+        "genus": 24
+      },
+      "notes": "Narrow, low-profile bar for a thin soft-tissue envelope. The 6 mm width leaves little material either side of a hole, so bending through one is especially unforgiving."
+    },
+    {
+      "id": "generic-adaptation-1.0-4h",
+      "name": "Generic 1.0 mm adaptation plate, 4 holes",
+      "family": "generic-adaptation-1.0",
+      "category": "adaptation and trauma",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-adaptation-1.0-4h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.0,
+      "width_mm": 5.0,
+      "hole_count": 4,
+      "hole_pitch_mm": 6.0,
+      "hole_diameter_mm": 2.0,
+      "length_mm": 23.0,
+      "hole_centres_mm": [
+        [
+          -9.0,
+          0.0,
+          0.0
+        ],
+        [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -9.0,
+          0.0,
+          0.0
+        ],
+        [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 4.0,
+        "max_bend_deg_per_node": 30.0,
+        "protected_radius_mm": 2.3,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-2",
+      "load_bearing": false,
+      "dimensional_class": "1.0 mm trauma and adaptation class",
+      "waist_half_width_mm": 1.5,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 77.8327,
+        "surface_area_mm2": 236.2784,
+        "points": 700,
+        "triangles": 1412,
+        "euler_characteristic": -6,
+        "genus": 4
+      },
+      "notes": "NOT load-bearing. Trauma and orthognathic fixation only; it will not carry a mandible across a continuity defect."
+    },
+    {
+      "id": "generic-adaptation-1.0-6h",
+      "name": "Generic 1.0 mm adaptation plate, 6 holes",
+      "family": "generic-adaptation-1.0",
+      "category": "adaptation and trauma",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-adaptation-1.0-6h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.0,
+      "width_mm": 5.0,
+      "hole_count": 6,
+      "hole_pitch_mm": 6.0,
+      "hole_diameter_mm": 2.0,
+      "length_mm": 35.0,
+      "hole_centres_mm": [
+        [
+          -15.0,
+          0.0,
+          0.0
+        ],
+        [
+          -9.0,
+          0.0,
+          0.0
+        ],
+        [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.0,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -15.0,
+          0.0,
+          0.0
+        ],
+        [
+          -9.0,
+          0.0,
+          0.0
+        ],
+        [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.0,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 4.0,
+        "max_bend_deg_per_node": 30.0,
+        "protected_radius_mm": 2.3,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-2",
+      "load_bearing": false,
+      "dimensional_class": "1.0 mm trauma and adaptation class",
+      "waist_half_width_mm": 1.5,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 118.7424,
+        "surface_area_mm2": 357.19,
+        "points": 1052,
+        "triangles": 2124,
+        "euler_characteristic": -10,
+        "genus": 6
+      },
+      "notes": "NOT load-bearing. Trauma and orthognathic fixation only; it will not carry a mandible across a continuity defect."
+    },
+    {
+      "id": "generic-adaptation-1.0-8h",
+      "name": "Generic 1.0 mm adaptation plate, 8 holes",
+      "family": "generic-adaptation-1.0",
+      "category": "adaptation and trauma",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-adaptation-1.0-8h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.0,
+      "width_mm": 5.0,
+      "hole_count": 8,
+      "hole_pitch_mm": 6.0,
+      "hole_diameter_mm": 2.0,
+      "length_mm": 47.0,
+      "hole_centres_mm": [
+        [
+          -21.0,
+          0.0,
+          0.0
+        ],
+        [
+          -15.0,
+          0.0,
+          0.0
+        ],
+        [
+          -9.0,
+          0.0,
+          0.0
+        ],
+        [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.0,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ],
+        [
+          21.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -21.0,
+          0.0,
+          0.0
+        ],
+        [
+          -15.0,
+          0.0,
+          0.0
+        ],
+        [
+          -9.0,
+          0.0,
+          0.0
+        ],
+        [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.0,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ],
+        [
+          21.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 4.0,
+        "max_bend_deg_per_node": 30.0,
+        "protected_radius_mm": 2.3,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-2",
+      "load_bearing": false,
+      "dimensional_class": "1.0 mm trauma and adaptation class",
+      "waist_half_width_mm": 1.5,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 159.6522,
+        "surface_area_mm2": 478.1017,
+        "points": 1404,
+        "triangles": 2836,
+        "euler_characteristic": -14,
+        "genus": 8
+      },
+      "notes": "NOT load-bearing. Trauma and orthognathic fixation only; it will not carry a mandible across a continuity defect."
+    },
+    {
+      "id": "generic-adaptation-1.5-6h",
+      "name": "Generic 1.5 mm adaptation plate, 6 holes",
+      "family": "generic-adaptation-1.5",
+      "category": "adaptation and trauma",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-adaptation-1.5-6h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.5,
+      "width_mm": 6.0,
+      "hole_count": 6,
+      "hole_pitch_mm": 7.0,
+      "hole_diameter_mm": 2.2,
+      "length_mm": 41.0,
+      "hole_centres_mm": [
+        [
+          -17.5,
+          0.0,
+          0.0
+        ],
+        [
+          -10.5,
+          0.0,
+          0.0
+        ],
+        [
+          -3.5,
+          0.0,
+          0.0
+        ],
+        [
+          3.5,
+          0.0,
+          0.0
+        ],
+        [
+          10.5,
+          0.0,
+          0.0
+        ],
+        [
+          17.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -17.5,
+          0.0,
+          0.0
+        ],
+        [
+          -10.5,
+          0.0,
+          0.0
+        ],
+        [
+          -3.5,
+          0.0,
+          0.0
+        ],
+        [
+          3.5,
+          0.0,
+          0.0
+        ],
+        [
+          10.5,
+          0.0,
+          0.0
+        ],
+        [
+          17.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 6.0,
+        "max_bend_deg_per_node": 25.0,
+        "protected_radius_mm": 2.53,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": false,
+      "dimensional_class": "1.5 mm intermediate trauma class",
+      "waist_half_width_mm": 1.8,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 257.5538,
+        "surface_area_mm2": 550.2266,
+        "points": 1052,
+        "triangles": 2124,
+        "euler_characteristic": -10,
+        "genus": 6
+      },
+      "notes": "Intermediate trauma profile. Used with a vascularised bone graft, not as a bridging device on its own."
+    },
+    {
+      "id": "generic-adaptation-1.5-8h",
+      "name": "Generic 1.5 mm adaptation plate, 8 holes",
+      "family": "generic-adaptation-1.5",
+      "category": "adaptation and trauma",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-adaptation-1.5-8h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.5,
+      "width_mm": 6.0,
+      "hole_count": 8,
+      "hole_pitch_mm": 7.0,
+      "hole_diameter_mm": 2.2,
+      "length_mm": 55.0,
+      "hole_centres_mm": [
+        [
+          -24.5,
+          0.0,
+          0.0
+        ],
+        [
+          -17.5,
+          0.0,
+          0.0
+        ],
+        [
+          -10.5,
+          0.0,
+          0.0
+        ],
+        [
+          -3.5,
+          0.0,
+          0.0
+        ],
+        [
+          3.5,
+          0.0,
+          0.0
+        ],
+        [
+          10.5,
+          0.0,
+          0.0
+        ],
+        [
+          17.5,
+          0.0,
+          0.0
+        ],
+        [
+          24.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -24.5,
+          0.0,
+          0.0
+        ],
+        [
+          -17.5,
+          0.0,
+          0.0
+        ],
+        [
+          -10.5,
+          0.0,
+          0.0
+        ],
+        [
+          -3.5,
+          0.0,
+          0.0
+        ],
+        [
+          3.5,
+          0.0,
+          0.0
+        ],
+        [
+          10.5,
+          0.0,
+          0.0
+        ],
+        [
+          17.5,
+          0.0,
+          0.0
+        ],
+        [
+          24.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 6.0,
+        "max_bend_deg_per_node": 25.0,
+        "protected_radius_mm": 2.53,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": false,
+      "dimensional_class": "1.5 mm intermediate trauma class",
+      "waist_half_width_mm": 1.8,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 345.9157,
+        "surface_area_mm2": 735.3256,
+        "points": 1404,
+        "triangles": 2836,
+        "euler_characteristic": -14,
+        "genus": 8
+      },
+      "notes": "Intermediate trauma profile. Used with a vascularised bone graft, not as a bridging device on its own."
+    },
+    {
+      "id": "generic-adaptation-1.5-12h",
+      "name": "Generic 1.5 mm adaptation plate, 12 holes",
+      "family": "generic-adaptation-1.5",
+      "category": "adaptation and trauma",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-adaptation-1.5-12h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 1.5,
+      "width_mm": 6.0,
+      "hole_count": 12,
+      "hole_pitch_mm": 7.0,
+      "hole_diameter_mm": 2.2,
+      "length_mm": 83.0,
+      "hole_centres_mm": [
+        [
+          -38.5,
+          0.0,
+          0.0
+        ],
+        [
+          -31.5,
+          0.0,
+          0.0
+        ],
+        [
+          -24.5,
+          0.0,
+          0.0
+        ],
+        [
+          -17.5,
+          0.0,
+          0.0
+        ],
+        [
+          -10.5,
+          0.0,
+          0.0
+        ],
+        [
+          -3.5,
+          0.0,
+          0.0
+        ],
+        [
+          3.5,
+          0.0,
+          0.0
+        ],
+        [
+          10.5,
+          0.0,
+          0.0
+        ],
+        [
+          17.5,
+          0.0,
+          0.0
+        ],
+        [
+          24.5,
+          0.0,
+          0.0
+        ],
+        [
+          31.5,
+          0.0,
+          0.0
+        ],
+        [
+          38.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -38.5,
+          0.0,
+          0.0
+        ],
+        [
+          -31.5,
+          0.0,
+          0.0
+        ],
+        [
+          -24.5,
+          0.0,
+          0.0
+        ],
+        [
+          -17.5,
+          0.0,
+          0.0
+        ],
+        [
+          -10.5,
+          0.0,
+          0.0
+        ],
+        [
+          -3.5,
+          0.0,
+          0.0
+        ],
+        [
+          3.5,
+          0.0,
+          0.0
+        ],
+        [
+          10.5,
+          0.0,
+          0.0
+        ],
+        [
+          17.5,
+          0.0,
+          0.0
+        ],
+        [
+          24.5,
+          0.0,
+          0.0
+        ],
+        [
+          31.5,
+          0.0,
+          0.0
+        ],
+        [
+          38.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": null,
+      "deformation": {
+        "min_bend_radius_mm": 6.0,
+        "max_bend_deg_per_node": 25.0,
+        "protected_radius_mm": 2.53,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": false,
+      "dimensional_class": "1.5 mm intermediate trauma class",
+      "waist_half_width_mm": 1.8,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 522.6394,
+        "surface_area_mm2": 1105.5235,
+        "points": 2108,
+        "triangles": 4260,
+        "euler_characteristic": -22,
+        "genus": 12
+      },
+      "notes": "Intermediate trauma profile. Used with a vascularised bone graft, not as a bridging device on its own."
     },
     {
       "id": "generic-body-curved-10h",
@@ -1727,6 +5645,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "preformed body class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 2202.5478,
@@ -1736,7 +5658,7 @@
         "euler_characteristic": -18,
         "genus": 10
       },
-      "notes": "Preformed to a 55 mm in-plane radius, roughly the lateral curvature of an adult mandibular body."
+      "notes": "Preformed to a 55 mm in-plane radius, roughly the lateral curvature of an adult mandibular body. Preforming is the point: less bending on the table means the threaded holes keep their shape and the plate keeps its fatigue life."
     },
     {
       "id": "generic-body-curved-14h",
@@ -1987,6 +5909,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "preformed body class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 3068.0728,
@@ -1996,7 +5922,7 @@
         "euler_characteristic": -26,
         "genus": 14
       },
-      "notes": "Preformed to a 55 mm in-plane radius, roughly the lateral curvature of an adult mandibular body."
+      "notes": "Preformed to a 55 mm in-plane radius, roughly the lateral curvature of an adult mandibular body. Preforming is the point: less bending on the table means the threaded holes keep their shape and the plate keeps its fatigue life."
     },
     {
       "id": "generic-angle-10h",
@@ -2187,6 +6113,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "preformed angle class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 2202.5563,
@@ -2447,6 +6377,10 @@
       "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "preformed angle class",
+      "waist_half_width_mm": null,
       "audit": {
         "open_edges": 0,
         "volume_mm3": 3068.0927,
@@ -2457,6 +6391,390 @@
         "genus": 14
       },
       "notes": "Preformed with a 115 degree turn at the middle, for a defect crossing the angle into the ramus."
+    },
+    {
+      "id": "generic-hemimandibular-22h",
+      "name": "Generic hemimandibular reconstruction plate, preformed, 22 holes",
+      "family": "generic-hemimandibular",
+      "category": "hemimandibular",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-hemimandibular-22h.stl",
+      "mesh_format": "stl",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+x along the plate, +y across its width, +z out of the outer face (away from bone); origin at the plate's centre, midplane z=0",
+      "thickness_mm": 2.8,
+      "width_mm": 12.5,
+      "hole_count": 22,
+      "hole_pitch_mm": 9.0,
+      "hole_diameter_mm": 2.9,
+      "length_mm": 193.0591,
+      "hole_centres_mm": [
+        [
+          -90.240853,
+          24.179964,
+          0.0
+        ],
+        [
+          -82.337677,
+          19.876124,
+          0.0
+        ],
+        [
+          -74.229798,
+          15.971575,
+          0.0
+        ],
+        [
+          -65.937371,
+          12.476024,
+          0.0
+        ],
+        [
+          -57.481014,
+          9.398161,
+          0.0
+        ],
+        [
+          -48.88175,
+          6.74564,
+          0.0
+        ],
+        [
+          -40.160958,
+          4.525053,
+          0.0
+        ],
+        [
+          -31.340319,
+          2.741923,
+          0.0
+        ],
+        [
+          -22.441764,
+          1.400681,
+          0.0
+        ],
+        [
+          -13.487415,
+          0.504663,
+          0.0
+        ],
+        [
+          -4.499534,
+          0.056097,
+          0.0
+        ],
+        [
+          4.499534,
+          0.056097,
+          0.0
+        ],
+        [
+          13.487415,
+          0.504663,
+          0.0
+        ],
+        [
+          22.441764,
+          1.400681,
+          0.0
+        ],
+        [
+          31.340319,
+          2.741923,
+          0.0
+        ],
+        [
+          40.160958,
+          4.525053,
+          0.0
+        ],
+        [
+          48.88175,
+          6.74564,
+          0.0
+        ],
+        [
+          57.481014,
+          9.398161,
+          0.0
+        ],
+        [
+          65.937371,
+          12.476024,
+          0.0
+        ],
+        [
+          74.229798,
+          15.971575,
+          0.0
+        ],
+        [
+          82.337677,
+          19.876124,
+          0.0
+        ],
+        [
+          90.240853,
+          24.179964,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -90.240853,
+          24.179964,
+          0.0
+        ],
+        [
+          -82.337677,
+          19.876124,
+          0.0
+        ],
+        [
+          -74.229798,
+          15.971575,
+          0.0
+        ],
+        [
+          -65.937371,
+          12.476024,
+          0.0
+        ],
+        [
+          -57.481014,
+          9.398161,
+          0.0
+        ],
+        [
+          -48.88175,
+          6.74564,
+          0.0
+        ],
+        [
+          -40.160958,
+          4.525053,
+          0.0
+        ],
+        [
+          -31.340319,
+          2.741923,
+          0.0
+        ],
+        [
+          -22.441764,
+          1.400681,
+          0.0
+        ],
+        [
+          -13.487415,
+          0.504663,
+          0.0
+        ],
+        [
+          -4.499534,
+          0.056097,
+          0.0
+        ],
+        [
+          4.499534,
+          0.056097,
+          0.0
+        ],
+        [
+          13.487415,
+          0.504663,
+          0.0
+        ],
+        [
+          22.441764,
+          1.400681,
+          0.0
+        ],
+        [
+          31.340319,
+          2.741923,
+          0.0
+        ],
+        [
+          40.160958,
+          4.525053,
+          0.0
+        ],
+        [
+          48.88175,
+          6.74564,
+          0.0
+        ],
+        [
+          57.481014,
+          9.398161,
+          0.0
+        ],
+        [
+          65.937371,
+          12.476024,
+          0.0
+        ],
+        [
+          74.229798,
+          15.971575,
+          0.0
+        ],
+        [
+          82.337677,
+          19.876124,
+          0.0
+        ],
+        [
+          90.240853,
+          24.179964,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform_radius_mm": null,
+      "preform_angle_deg": 120.0,
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 15.0,
+        "protected_radius_mm": 3.335,
+        "bendable": "inter-hole bridges only"
+      },
+      "provenance": "Generated procedurally by tools/make_plate_assets.py in this repository from the published dimensional classes of reconstruction plates. No manufacturer CAD, drawing or measurement was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "system_id": null,
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimensional_class": "hemimandibular class; published contoured plates in this class use a 5 + 17 hole split about the angle at 2.8 mm profile height",
+      "waist_half_width_mm": null,
+      "audit": {
+        "open_edges": 0,
+        "volume_mm3": 5923.3716,
+        "surface_area_mm2": 6130.8324,
+        "points": 3784,
+        "triangles": 7652,
+        "euler_characteristic": -42,
+        "genus": 22
+      },
+      "notes": "One half of the mandible, ramus to symphysis, preformed about the angle. Very stiff; shape by press rather than by hand."
     }
   ]
 }

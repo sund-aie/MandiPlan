@@ -2,63 +2,123 @@
   "note": [
     "Generic instrument categories found in plate-bending sets, not a vendor",
     "catalogue. Add your department's kit here with its own instrument names so",
-    "the generated steps read the way your set is labelled."
+    "the generated steps read the way your set is labelled.",
+    "",
+    "bending_insets says whether this kit fits inserts into the threaded holes",
+    "while the plate is contoured. AO Surgery Reference: without them the holes",
+    "deform during contouring and precise seating of locking screws cannot be",
+    "guaranteed. hole_protection is the fraction of that deformation the kit",
+    "removes; 0 means the holes take the strain unprotected.",
+    "bend_localisation_mm is the arc length over which the instrument spreads a",
+    "bend: a small number is a tight local kink, a large one a broad curve."
   ],
   "kits": [
     {
       "id": "bending-irons",
       "name": "Bending irons (two-handled pair)",
-      "instruments": ["bending iron, left hand", "bending iron, right hand"],
-      "handles": ["in_plane", "out_of_plane"],
+      "instruments": [
+        "bending iron, left hand",
+        "bending iron, right hand"
+      ],
+      "handles": [
+        "in_plane",
+        "out_of_plane"
+      ],
       "grip_span_mm": 20.0,
       "max_angle_per_pass_deg": 10.0,
       "can_twist": false,
       "marking": "Mark the bar with a sterile marker at the distance given, on the outer face.",
-      "notes": "Grip either side of the mark and close the handles; take the angle in passes rather than one pull."
+      "notes": "Grip either side of the mark and close the handles; take the angle in passes rather than one pull.",
+      "bending_insets": false,
+      "insets_available": true,
+      "bend_localisation_mm": 9.0,
+      "hole_protection": 0.0,
+      "signature": "A broad, even curve. The wide grip spreads the bend over roughly a screw-hole pitch, so no single point takes it all \u2014 but any hole inside the grip is strained with the bar unless insets are fitted."
     },
     {
       "id": "bending-pliers",
       "name": "Three-point bending pliers",
-      "instruments": ["three-point bending pliers"],
-      "handles": ["in_plane", "out_of_plane"],
+      "instruments": [
+        "three-point bending pliers"
+      ],
+      "handles": [
+        "in_plane",
+        "out_of_plane"
+      ],
       "grip_span_mm": 14.0,
       "max_angle_per_pass_deg": 8.0,
       "can_twist": false,
       "marking": "Centre the middle jaw on the mark.",
-      "notes": "Good for fine contouring between screw holes; keep the jaws clear of the holes themselves."
+      "notes": "Good for fine contouring between screw holes; keep the jaws clear of the holes themselves.",
+      "bending_insets": false,
+      "insets_available": true,
+      "bend_localisation_mm": 5.0,
+      "hole_protection": 0.0,
+      "signature": "A tight, local kink at the middle jaw. Precise between holes, and the worst offender through one: the bend is concentrated into a few millimetres."
     },
     {
       "id": "bar-bending-press",
       "name": "Bar bending press",
-      "instruments": ["bending press"],
-      "handles": ["in_plane", "out_of_plane"],
+      "instruments": [
+        "bending press"
+      ],
+      "handles": [
+        "in_plane",
+        "out_of_plane"
+      ],
       "grip_span_mm": 26.0,
       "max_angle_per_pass_deg": 20.0,
       "can_twist": false,
       "marking": "Set the mark against the press index line.",
-      "notes": "For thick bars that will not move with hand instruments."
+      "notes": "For thick bars that will not move with hand instruments.",
+      "bending_insets": true,
+      "insets_available": true,
+      "bend_localisation_mm": 12.0,
+      "hole_protection": 0.92,
+      "signature": "A smooth, repeatable arc with the holes held by press insets. The most predictable result and the kindest to threaded holes; least able to make a fine local adjustment."
     },
     {
       "id": "twisting-forceps",
       "name": "Plate twisting forceps (pair)",
-      "instruments": ["twisting forceps A", "twisting forceps B"],
-      "handles": ["twist"],
+      "instruments": [
+        "twisting forceps A",
+        "twisting forceps B"
+      ],
+      "handles": [
+        "twist"
+      ],
       "grip_span_mm": 18.0,
       "max_angle_per_pass_deg": 10.0,
       "can_twist": true,
       "marking": "Mark both ends of the span to be twisted.",
-      "notes": "Grip either side of the span and rotate in opposite directions."
+      "notes": "Grip either side of the span and rotate in opposite directions.",
+      "bending_insets": false,
+      "insets_available": false,
+      "bend_localisation_mm": 18.0,
+      "hole_protection": 0.0,
+      "signature": "A twist distributed along the gripped span. Holes inside the span are sheared rather than stretched, which skews them into a rhomboid instead of an oval."
     },
     {
       "id": "template-wire",
       "name": "Malleable template wire and transfer",
-      "instruments": ["malleable template wire"],
-      "handles": ["in_plane", "out_of_plane", "twist"],
+      "instruments": [
+        "malleable template wire"
+      ],
+      "handles": [
+        "in_plane",
+        "out_of_plane",
+        "twist"
+      ],
       "grip_span_mm": 0.0,
       "max_angle_per_pass_deg": 90.0,
       "can_twist": true,
       "marking": "Lay the wire on the printed template and follow it by hand.",
-      "notes": "Shape the wire to the printed template first, then copy the wire onto the plate."
+      "notes": "Shape the wire to the printed template first, then copy the wire onto the plate.",
+      "bending_insets": false,
+      "insets_available": false,
+      "bend_localisation_mm": 25.0,
+      "hole_protection": 0.0,
+      "signature": "Freehand. Very smooth, entirely operator-dependent, and the hardest to reproduce; the bend distributes over a long span so individual holes see little strain."
     }
   ]
 }
