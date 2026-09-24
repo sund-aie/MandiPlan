@@ -25,7 +25,7 @@ from ..geometry.mirror import (
 )
 from ..geometry.mandible import MandibleIsolation, isolate_mandible, masked_bone_volume
 from ..geometry.mesh_io import MeshLoadError
-from ..geometry.plate import PlatePlan, compute_plate_plan
+from ..geometry.plate import PlatePlan, compute_plate_plan, fair_plate_path
 from ..geometry.hole_distortion import ovalise_mesh, predict_distortion
 from ..geometry.plate_bend import (
     BentPlate,
@@ -118,6 +118,10 @@ class Session(QObject):
     message = pyqtSignal(str)
     #: True while a slow computation runs, so the window can show it is busy.
     busy = pyqtSignal(bool)
+
+    #: Radius of bone a plate rests on around each path point, mm: half a
+    #: reconstruction plate's width and a little more.
+    PLATE_FOOTPRINT_MM = 5.0
 
     #: Pieces of bone smaller than this fraction of the largest are noise.
     SPECK_FRACTION = 0.05
@@ -800,7 +804,8 @@ class Session(QObject):
             self.message.emit("Extract a bone surface before drawing a plate path.")
             return
         self._push_undo()
-        point, normal = self.projector.project(world_point)
+        point, _ = self.projector.project(world_point)
+        normal = self.projector.footprint_normal(point, self.PLATE_FOOTPRINT_MM)
         self.plate_points.append(point)
         self.plate_normals.append(normal)
         self.update_plate_plan()
@@ -996,6 +1001,44 @@ class Session(QObject):
                 asset.hole_diameter_mm,
             )
 
+    def bending_guide(self):
+        """The clip-on guide that stops each bend of the selected plate at its
+        planned angle (see ``geometry/bending_guide.py``), or ``None`` with a
+        message saying what is missing."""
+        from ..geometry.bending_guide import plan_bending_guide
+
+        asset, bent = self.plate_asset, self.bent_plate
+        if asset is None or bent is None or bent.hole_tangents is None:
+            self.message.emit(
+                "Draw a plate path with bending switched on before exporting a "
+                "bending guide."
+            )
+            return None
+        alloy = self.plate_alloy()
+        thickness = asset.thickness_mm
+        # Plastic bending happens over the bridge between the rigid rings
+        # round two holes; its radius sets how much the plate springs back.
+        bridge = max(asset.hole_pitch_mm - 2.0 * asset.deformation.protected_radius_mm, 1.0)
+
+        def overbend(angle_deg: float) -> float:
+            if angle_deg <= 0.0:
+                return 0.0
+            radius = max(bridge / np.radians(angle_deg), alloy.min_bend_radius_mm(thickness))
+            return alloy.overbend_deg(angle_deg, radius, thickness)
+
+        return plan_bending_guide(
+            asset.hole_centres_mm,
+            asset.hole_axes,
+            bent.hole_centres,
+            bent.hole_axes,
+            bent.hole_tangents,
+            asset.width_mm,
+            thickness,
+            asset.seat_diameter_mm or asset.hole_diameter_mm + 1.5,
+            overbend=overbend,
+            alloy_name=alloy.name,
+        )
+
     def plate_alloy(self) -> Alloy:
         """The alloy the selected plate is made of."""
         asset = self.plate_asset
@@ -1032,8 +1075,9 @@ class Session(QObject):
     def update_plate_plan(self) -> None:
         self.plate_plan = None
         if len(self.plate_points) >= 2:
-            path = np.vstack(self.plate_points)
-            normals = np.vstack(self.plate_normals)
+            path, normals = fair_plate_path(
+                np.vstack(self.plate_points), np.vstack(self.plate_normals)
+            )
             total = float(np.linalg.norm(np.diff(path, axis=0), axis=1).sum())
             if total >= self.plate.pitch_mm:
                 self.plate_plan = compute_plate_plan(path, normals, self.plate.pitch_mm)

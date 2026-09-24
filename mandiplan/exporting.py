@@ -284,3 +284,68 @@ def write_surface_stl(path: str | Path, polydata) -> Path:
 
 def _num(value: float) -> str:
     return "" if not np.isfinite(value) else f"{value:.3f}"
+
+
+def write_bending_guide(path: str | Path, guide, asset=None) -> tuple[Path, Path]:
+    """Write the clip-on bending guide as a binary STL, and its table as CSV.
+
+    The CSV sits next to the STL with the same name. It says, bridge by
+    bridge, which way to bend and when to stop, and how the guide is meant to
+    be printed and used.
+    """
+    from .render.bending_guide_mesh import guide_polydata
+
+    path = Path(path)
+    writer = vtk.vtkSTLWriter()
+    writer.SetFileName(str(path))
+    writer.SetFileTypeToBinary()
+    writer.SetInputData(guide_polydata(guide))
+    writer.Write()
+    stamp_stl(path)
+
+    table = path.with_suffix(".csv")
+    lines = [
+        "MandiPlan clip-on bending guide",
+        *( [f"plate: {asset.name} ({asset.status_label})"] if asset is not None else [] ),
+        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick",
+        f"springback allowed for: {guide.alloy_name or 'none'}",
+        "print: TPU 95A (or PETG), 0.1-0.15 mm layers, 100% infill, as exported "
+        "(saddle tops on the bed); no supports needed",
+        "use: clip the guide onto the plate as supplied, saddle 1 on hole 1, numbers "
+        "on the outer side; bend each bridge the way its gap closes until the two "
+        "saddles touch, let go, and move to the next",
+        "the stop is the springback-corrected angle: the plate relaxes onto the "
+        "target after release; twist has no stop and is listed for checking by eye",
+        "angles follow the bend table: in-plane positive counter-clockwise seen from "
+        "the outer face, out-of-plane positive away from the bone, twist right-handed "
+        "along the plate",
+    ]
+    with table.open("w", newline="", encoding="utf-8") as handle:
+        _write_header(handle, lines)
+        out = csv.writer(handle)
+        out.writerow(
+            [
+                "bridge (holes)",
+                "target bend (deg)",
+                "stop angle (deg)",
+                "in-plane (deg)",
+                "out-of-plane (deg)",
+                "twist (deg)",
+                "has stop",
+                "instruction",
+            ]
+        )
+        for joint in guide.joints:
+            out.writerow(
+                [
+                    f"{joint.index + 1}-{joint.index + 2}",
+                    f"{joint.angle_deg:.2f}",
+                    f"{joint.stop_angle_deg:.2f}",
+                    f"{joint.in_plane_deg:.2f}",
+                    f"{joint.out_of_plane_deg:.2f}",
+                    f"{joint.twist_deg:.2f}",
+                    "yes" if joint.has_stop else "no",
+                    joint.instruction(),
+                ]
+            )
+    return path, table

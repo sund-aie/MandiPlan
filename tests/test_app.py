@@ -15,7 +15,7 @@ from helpers import rel_error
 from make_phantom import PhantomSpec, make_phantom, write_dicom_series
 
 from mandiplan.constants import DISCLAIMER
-from mandiplan.exporting import write_bend_csv, write_template_stl
+from mandiplan.exporting import write_bend_csv, write_bending_guide, write_template_stl
 from mandiplan.ui.modes import Mode
 
 
@@ -352,6 +352,16 @@ def test_plate_path_bend_table_and_exports(window, phantom_folder, tmp_path):
     mass.Update()
     expected = session.plate.width_mm * session.plate.thickness_mm * plan.total_length_mm
     assert rel_error(mass.GetVolume(), expected) < 0.05
+
+    # The clip-on guide for the plate as bent onto this path.
+    guide = session.bending_guide()
+    assert guide is not None
+    assert len(guide.saddles) == session.plate_asset.hole_count
+    assert len(guide.joints) == session.plate_asset.hole_count - 1
+    assert any(joint.has_stop for joint in guide.joints)
+    guide_stl, guide_table = write_bending_guide(tmp_path / "guide.stl", guide, session.plate_asset)
+    assert guide_stl.stat().st_size > 10_000
+    assert "until the saddles meet" in guide_table.read_text(encoding="utf-8")
     window.set_mode(Mode.NAVIGATE)
 
 

@@ -209,6 +209,40 @@ class SurfaceProjector:
         self.locator.BuildLocator()
         normals = polydata.GetPointData().GetNormals()
         self._normals = normals
+        self._point_locator = None
+
+    def footprint_normal(self, point, radius_mm: float) -> np.ndarray:
+        """The bone's outward normal averaged over a plate-sized patch.
+
+        A plate does not rest on one vertex of the bone surface but on the
+        patch under its footprint. On a real scan the surface is rough at the
+        scale of a voxel, and a single-vertex normal swings by tens of degrees
+        from one click to the next; a plane fitted to the patch is what the
+        plate actually lies against.
+        """
+        closest, normal = self.project(point)
+        if self._point_locator is None:
+            self._point_locator = vtk.vtkStaticPointLocator()
+            self._point_locator.SetDataSet(self.polydata)
+            self._point_locator.BuildLocator()
+        ids = vtk.vtkIdList()
+        self._point_locator.FindPointsWithinRadius(float(radius_mm), closest, ids)
+        if ids.GetNumberOfIds() < 6:
+            return normal
+        patch = np.array([self.polydata.GetPoint(ids.GetId(i)) for i in range(ids.GetNumberOfIds())])
+        if self._normals is not None:
+            # Only the side of the bone the click is on: a thin plate of bone
+            # has its far face inside the radius too.
+            facing = np.array(
+                [self._normals.GetTuple3(ids.GetId(i)) for i in range(ids.GetNumberOfIds())]
+            )
+            same_side = facing @ normal > 0.3
+            if same_side.sum() >= 6:
+                patch = patch[same_side]
+        centred = patch - patch.mean(axis=0)
+        _, vectors = np.linalg.eigh(centred.T @ centred)
+        fitted = vectors[:, 0]
+        return fitted if fitted @ normal >= 0 else -fitted
 
     def project(self, point) -> tuple[np.ndarray, np.ndarray]:
         """Closest point on the surface and the interpolated outward normal."""

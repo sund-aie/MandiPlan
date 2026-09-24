@@ -668,7 +668,11 @@ class PlatePanel(QWidget):
         self.fit_info = QLabel("")
         self.fit_info.setWordWrap(True)
         self.export_csv = QPushButton("Export bend table (CSV)…")
-        self.export_stl = QPushButton("Export bending template (STL)…")
+        self.export_stl = QPushButton("Export bending guide (STL)…")
+        self.export_stl.setToolTip(
+            "A clip-on guide, printed in TPU, that stops each bend at its planned "
+            "angle, with a bend-by-bend table"
+        )
         self.export_steps = QPushButton("Export bench steps (CSV)…")
 
         layout = QVBoxLayout(self)

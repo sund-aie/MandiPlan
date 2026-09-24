@@ -34,7 +34,7 @@ from ..exporting import (
     write_plan_summary_csv,
     write_steps_csv,
     write_surface_stl,
-    write_template_stl,
+    write_bending_guide,
 )
 from ..geometry.cpr import cross_section_world_point
 from ..geometry.measure import angle_deg, distance_mm, format_mm
@@ -218,7 +218,7 @@ class MainWindow(QMainWindow):
             panel.mode_requested.connect(self.set_mode)
         self.plate_panel.overlays_changed.connect(self.view3d.set_plate_overlays)
         self.plate_panel.export_csv_requested.connect(self.export_bend_csv)
-        self.plate_panel.export_stl_requested.connect(self.export_template_stl)
+        self.plate_panel.export_stl_requested.connect(self.export_bending_guide)
         self.plate_panel.export_steps_requested.connect(self.export_steps_csv)
         self.reconstruction_panel.export_graft_requested.connect(self.export_graft_stl)
 
@@ -235,8 +235,8 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         for text, slot in (
             ("Export plate bend table (CSV)…", self.export_bend_csv),
-            ("Export fitted plate (STL)…", self.export_plate_stl),
-            ("Export bending template (STL)…", self.export_template_stl),
+            ("Export bent plate (STL)…", self.export_plate_stl),
+            ("Export bending guide (STL + table)…", self.export_bending_guide),
             ("Export bench steps (CSV)…", self.export_steps_csv),
             ("Export reconstructed jaw (STL)…", self.export_graft_stl),
             ("Export mirrored segment only (STL)…", self.export_mirrored_segment_stl),
@@ -786,19 +786,22 @@ class MainWindow(QMainWindow):
             )
             self.show_message(f"Bend table written to {path}")
 
-    def export_template_stl(self) -> None:
-        plan = self.session.plate_plan
-        if plan is None:
-            self.show_message("Draw a plate path first.")
+    def export_bending_guide(self) -> None:
+        """The clip-on guide that stops every bend at its angle, with its table."""
+        guide = self.session.bending_guide()
+        if guide is None:
             return
-        path = self._save_path(
-            "Export bending template", "STL files (*.stl)", "bending_template.stl"
-        )
-        if path:
-            write_template_stl(
-                path, plan, self.session.plate.width_mm, self.session.plate.thickness_mm
-            )
-            self.show_message(f"Bending template written to {path}")
+        asset = self.session.plate_asset
+        default = f"{asset.id}-bending-guide.stl" if asset else "bending_guide.stl"
+        path = self._save_path("Export bending guide", "STL files (*.stl)", default)
+        if not path:
+            return
+        self.set_busy(True)
+        try:
+            stl, table = write_bending_guide(path, guide, asset)
+        finally:
+            self.set_busy(False)
+        self.show_message(f"Bending guide written to {stl}; bend-by-bend table in {table.name}")
 
     def export_plate_stl(self) -> None:
         """Export the fitted plate: the real asset mesh, as displayed."""
@@ -809,8 +812,8 @@ class MainWindow(QMainWindow):
             )
             return
         asset = self.session.plate_asset
-        default = f"{asset.id}-fitted.stl" if asset else "plate_fitted.stl"
-        path = self._save_path("Export fitted plate", "STL files (*.stl)", default)
+        default = f"{asset.id}-bent.stl" if asset else "plate_bent.stl"
+        path = self._save_path("Export bent plate", "STL files (*.stl)", default)
         if path:
             write_plate_stl(path, fitted)
             status = asset.status_label.lower() if asset else "plate"

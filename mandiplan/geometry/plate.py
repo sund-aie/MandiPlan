@@ -186,6 +186,70 @@ def compute_plate_plan(path_points, path_normals, pitch_mm: float) -> PlatePlan:
     )
 
 
+#: How much a clicked plate path is smoothed, as a Gaussian along it, mm.
+#: A plate cannot follow a wiggle shorter than its hole pitch: bending
+#: happens only at the bridges between holes. Clicks on a real bone surface
+#: wobble by millimetres from one to the next, and each wobble would
+#: otherwise become a pair of opposite bends.
+PATH_SMOOTHING_MM = 3.0
+
+
+def fair_plate_path(points, normals, step_mm: float = 0.5, smoothing_mm: float = PATH_SMOOTHING_MM):
+    """A fair plate path through the clicked points, and its normals.
+
+    Straight chords between clicks put a kink at every click, and each kink
+    is a bend the plate does not need. The path is the centripetal
+    Catmull-Rom spline through the clicks (the curve the arch uses), sampled
+    at ``step_mm`` and then smoothed along its length with a Gaussian of
+    ``smoothing_mm``, both ends held where they were clicked. The normals are
+    interpolated between the clicks and smoothed the same way. Two points
+    stay a straight segment.
+    """
+    from .spline import ArchCurve
+
+    points = np.asarray(points, dtype=float).reshape(-1, 3)
+    normals = np.asarray(normals, dtype=float).reshape(-1, 3)
+    if len(points) < 3:
+        return points, normals
+    try:
+        curve = ArchCurve(points)
+    except ValueError:
+        return points, normals
+    samples = curve.resample(step_mm)
+    at_clicks = np.array([curve.arc_position_of(p) for p in points])
+    order = np.argsort(at_clicks)
+    dense_normals = np.column_stack(
+        [np.interp(samples.s, at_clicks[order], normals[order, c]) for c in range(3)]
+    )
+    path = _smooth_along(samples.points, smoothing_mm / step_mm)
+    dense_normals = _smooth_along(dense_normals, smoothing_mm / step_mm)
+    dense_normals /= np.maximum(np.linalg.norm(dense_normals, axis=1, keepdims=True), 1e-12)
+    return path, dense_normals
+
+
+def _smooth_along(values: np.ndarray, sigma_samples: float) -> np.ndarray:
+    """Gaussian smoothing along a sampled curve, ends pinned.
+
+    Each end is padded with the curve turned half a turn about that end point
+    (``2 p0 - p_k``), so the smoothing neither pulls the end inward nor
+    bends the last stretch.
+    """
+    if sigma_samples <= 0 or len(values) < 3:
+        return values
+    radius = int(np.ceil(3.0 * sigma_samples))
+    radius = min(radius, len(values) - 1)
+    offsets = np.arange(-radius, radius + 1)
+    kernel = np.exp(-0.5 * (offsets / sigma_samples) ** 2)
+    kernel /= kernel.sum()
+    head = 2.0 * values[0] - values[1 : radius + 1][::-1]
+    tail = 2.0 * values[-1] - values[-radius - 1 : -1][::-1]
+    padded = np.vstack([head, values, tail])
+    out = np.empty_like(values)
+    for c in range(values.shape[1]):
+        out[:, c] = np.convolve(padded[:, c], kernel, mode="valid")
+    return out
+
+
 def ribbon_mesh(
     plan: PlatePlan, width_mm: float, thickness_mm: float
 ) -> tuple[np.ndarray, np.ndarray]:

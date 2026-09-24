@@ -201,12 +201,27 @@ def fit_plate(window, out_dir: Path, asset_id: str | None = None) -> list[Path]:
     # surgeon clicks them. Points taken from the arch centreline itself are
     # inside the bone, and projecting those onto the surface snaps to whichever
     # wall happens to be nearest, giving a path that zigzags through the tube.
+    import vtk
+
+    locator = vtk.vtkCellLocator()
+    locator.SetDataSet(session.surface)
+    locator.BuildLocator()
     for s_mm in np.linspace(
         frames.length_mm * 0.12, frames.length_mm * 0.88, 12
     ):
         s_mm = float(s_mm)
         _, _, buccolingual = frames.frame_at(s_mm)
-        session.add_plate_point(frames.point_at(s_mm) + buccolingual * 12.0)
+        # Aim straight in at the arch from outside, level, the way a surgeon
+        # runs a plate along the jaw at one height.
+        inside = frames.point_at(s_mm)
+        outside = inside + buccolingual * 25.0
+        hit = [0.0, 0.0, 0.0]
+        found = locator.IntersectWithLine(
+            outside.tolist(), inside.tolist(), 1e-4, vtk.reference(0.0), hit,
+            [0.0, 0.0, 0.0], vtk.reference(0),
+        )
+        target = np.array(hit) if found else inside + buccolingual * 12.0
+        session.add_plate_point(target)
     QApplication.processEvents()
 
     if asset_id is None:
