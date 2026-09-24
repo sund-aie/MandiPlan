@@ -103,7 +103,7 @@ def test_the_bend_csv_names_the_plate_and_its_status(planned, tmp_path):
 
 
 def test_a_generic_plate_says_so_in_every_export():
-    asset = asset_by_id("generic-recon-2.4-12h")
+    asset = asset_by_id("generic-recon-2.4-lp-12h")
     lines = "\n".join(asset_provenance_lines(asset))
     assert "generic parametric approximation" in lines.lower()
     assert "must not be read as a device selection" in lines

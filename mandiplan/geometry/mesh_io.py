@@ -102,11 +102,96 @@ class Mesh:
         _, counts = np.unique(edges, axis=0, return_counts=True)
         return bool(np.all(counts == 2))
 
-    def volume_mm3(self) -> float:
+    def signed_volume_mm3(self) -> float:
+        """Positive for a closed mesh wound outward; origin-independent only then."""
         a = self.points[self.triangles[:, 0]]
         b = self.points[self.triangles[:, 1]]
         c = self.points[self.triangles[:, 2]]
-        return abs(float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6.0))
+        return float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6.0)
+
+    def volume_mm3(self) -> float:
+        return abs(self.signed_volume_mm3())
+
+    def is_consistently_oriented(self) -> bool:
+        """Every directed edge used once: neighbouring faces agree on winding.
+
+        A mesh can be watertight and still wound inconsistently, and then its
+        volume depends on where it sits and a slicer sees faces inside out.
+        """
+        edges = np.vstack(
+            [
+                self.triangles[:, [0, 1]],
+                self.triangles[:, [1, 2]],
+                self.triangles[:, [2, 0]],
+            ]
+        )
+        _, counts = np.unique(edges, axis=0, return_counts=True)
+        return bool(np.all(counts == 1))
+
+    def is_outward(self) -> bool:
+        return self.is_consistently_oriented() and self.signed_volume_mm3() > 0
+
+
+def orient_outward(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
+    """Rewind a closed manifold mesh so every face points out.
+
+    A breadth-first walk over faces sharing an edge flips any neighbour whose
+    winding disagrees, then each connected shell is turned outward by the sign
+    of its volume. Returns the rewound triangles; points are untouched.
+    """
+    tris = np.asarray(triangles, dtype=np.int64).copy()
+    n = len(tris)
+    if n == 0:
+        return tris
+    directed = np.stack([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]], axis=1)
+    undirected = np.sort(directed.reshape(-1, 2), axis=1)
+    _, inverse = np.unique(undirected, axis=0, return_inverse=True)
+    inverse = inverse.reshape(-1)
+    order = np.argsort(inverse, kind="stable")
+    owners = order // 3
+    keys = inverse[order]
+    # Pair up the two faces on each edge (manifold input assumed).
+    neighbours: list[list[int]] = [[] for _ in range(n)]
+    start = 0
+    while start < len(keys):
+        end = start
+        while end < len(keys) and keys[end] == keys[start]:
+            end += 1
+        group = owners[start:end]
+        if end - start == 2:
+            a, b = int(group[0]), int(group[1])
+            neighbours[a].append(b)
+            neighbours[b].append(a)
+        start = end
+
+    def shares_direction(t: int, u: int) -> bool:
+        edges_t = {(int(tris[t, i]), int(tris[t, (i + 1) % 3])) for i in range(3)}
+        return any(
+            (int(tris[u, i]), int(tris[u, (i + 1) % 3])) in edges_t for i in range(3)
+        )
+
+    seen = np.zeros(n, dtype=bool)
+    for root in range(n):
+        if seen[root]:
+            continue
+        shell = [root]
+        seen[root] = True
+        queue = [root]
+        while queue:
+            t = queue.pop()
+            for u in neighbours[t]:
+                if seen[u]:
+                    continue
+                if shares_direction(t, u):
+                    tris[u] = tris[u, ::-1]
+                seen[u] = True
+                shell.append(u)
+                queue.append(u)
+        shell_tris = tris[shell]
+        a, b, c = (points[shell_tris[:, k]] for k in range(3))
+        if np.einsum("ij,ij->i", a, np.cross(b, c)).sum() < 0:
+            tris[shell] = tris[shell][:, ::-1]
+    return tris
 
 
 def _merge_vertices(points: np.ndarray, tolerance: float = 1e-6):
@@ -278,6 +363,13 @@ def _parse_binary_ply(body, counts, properties, unit_scale) -> Mesh:
     # PLY lists declare "property list <count type> <index type> vertex_indices".
     count_np = np.dtype("<" + _PLY_TYPES.get(count_kind, "u1"))
     index_np = np.dtype("<" + _PLY_TYPES.get(index_kind, "i4"))
+    faces = counts.get("face", 0)
+    # Fast path: an all-triangle file is one fixed-size record per face.
+    record = np.dtype([("n", count_np), ("i", index_np, 3)])
+    if faces and len(body) >= offset + record.itemsize * faces:
+        block = np.frombuffer(body, dtype=record, count=faces, offset=offset)
+        if np.all(block["n"] == 3):
+            return Mesh(points * float(unit_scale), block["i"].astype(np.int64))
     triangles = []
     for _ in range(counts.get("face", 0)):
         size = int(np.frombuffer(body, count_np, 1, offset)[0])

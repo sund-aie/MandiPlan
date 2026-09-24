@@ -90,6 +90,19 @@ class PlateAsset:
     #: False for adaptation and trauma profiles that cannot bridge a defect.
     load_bearing: bool = True
     dimensional_class: str = ""
+    #: Diameter where the screw head seats, at the outer face.
+    seat_diameter_mm: float = 0.0
+    #: Threaded holes that take locking screws.
+    locking: bool = False
+    #: Longest dimension of the mesh as built, for the unit-scale check.
+    extent_mm: float = 0.0
+    #: Where the etched lettering goes, in the asset's own frame.
+    marking: tuple = ()
+    #: The published figures this generic plate is dimensioned from.
+    dimension_sources: tuple = ()
+    #: Hole positions along the flat, unbent plate, mm.
+    flat_hole_x_mm: tuple = ()
+    code: str = ""
     audit: dict = field(default_factory=dict)
     root: Path = DATA_DIR
 
@@ -122,8 +135,10 @@ class PlateAsset:
             f"{self.status_label}",
             f"Thickness {self.thickness_mm:.1f} mm, width {self.width_mm:.1f} mm",
             f"{self.hole_count} holes at {self.hole_pitch_mm:.1f} mm pitch, "
-            f"{self.hole_diameter_mm:.1f} mm diameter",
-            f"Nominal length {self.length_mm:.1f} mm",
+            f"{self.hole_diameter_mm:.1f} mm bore, "
+            f"{self.seat_diameter_mm:.1f} mm "
+            + ("threaded locking seat" if self.locking else "conical seat"),
+            f"Nominal length {self.length_mm:.1f} mm (flat)",
             "",
             *alloy.summary_lines(),
             f"Springback: overbend {alloy.overbend_deg(10.0, 30.0, self.thickness_mm):.1f}° "
@@ -136,6 +151,8 @@ class PlateAsset:
             )
         if self.dimensional_class:
             lines.append(f"Class: {self.dimensional_class}")
+        for source in self.dimension_sources:
+            lines.append(f"Dimensioned from: {source}")
         if self.preform_angle_deg:
             lines.append(f"Preformed angle {self.preform_angle_deg:.0f}°")
         elif self.preform_radius_mm:
@@ -241,6 +258,13 @@ def _asset_from_entry(entry: dict, root: Path) -> PlateAsset:
         material_id=entry.get("material_id", "cp-ti-grade-4"),
         load_bearing=bool(entry.get("load_bearing", True)),
         dimensional_class=entry.get("dimensional_class", ""),
+        seat_diameter_mm=float(entry.get("seat_diameter_mm", 0.0)),
+        locking=bool(entry.get("locking", False)),
+        extent_mm=float(entry.get("extent_mm", entry.get("length_mm", 0.0))),
+        marking=tuple(entry.get("marking", ())),
+        dimension_sources=tuple(entry.get("dimension_sources", ())),
+        flat_hole_x_mm=tuple(float(x) for x in entry.get("flat_hole_x_mm", ())),
+        code=entry.get("code", ""),
         audit=entry.get("audit", {}),
         root=root,
     )
@@ -310,4 +334,4 @@ def _cached_mesh(path: str, unit_scale: float, expected_mm: float) -> Mesh:
 
 def load_asset_mesh(asset: PlateAsset) -> Mesh:
     """The asset's mesh in millimetres, size-checked against its metadata."""
-    return _cached_mesh(str(asset.mesh_path), asset.unit_scale, asset.length_mm)
+    return _cached_mesh(str(asset.mesh_path), asset.unit_scale, asset.extent_mm)

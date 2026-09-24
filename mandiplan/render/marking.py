@@ -25,8 +25,10 @@ import vtk
 
 #: Depth of a laser etch on a CMF implant face, in millimetres.
 ETCH_DEPTH_MM = 0.10
-#: Cap height of the etched characters, in millimetres.
-ETCH_TEXT_HEIGHT_MM = 1.6
+#: Default cap height of the etched characters, in millimetres. Each plate's
+#: own layout usually asks for less; a reconstruction bar has about 1.5 mm of
+#: solid face beside its screw seats.
+ETCH_TEXT_HEIGHT_MM = 0.9
 
 
 def marking_text(asset) -> str:
@@ -52,7 +54,7 @@ def build_marking(
     outward,
     height_mm: float = ETCH_TEXT_HEIGHT_MM,
     depth_mm: float = ETCH_DEPTH_MM,
-) -> vtk.vtkPolyData:
+) -> vtk.vtkPolyData:  # noqa: ARG001 - ``across`` is derived, see below
     """Extruded characters lying in the plate's outer face.
 
     ``origin`` is where the text starts, ``along`` runs down the plate,
@@ -109,39 +111,52 @@ def build_marking(
 def marking_in_plate_space(asset) -> tuple[np.ndarray, np.ndarray]:
     """The etched mark as ``(points, triangles)`` in the asset's own space.
 
-    Built on the flat, unplaced plate — +x along it, +z out of its outer face —
-    so that the caller can move it through exactly the same rigid placement
-    and bend as the plate itself. A mark placed afterwards from the fitted
-    hole centres is straight while the plate is curved, and floats off it.
+    Laid out by the asset itself: each catalogue entry says where its
+    lettering fits — short codes in the solid runs of face between the screw
+    seats and the edge, which is where real plates carry them. A token that
+    would overrun its run is scaled down to fit rather than spilling across a
+    notch or a seat. Plates too narrow to mark (miniplates) carry none.
+
+    Built on the unplaced plate so the caller can move it through exactly the
+    same placement and bend as the plate itself.
     """
     from vtkmodules.util.numpy_support import vtk_to_numpy
 
-    centres = np.asarray(asset.hole_centres_mm, dtype=float)
-    if len(centres) < 2:
+    anchors = getattr(asset, "marking", ()) or ()
+    pieces_points, pieces_tris = [], []
+    offset = 0
+    for anchor in anchors:
+        text = str(anchor.get("text", "")).strip()
+        if not text:
+            continue
+        height = float(anchor.get("height_mm", ETCH_TEXT_HEIGHT_MM))
+        origin = np.asarray(anchor["origin"], dtype=float)
+        along = np.asarray(anchor["along"], dtype=float)
+        outward = np.asarray(anchor["outward"], dtype=float)
+        glyphs = build_marking(text, origin, along, None, outward, height_mm=height)
+        if glyphs.GetNumberOfPoints() == 0:
+            continue
+        points = vtk_to_numpy(glyphs.GetPoints().GetData()).astype(float)
+        # Shrink about the origin, within the face, if the run is too short.
+        limit = float(anchor.get("max_length_mm", 0.0))
+        length = float(np.ptp((points - origin) @ _unit(along)))
+        if limit > 0 and length > limit:
+            factor = limit / length
+            rel = points - origin
+            depth = (rel @ _unit(outward))[:, None] * _unit(outward)
+            points = origin + (rel - depth) * factor + depth
+        triangulate = vtk.vtkTriangleFilter()
+        triangulate.SetInputData(glyphs)
+        triangulate.Update()
+        tris = vtk_to_numpy(
+            triangulate.GetOutput().GetPolys().GetConnectivityArray()
+        ).astype(np.int64).reshape(-1, 3)
+        pieces_points.append(points)
+        pieces_tris.append(tris + offset)
+        offset += len(points)
+    if not pieces_points:
         return np.zeros((0, 3)), np.zeros((0, 3), dtype=np.int64)
-    middle = len(centres) // 2
-    along = _unit(centres[min(middle + 1, len(centres) - 1)] - centres[max(middle - 1, 0)])
-    outward = _unit(np.asarray(asset.hole_axes[middle], dtype=float))
-    across = _unit(np.cross(outward, along))
-
-    text = marking_text(asset)
-    span = len(text) * ETCH_TEXT_HEIGHT_MM * 0.62
-    origin = (
-        centres[middle]
-        - along * (span / 2.0)
-        - across * (asset.width_mm * 0.28 + ETCH_TEXT_HEIGHT_MM / 2.0)
-        + outward * (asset.thickness_mm / 2.0)
-    )
-    glyphs = build_marking(text, origin, along, across, outward)
-    triangulate = vtk.vtkTriangleFilter()
-    triangulate.SetInputData(glyphs)
-    triangulate.Update()
-    polydata = triangulate.GetOutput()
-    if polydata.GetNumberOfPoints() == 0:
-        return np.zeros((0, 3)), np.zeros((0, 3), dtype=np.int64)
-    points = vtk_to_numpy(polydata.GetPoints().GetData()).astype(float)
-    cells = vtk_to_numpy(polydata.GetPolys().GetConnectivityArray()).astype(np.int64)
-    return points, cells.reshape(-1, 3)
+    return np.vstack(pieces_points), np.vstack(pieces_tris)
 
 
 def _unit(v) -> np.ndarray:

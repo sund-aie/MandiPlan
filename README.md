@@ -116,63 +116,44 @@ can check what the application reports against what it should report.
 ## The plate library
 
 Choosing a plate changes the geometry, not just a number. Every entry in
-`mandiplan/data/plates/` is a real watertight solid with drilled screw holes,
-loaded and placed as itself; there is no proxy rectangle left anywhere in the
-viewport or in any export.
+`mandiplan/data/plates/` is a real watertight solid, loaded and placed as
+itself; there is no proxy shape anywhere in the viewport or in any export.
 
-**Everything shipped here is generic.** These are parametric approximations
-built by `tools/make_plate_assets.py` from published dimensional classes — not
-any manufacturer's implant, and not usable as a device selection. The
-interface labels each one "Generic parametric approximation", and every export
-made with one carries that label, its provenance and its licence in the file.
+**Everything shipped here is generic** — built by `tools/make_plate_assets.py`
+from published dimensional classes, not from any manufacturer's CAD, and
+labelled "Generic parametric approximation" in the interface and in every
+export. Manufacturers do not publish their CAD; what they and the literature
+do publish is dimensions, and those are what these plates follow:
 
-To add a licensed exact asset, drop the mesh and a catalogue entry into
-`mandiplan/data/plates/`. STL, PLY and OBJ are read, in ascii or binary, with
-an explicit `units` or `unit_scale` field. An entry may only set
-`"exact": true` if it also carries provenance and a licence — `plate_assets`
-refuses the claim otherwise, so a copied entry cannot quietly promote itself.
-A mesh whose size does not match the length its metadata claims is refused
-outright, which is the guard against a metre-authored file loading a thousand
-times too small.
+| family | section | pitch | built from |
+| --- | --- | --- | --- |
+| Low-profile reconstruction 2.4 | 2.4 × 8.0 mm | 8 mm | FE study: conventional low-profile 2.4 plate, 135 × 8 × 2.4 mm |
+| Locking reconstruction 2.4 | 2.5 × 8.0 mm, threaded holes | 8 mm | locking reconstruction plate 2.4: 2.5 mm thick, 2.4/3.0 locking screws |
+| Heavy reconstruction | 2.8 × 10 mm | 9 mm | 2.8 mm profile-height plates; ~10 mm catalogue widths |
+| Primary reconstruction 1.5 | 1.5 × 6.0 mm | 7 mm | 1.5 mm plates for primary reconstruction, not load-bearing |
+| Miniplate 2.0 | 1.0 × 4.3 mm | 6 mm | FE studies: 2.0 4-hole miniplate, 26 × 4.3 × 1.0 mm |
+| Preformed body, angle, hemimandibular (5 + 17), full mandibular (6 + 13 + 6) | as their straight family | | published preformed configurations |
 
-That the holes are real is checked, not asserted. A watertight solid's genus
-counts its handles and a through-hole is a handle, so the test suite requires
-`genus == hole_count` for every asset. A swept ribbon has genus 0.
+Each is built the way real plates are: straight parallel edges with small
+notches between holes (where the plate is meant to bend), rounded ends,
+conical screw seats, a conical thread in the seat of locking holes (drawn as
+rings at the thread pitch, not a helix), and a rounded edge break. Miniplates
+are eyelets on a narrow bar. Preformed plates are curved the way they sit on
+the jaw: body curvature through the plate's thickness, the gonial-angle turn
+in the plate's own plane.
 
-Fitting happens in two stages.
+The faces are meshed finely (no edge along the plate longer than about a
+millimetre) because a coarse face bends as flat chords cutting across the
+curved plate. Every asset is checked on build and in the tests: watertight,
+consistently wound outward, and genus equal to its hole count — a watertight
+solid's genus counts its handles, and a through-hole is a handle.
 
-**Rigid placement** puts the plate where it belongs: rotation and translation
-only, by a Procrustes match of the plate's own hole frame onto the planned
-path. Nothing is scaled, sheared or stretched, so thickness, hole diameter and
-hole-to-hole spacing survive exactly — verified to 1e-9 mm. What rigid
-placement cannot reach is reported as residual rather than scaled away.
+To add a licensed exact asset, drop the mesh (STL, PLY or OBJ) and an entry
+into `mandiplan/data/plates/`. An entry may only set `"exact": true` if it also
+carries provenance and a licence, and a mesh whose size does not match its
+metadata is refused, which catches a metre- or inch-authored file.
 
-**Controlled bending** then follows the path. The plate is divided along its
-own length: the neighbourhood of every screw hole is a protected zone that
-moves by a single rigid transform, and only the bridges between holes are
-re-swept onto the path. A hole bent out of round is a hole no screw passes
-through, so this is checked and not assumed — at bend radii from 400 mm down
-to 60 mm the hole walls move by under a nanometre, and thickness and
-watertightness are unchanged with genus still equal to the hole count. Frames
-along the path are parallel-transported, so the plate's faces do not twist as
-the path turns. Turn off bending in the inspector to see the rigid placement
-alone.
-
-**Validation** runs on the result and refuses what cannot be made:
-
-| check | outcome |
-| --- | --- |
-| turn at a screw hole above the plate's per-node limit | problem |
-| bend radius below the plate's minimum | problem |
-| plate folding onto itself — non-neighbouring holes overlapping | problem |
-| plate inside bone at a screw position | problem |
-| standoff over 2 mm | warning |
-| screw hole more than 35° off the bone surface | warning |
-
-Every one of these, and the placement residual, is written into the exported
-CSV alongside the plate's identity and provenance.
-
-    python3 tools/make_plate_assets.py     # regenerate the assets
+    python3 tools/make_plate_assets.py     # regenerate the library
     python3 tools/screenshot.py --plate    # fit one and capture it
 
 ## What bending does to the screw holes

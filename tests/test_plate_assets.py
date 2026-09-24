@@ -131,6 +131,17 @@ def test_every_asset_mesh_is_watertight(catalogue):
         assert mesh.is_watertight(), asset.id
 
 
+def test_every_asset_mesh_is_wound_outward(catalogue):
+    """Watertight is not enough: inconsistent winding makes the volume depend
+    on where the plate sits, and a slicer sees faces inside out."""
+    for asset in catalogue:
+        mesh = load_asset_mesh(asset)
+        assert mesh.is_consistently_oriented(), asset.id
+        assert mesh.signed_volume_mm3() > 0, asset.id
+        moved = Mesh(mesh.points + 37.0, mesh.triangles)
+        assert moved.signed_volume_mm3() == pytest.approx(mesh.signed_volume_mm3(), rel=1e-9)
+
+
 def test_genus_equals_the_hole_count(catalogue):
     """The proof the holes are real: one topological handle per through-hole."""
     for asset in catalogue:
@@ -141,36 +152,72 @@ def test_genus_equals_the_hole_count(catalogue):
 
 
 def test_a_plate_is_not_a_rectangle(catalogue):
-    """A scalloped silhouette: the width varies along the plate.
+    """A reconstruction bar: full width at every hole, notched between them.
 
-    A swept ribbon has one width everywhere. Sampling the mesh's cross-section
-    along its own long axis has to show lobes and waists, or what is loaded is
-    a strip.
+    A swept ribbon has one width everywhere; a chain of washers has deep
+    waists everywhere. A real bar has straight parallel edges at its full
+    width through each screw hole, and loses exactly two notch depths at each
+    notch, where it is meant to bend.
     """
-    asset = asset_by_id("generic-recon-2.4-16h")
+    asset = asset_by_id("generic-recon-2.4-lp-12h")
     mesh = load_asset_mesh(asset)
-    xs = mesh.points[:, 0]
-    widths = []
-    for centre in np.linspace(xs.min() + 6.0, xs.max() - 6.0, 60):
-        near = np.abs(xs - centre) < 0.35
-        if near.sum() > 6:
-            widths.append(float(np.ptp(mesh.points[near, 1])))
-    widths = np.array(widths)
-    assert widths.max() - widths.min() > 2.0, (
-        f"width varies by only {np.ptp(widths):.2f} mm: this is a strip, not a plate"
-    )
-    assert widths.max() == pytest.approx(asset.width_mm, abs=0.2)
+    xs = np.asarray(asset.hole_centres_mm)[:, 0]
+
+    def width_at(x):
+        near = np.abs(mesh.points[:, 0] - x) < 0.25
+        return float(np.ptp(mesh.points[near, 1]))
+
+    for x in xs:
+        assert width_at(x) == pytest.approx(asset.width_mm, abs=0.1), x
+    import json
+
+    entry = next(e for e in json.loads(
+        (plate_assets.DATA_DIR / "plates.json").read_text())["plates"]
+        if e["id"] == asset.id)
+    notch = entry["notch"]["depth_mm"]
+    for a, b in zip(xs[:-1], xs[1:]):
+        assert width_at((a + b) / 2) == pytest.approx(
+            asset.width_mm - 2 * notch, abs=0.12
+        )
+
+
+def test_published_dimensions_are_what_is_built(catalogue):
+    """The figures the plates are drawn from, checked against the meshes."""
+    lp17 = asset_by_id("generic-recon-2.4-lp-17h")
+    # Conventional low-profile 2.4 reconstruction plate: 135 x 8 x 2.4 mm.
+    assert lp17.length_mm == pytest.approx(135.0, abs=1.5)
+    assert lp17.width_mm == pytest.approx(8.0)
+    assert lp17.thickness_mm == pytest.approx(2.4)
+    # Locking reconstruction plate 2.4: 2.5 mm thick, threaded holes.
+    lock = asset_by_id("generic-recon-2.4-lock-10h")
+    assert lock.thickness_mm == pytest.approx(2.5) and lock.locking
+    # 2.0 mm 4-hole miniplate: 26 x 4.3 x 1.0 mm.
+    mini = asset_by_id("generic-miniplate-2.0-4h-bridge")
+    assert mini.length_mm == pytest.approx(26.0, abs=0.5)
+    assert mini.width_mm == pytest.approx(4.3)
+    assert mini.thickness_mm == pytest.approx(1.0)
+    for asset in catalogue:
+        assert asset.dimension_sources, asset.id
+
+
+def test_miniplates_and_primary_plates_are_not_load_bearing(catalogue):
+    for asset in catalogue:
+        if asset.family.startswith(("generic-miniplate", "generic-recon-1.5")):
+            assert not asset.load_bearing, asset.id
+            assert any("NOT load-bearing" in line for line in asset.summary_lines())
 
 
 def test_the_mesh_has_the_thickness_it_claims(catalogue):
     for asset in catalogue:
+        if not np.allclose(asset.hole_axes, [0.0, 0.0, 1.0], atol=1e-6):
+            continue  # preformed: thickness is not its z extent
         mesh = load_asset_mesh(asset)
         assert mesh.extent_mm[2] == pytest.approx(asset.thickness_mm, abs=1e-3), asset.id
 
 
 def test_hole_centres_are_a_pitch_apart(catalogue):
     for asset in catalogue:
-        if asset.hole_count < 3:
+        if asset.hole_count < 3 or "bridged" in asset.name:
             continue
         spacing = hole_spacings_mm(asset.hole_centres_mm)
         # Preformed plates measure a chord across each pitch of arc, so the
@@ -205,7 +252,7 @@ def test_unit_names_convert_to_millimetres():
 
 def test_a_metre_authored_asset_loads_at_the_right_size(tmp_path, catalogue):
     """The fixture the units guard exists for."""
-    asset = asset_by_id("generic-recon-2.4-8h")
+    asset = asset_by_id("generic-recon-2.4-lp-8h")
     original = load_asset_mesh(asset)
     in_metres = _write_binary_stl(tmp_path / "metres.stl", original, scale=0.001)
 
@@ -231,7 +278,7 @@ def test_an_unsupported_format_is_refused(tmp_path):
 
 
 def test_obj_and_ply_round_trip(tmp_path, catalogue):
-    mesh = load_asset_mesh(asset_by_id("generic-recon-2.4-8h"))
+    mesh = load_asset_mesh(asset_by_id("generic-recon-2.4-lp-8h"))
 
     obj = tmp_path / "plate.obj"
     with obj.open("w") as handle:
@@ -295,7 +342,7 @@ def _rigid_case(asset_id: str, seed: int = 3):
 
 @pytest.mark.parametrize(
     "asset_id",
-    ["generic-recon-2.4-12h", "generic-body-curved-10h", "generic-angle-10h"],
+    ["generic-recon-2.4-lp-12h", "generic-recon-2.4-body-12h", "generic-recon-2.4-angle-12h"],
 )
 def test_rigid_fit_recovers_a_known_transform(asset_id):
     _, _, fitted, rotation, translation = _rigid_case(asset_id)
@@ -305,7 +352,7 @@ def test_rigid_fit_recovers_a_known_transform(asset_id):
 
 
 def test_rigid_placement_preserves_the_plate_exactly():
-    asset, mesh, fitted, _, _ = _rigid_case("generic-recon-2.4-12h")
+    asset, mesh, fitted, _, _ = _rigid_case("generic-recon-2.4-lp-12h")
 
     before = hole_spacings_mm(asset.hole_centres_mm)
     after = hole_spacings_mm(fitted.hole_centres)
@@ -329,13 +376,13 @@ def test_rigid_placement_preserves_the_plate_exactly():
 
 
 def test_the_placement_is_a_rotation_not_a_reflection():
-    _, _, fitted, _, _ = _rigid_case("generic-recon-2.4-12h")
+    _, _, fitted, _, _ = _rigid_case("generic-recon-2.4-lp-12h")
     assert np.allclose(fitted.rotation @ fitted.rotation.T, np.eye(3), atol=1e-12)
     assert np.linalg.det(fitted.rotation) == pytest.approx(1.0, abs=1e-12)
 
 
 def test_screw_trajectories_start_at_the_fitted_hole_centres():
-    asset, _, fitted, _, _ = _rigid_case("generic-recon-2.4-12h")
+    asset, _, fitted, _, _ = _rigid_case("generic-recon-2.4-lp-12h")
     segments = fitted.screw_trajectories(length_mm=14.0)
     assert segments.shape == (asset.hole_count, 2, 3)
     assert np.allclose(segments[:, 0], fitted.hole_centres)

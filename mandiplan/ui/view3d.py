@@ -182,6 +182,14 @@ class View3D(QWidget):
         self.plate_mapper = vtk.vtkPolyDataMapper()
         self.plate_actor = vtk.vtkActor()
         self.plate_actor.SetMapper(self.plate_mapper)
+        # Smooth shading across the bent faces, crisp at real edges (the seat
+        # rims, notches and edge breaks meet at well over 35 degrees).
+        self.plate_normals = vtk.vtkPolyDataNormals()
+        self.plate_normals.SetFeatureAngle(35.0)
+        self.plate_normals.SplittingOn()
+        self.plate_normals.ConsistencyOff()
+        self.plate_normals.SetInputData(empty_polydata())
+        self.plate_mapper.SetInputConnection(self.plate_normals.GetOutputPort())
         self.plate_actor.GetProperty().SetColor(*PLATE_COLOUR)
         self.plate_actor.GetProperty().SetSpecular(0.45)
         self.plate_actor.GetProperty().SetSpecularPower(28)
@@ -258,10 +266,11 @@ class View3D(QWidget):
         self.measure_actor.GetProperty().SetLineWidth(3)
         self.renderer.AddActor(self.measure_actor)
 
+        # The plate mapper is fed by the normals filter above; giving it input
+        # data here would silently sever that connection.
         for mapper in (
             self.bone_mapper,
             self.fragment_mapper,
-            self.plate_mapper,
             self.graft_mapper,
             self.bridge_mapper,
             self.measure_mapper,
@@ -356,9 +365,9 @@ class View3D(QWidget):
         plan = session.plate_plan
 
         if fitted is None:
-            self.plate_mapper.SetInputData(empty_polydata())
+            self.plate_normals.SetInputData(empty_polydata())
         else:
-            self.plate_mapper.SetInputData(
+            self.plate_normals.SetInputData(
                 triangles_to_polydata(fitted.points, fitted.triangles)
             )
 

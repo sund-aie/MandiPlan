@@ -20,7 +20,7 @@ from mandiplan.geometry.plate_bend import (
 from mandiplan.geometry.plate_fit import extend_targets
 from mandiplan.plate_assets import asset_by_id, load_asset_mesh
 
-ASSET_ID = "generic-recon-2.4-12h"
+ASSET_ID = "generic-recon-2.4-lp-12h"
 
 
 @pytest.fixture(scope="module")
@@ -114,7 +114,9 @@ def test_bending_preserves_thickness_at_the_holes(asset, mesh, radius_mm):
         centre, axis = asset.hole_centres_mm[hole], asset.hole_axes[hole]
         offset = mesh.points - centre
         radial = np.linalg.norm(offset - np.outer(offset @ axis, axis), axis=1)
-        wall = np.abs(radial - asset.hole_diameter_mm / 2.0) < 0.03
+        # The whole hole, countersunk seat to bore: its axial extent is the
+        # plate's full thickness.
+        wall = radial < asset.seat_diameter_mm / 2.0 + 0.05
         if wall.sum() < 4:
             continue
         moved = bent.points[wall] - bent.hole_centres[hole]

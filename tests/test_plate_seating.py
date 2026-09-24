@@ -27,7 +27,7 @@ def seated(bone_surface, wide_arch_frames):
     session.frames = wide_arch_frames
     session.surface = bone_surface
     session.projector = SurfaceProjector(bone_surface)
-    session.set_plate_asset("generic-recon-2.4-8h")
+    session.set_plate_asset("generic-recon-2.4-lp-8h")
     frames = wide_arch_frames
     for s_mm in np.linspace(frames.length_mm * 0.2, frames.length_mm * 0.8, 10):
         _, _, buccal = frames.frame_at(float(s_mm))
@@ -107,7 +107,7 @@ def test_bending_a_plate_that_is_already_rotated(seated):
     Rotate a flat plate so its face points along +x, then bend it onto a path
     whose bone normal is +y. Width must stay width and thickness thickness.
     """
-    asset = asset_by_id("generic-recon-2.4-8h")
+    asset = asset_by_id("generic-recon-2.4-lp-8h")
     mesh = load_asset_mesh(asset)
     # Face normal z -> x, width y -> z, length x -> y.
     rotation = np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
@@ -135,7 +135,7 @@ def test_bending_a_plate_that_is_already_rotated(seated):
 def test_the_etched_mark_is_in_the_outer_face_before_fitting():
     from mandiplan.render.marking import ETCH_DEPTH_MM, marking_in_plate_space
 
-    asset = asset_by_id("generic-recon-2.4-8h")
+    asset = asset_by_id("generic-recon-2.4-lp-8h")
     points, triangles = marking_in_plate_space(asset)
     assert len(points) and len(triangles)
     top = asset.thickness_mm / 2.0

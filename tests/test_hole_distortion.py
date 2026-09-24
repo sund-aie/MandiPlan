@@ -180,7 +180,7 @@ def test_twisting_forceps_skew_the_holes():
 def test_the_mesh_actually_changes_shape():
     from mandiplan.plate_assets import asset_by_id, load_asset_mesh
 
-    asset = asset_by_id("generic-recon-2.4-12h")
+    asset = asset_by_id("generic-recon-2.4-lp-12h")
     mesh = load_asset_mesh(asset)
     holes = np.linalg.norm(asset.hole_centres_mm - asset.hole_centres_mm[0], axis=1)
     report = predict_distortion(
@@ -219,7 +219,7 @@ def test_the_mesh_actually_changes_shape():
 def test_a_round_prediction_leaves_the_mesh_alone():
     from mandiplan.plate_assets import asset_by_id, load_asset_mesh
 
-    asset = asset_by_id("generic-recon-2.4-12h")
+    asset = asset_by_id("generic-recon-2.4-lp-12h")
     mesh = load_asset_mesh(asset)
     holes = np.linalg.norm(asset.hole_centres_mm - asset.hole_centres_mm[0], axis=1)
     report = predict_distortion(

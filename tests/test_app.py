@@ -542,3 +542,30 @@ def test_the_hidden_joystick_key_no_longer_switches_modes(window):
         iren.GetInteractorStyle(), vtk.vtkInteractorStyleTrackballCamera
     )
     assert _drag(window, hold=False) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_the_viewport_draws_the_fitted_plate(window, phantom_folder):
+    """The plate actor shows the fitted plate's own geometry, not nothing.
+
+    A mapper that is given input data after being connected to a filter drops
+    the connection without complaint; the plate then vanishes from the view
+    while every geometry test still passes.
+    """
+    session = window.session
+    frames = session.frames
+    session.clear_plate_path()
+    for s_mm in np.linspace(frames.length_mm * 0.2, frames.length_mm * 0.8, 10):
+        _, _, buccal = frames.frame_at(float(s_mm))
+        session.add_plate_point(frames.point_at(float(s_mm)) + buccal * 12.0)
+    placed = session.plate_mesh()
+    assert placed is not None
+    view = window.view3d
+    view.refresh_plate()
+    mapper = view.plate_mapper
+    mapper.Update()
+    drawn = mapper.GetInput()
+    assert drawn is not None and drawn.GetNumberOfCells() == len(placed.triangles)
+    assert view.plate_actor.GetVisibility()
+    bounds = np.array(drawn.GetBounds()).reshape(3, 2)
+    assert np.allclose(bounds[:, 0], placed.points.min(axis=0), atol=1e-4)
+    assert np.allclose(bounds[:, 1], placed.points.max(axis=0), atol=1e-4)
