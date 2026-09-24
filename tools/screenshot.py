@@ -196,14 +196,24 @@ def fit_plate(window, out_dir: Path, asset_id: str | None = None) -> list[Path]:
         f"rms {rigid.rms_residual_mm:.2f} mm"
     )
     window.view3d.set_plate_overlays(True, False, False)
-    window.view3d.set_view_direction("superior")
-    # Three-quarter view: from directly above the plate is edge-on, and the
-    # screw holes are the whole point of showing it.
-    camera = window.view3d.renderer.GetActiveCamera()
-    camera.Elevation(-38)
-    camera.Azimuth(18)
-    camera.OrthogonalizeViewUp()
-    window.view3d.reset_camera()
+    # Look at the plate's outer face from outside the jaw, slightly from
+    # above: the direction a surgeon sees it from.
+    import numpy as np
+
+    centre = fitted.hole_centres.mean(axis=0)
+    facing = fitted.hole_axes.mean(axis=0)
+    facing /= np.linalg.norm(facing)
+    view = facing + np.array([0.0, 0.0, 0.45])
+    view /= np.linalg.norm(view)
+    renderer = window.view3d.renderer
+    renderer.ResetCamera()
+    camera = renderer.GetActiveCamera()
+    camera.SetFocalPoint(*centre)
+    camera.SetPosition(*(centre + view * 150.0))
+    camera.SetViewUp(0.0, 0.0, 1.0)
+    renderer.ResetCameraClippingRange()
+    camera.Zoom(1.4)
+    window.view3d.render()
     QApplication.processEvents()
     return capture(
         window, out_dir / "plate-fitted.png", out_dir / "plate-fitted-viewport.png"

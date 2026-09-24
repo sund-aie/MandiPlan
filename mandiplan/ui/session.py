@@ -171,6 +171,9 @@ class Session(QObject):
         self.show_hole_distortion: bool = True
         self.use_bending_insets: bool | None = None
         self.hole_distortion = None
+        #: The etched mark, moved with the plate: ``(points, triangles)``.
+        self.plate_marking = None
+        self._marking_cache: dict[str, tuple] = {}
         self.plate_fit_warnings: list[str] = []
         self.plate_fit_problems: list[str] = []
         if load_assets():
@@ -717,6 +720,7 @@ class Session(QObject):
         self.bent_plate = None
         self.plate_contact = None
         self.hole_distortion = None
+        self.plate_marking = None
         self.plate_fit_warnings = []
         self.plate_fit_problems = []
         asset = self.plate_asset
@@ -746,6 +750,11 @@ class Session(QObject):
             plan.normals,
             plan.binormals,
         )
+        mark_points, mark_triangles = self._marking_for(asset)
+        self.plate_marking = (
+            mark_points @ self.fitted_plate.rotation.T + self.fitted_plate.translation,
+            mark_triangles,
+        )
         self.plate_fit_warnings = list(self.fitted_plate.warnings)
         if self.fitted_plate.max_residual_mm > 2.0 and not self.plate_bending_enabled:
             self.plate_fit_warnings.append(
@@ -756,6 +765,14 @@ class Session(QObject):
         if self.plate_bending_enabled:
             self._bend_plate(asset, plan, targets)
         self._check_contact(asset, plan)
+
+    def _marking_for(self, asset):
+        """The asset's etched mark in its own space, built once per asset."""
+        if asset.id not in self._marking_cache:
+            from ..render.marking import marking_in_plate_space
+
+            self._marking_cache[asset.id] = marking_in_plate_space(asset)
+        return self._marking_cache[asset.id]
 
     def set_plate_bending(self, enabled: bool) -> None:
         """Bend the plate onto the path, or leave it rigidly placed."""
@@ -768,12 +785,16 @@ class Session(QObject):
         fitted = self.fitted_plate
         if fitted is None or asset.hole_count < 2:
             return
+        # The etched mark is bent together with the plate, as one set of
+        # points, so it stays on the face it is etched into.
+        mark_points, mark_triangles = self.plate_marking or (np.zeros((0, 3)), None)
+        plate_count = len(fitted.points)
         try:
             paired, normals, _ = extend_targets(
                 asset.hole_count, targets, plan.normals, plan.binormals
             )
             self.bent_plate = bend_to_path(
-                fitted.points,
+                np.vstack([fitted.points, mark_points]),
                 fitted.triangles,
                 fitted.hole_centres,
                 fitted.hole_axes,
@@ -786,6 +807,10 @@ class Session(QObject):
         except ValueError as error:
             self.plate_fit_warnings.append(f"The plate could not be bent: {error}")
             return
+        bent_marking = self.bent_plate.points[plate_count:]
+        self.bent_plate.points = self.bent_plate.points[:plate_count]
+        if mark_triangles is not None:
+            self.plate_marking = (bent_marking, mark_triangles)
         self.plate_fit_warnings.extend(self.bent_plate.warnings)
         self.plate_fit_problems.extend(self.bent_plate.problems)
         self._predict_hole_distortion(asset)

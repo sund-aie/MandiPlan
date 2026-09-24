@@ -119,55 +119,97 @@ def transported_frames(
     return s, tangents, ups, np.cross(tangents, ups)
 
 
-def _local_coordinates(
-    points: np.ndarray, centreline: np.ndarray
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Describe each point by its place along the plate and its offsets.
+@dataclass
+class _FrameField:
+    """A smooth curve with a frame at every station, sampled by arc length.
 
-    Returns ``(s, across, out)``: arc length along the plate's own centreline,
-    offset along the plate's width axis, and offset out of its face.
+    ``U`` is the direction out of the plate face — the plate's own hole axes on
+    the source side, the bone's own outward normals on the target side — and
+    ``B = T x U`` runs across the plate's width. Taking both from the real
+    geometry, rather than from a global axis, is what keeps width and
+    thickness from being confused once the plate has been rotated onto the
+    jaw.
     """
-    s_line, tangents, ups, binormals = transported_frames(
-        centreline, np.array([0.0, 0.0, 1.0])
+
+    s: np.ndarray
+    P: np.ndarray
+    T: np.ndarray
+    U: np.ndarray
+    B: np.ndarray
+    station_s: np.ndarray
+
+    def at(self, s_query):
+        """Frame at arbitrary arc positions; straight extension past the ends."""
+        s_query = np.atleast_1d(np.asarray(s_query, dtype=float))
+        clipped = np.clip(s_query, self.s[0], self.s[-1])
+
+        def interp(field):
+            return np.column_stack(
+                [np.interp(clipped, self.s, field[:, c]) for c in range(3)]
+            )
+
+        T = _unit(interp(self.T))
+        U = interp(self.U)
+        U = _unit(U - np.einsum("ij,ij->i", U, T)[:, None] * T)
+        B = np.cross(T, U)
+        P = interp(self.P) + (s_query - clipped)[:, None] * T
+        return P, T, U, B
+
+    def rotation_at(self, s_value: float) -> np.ndarray:
+        """Columns T, B, U at one arc position, as a rotation matrix."""
+        _, T, U, B = self.at([s_value])
+        return np.column_stack([T[0], B[0], U[0]])
+
+
+def _frame_field(points, normals, step_mm: float = 0.25) -> _FrameField:
+    """Build a frame field on a smooth curve through ``points``.
+
+    The curve is the same centripetal Catmull-Rom used for the arch, so the
+    span between two screw holes follows the curve rather than the straight
+    chord across it; on convex bone a chord cuts inside the surface by the
+    sagitta. The out-of-face direction is interpolated from the given normals
+    and re-orthogonalised against the tangent, so the frame twists exactly as
+    much as the surface underneath it does.
+    """
+    from .spline import ArchCurve
+
+    points = np.asarray(points, dtype=float).reshape(-1, 3)
+    normals = _unit(np.asarray(normals, dtype=float).reshape(-1, 3))
+    curve = ArchCurve(points)
+    samples = curve.resample(min(step_mm, curve.length_mm / 4.0))
+    station_s = np.array([curve.arc_position_of(p) for p in points])
+    station_s[0], station_s[-1] = 0.0, samples.s[-1]
+
+    # Keep neighbouring normals on the same side before interpolating them.
+    oriented = normals.copy()
+    for i in range(1, len(oriented)):
+        if np.dot(oriented[i], oriented[i - 1]) < 0.0:
+            oriented[i] = -oriented[i]
+    U = np.column_stack(
+        [np.interp(samples.s, station_s, oriented[:, c]) for c in range(3)]
     )
-    # Nearest station on the centreline for every vertex, then the offsets
-    # measured in that station's own frame.
-    diff = points[:, None, :] - centreline[None, :, :]
-    distance = np.einsum("ijk,ijk->ij", diff, diff)
-    nearest = np.argmin(distance, axis=1)
-
-    offset = points - centreline[nearest]
-    along = np.einsum("ij,ij->i", offset, tangents[nearest])
-    return (
-        s_line[nearest] + along,
-        np.einsum("ij,ij->i", offset, binormals[nearest]),
-        np.einsum("ij,ij->i", offset, ups[nearest]),
+    T = _unit(samples.tangents)
+    U = _unit(U - np.einsum("ij,ij->i", U, T)[:, None] * T)
+    return _FrameField(
+        s=samples.s,
+        P=samples.points,
+        T=T,
+        U=U,
+        B=np.cross(T, U),
+        station_s=station_s,
     )
 
 
-def _sample_path(
-    s_query: np.ndarray,
-    s_path: np.ndarray,
-    points: np.ndarray,
-    tangents: np.ndarray,
-    ups: np.ndarray,
-    binormals: np.ndarray,
-):
-    """Interpolate a frame field at arbitrary arc positions."""
-    clipped = np.clip(s_query, s_path[0], s_path[-1])
-    def interp(field):
-        return np.column_stack(
-            [np.interp(clipped, s_path, field[:, c]) for c in range(3)]
+def _nearest_station(points: np.ndarray, field: _FrameField, chunk: int = 2048):
+    """Index of the closest field station to each point, in memory-safe chunks."""
+    out = np.empty(len(points), dtype=np.int64)
+    for start in range(0, len(points), chunk):
+        block = points[start : start + chunk]
+        diff = block[:, None, :] - field.P[None, :, :]
+        out[start : start + chunk] = np.argmin(
+            np.einsum("ijk,ijk->ij", diff, diff), axis=1
         )
-    return (
-        interp(points)
-        # Beyond the ends the frame is extended straight, so a plate longer
-        # than its path stays straight rather than curling back on itself.
-        + (s_query - clipped)[:, None] * interp(tangents),
-        _unit(interp(tangents)),
-        _unit(interp(ups)),
-        _unit(interp(binormals)),
-    )
+    return out
 
 
 def bend_to_path(
@@ -204,59 +246,58 @@ def bend_to_path(
     warnings: list[str] = []
     problems: list[str] = []
 
-    # Source: the plate's own centreline through its hole centres.
-    s_src, _, _, _ = transported_frames(hole_centres, hole_axes[0])
-    vertex_s, across, out = _local_coordinates(points, hole_centres)
+    # Source: the plate's own centreline, with its own hole axes as the
+    # out-of-face direction. Target: the planned path, with the bone's
+    # outward normals, so the plate's bone face lands on the bone.
+    source = _frame_field(hole_centres, hole_axes)
+    target = _frame_field(path_points, path_normals)
+    s_src = source.station_s
 
-    # Target: the planned path, with the bone normal as the up-axis so the
-    # plate's outer face keeps facing the surgeon the whole way along.
-    s_dst, dst_t, dst_u, dst_b = transported_frames(path_points, path_normals[0])
-    # Prefer the measured bone normal where it is available and sane.
-    aligned = np.einsum("ij,ij->i", dst_u, path_normals) < 0
-    if np.any(aligned):
+    if abs(target.s[-1] - source.s[-1]) > 0.5:
         warnings.append(
-            "The plate's outer face and the bone normal disagree over part of "
-            "the path; check the path is drawn along the bone, not through it."
-        )
-
-    if abs(s_dst[-1] - s_src[-1]) > 0.5:
-        warnings.append(
-            f"The path is {s_dst[-1]:.1f} mm between end holes but the plate is "
-            f"{s_src[-1]:.1f} mm. Bending cannot change a plate's length; the "
+            f"The path is {target.s[-1]:.1f} mm between end holes but the plate is "
+            f"{source.s[-1]:.1f} mm. Bending cannot change a plate's length; the "
             "screw holes will not land on the planned stations."
         )
 
-    # Two candidate positions per vertex, blended by how far it is from the
-    # nearest hole: rigid near a hole, swept in the middle of a bridge.
-    swept_origin, _, swept_up, swept_across = _sample_path(
-        vertex_s, s_dst, path_points, dst_t, dst_u, dst_b
-    )
-    swept = swept_origin + across[:, None] * swept_across + out[:, None] * swept_up
+    # Each vertex in the source frame nearest to it: arc position along the
+    # plate, offset across its width, offset out of its face.
+    nearest = _nearest_station(points, source)
+    offset = points - source.P[nearest]
+    vertex_s = source.s[nearest] + np.einsum("ij,ij->i", offset, source.T[nearest])
+    across = np.einsum("ij,ij->i", offset, source.B[nearest])
+    out = np.einsum("ij,ij->i", offset, source.U[nearest])
 
+    # Swept: re-embed those coordinates on the target frame. This is where
+    # the bridges bend.
+    sP, _, sU, sB = target.at(vertex_s)
+    swept = sP + across[:, None] * sB + out[:, None] * sU
+
+    # Rigid: each protected zone moves by one exact rigid transform taking
+    # its hole's source frame onto that hole's target frame.
     home = np.argmin(np.abs(vertex_s[:, None] - s_src[None, :]), axis=1)
-    home_origin, home_t, home_up, home_across = _sample_path(
-        s_src[home], s_dst, path_points, dst_t, dst_u, dst_b
-    )
-    rigid = (
-        home_origin
-        + (vertex_s - s_src[home])[:, None] * home_t
-        + across[:, None] * home_across
-        + out[:, None] * home_up
-    )
+    rigid = np.empty_like(points)
+    rotations = []
+    hole_origin = np.empty_like(hole_centres)
+    hole_up = np.empty_like(hole_axes)
+    hole_tangents = np.empty_like(hole_centres)
+    for h, s_h in enumerate(s_src):
+        src_p, _, _, _ = source.at([s_h])
+        dst_p, dst_t, _, _ = target.at([s_h])
+        rotation = target.rotation_at(s_h) @ source.rotation_at(s_h).T
+        rotations.append(rotation)
+        hole_origin[h] = dst_p[0] + rotation @ (hole_centres[h] - src_p[0])
+        hole_up[h] = rotation @ hole_axes[h]
+        hole_tangents[h] = dst_t[0]
+        members = home == h
+        rigid[members] = dst_p[0] + (points[members] - src_p[0]) @ rotation.T
 
     # Weight 0 inside a protected zone, ramping to 1 across the bridge.
     span = float(np.median(np.diff(s_src))) if len(s_src) > 1 else 1.0
     free = max(span / 2.0 - protected_radius_mm, 1e-6)
     distance_from_hole = np.abs(vertex_s - s_src[home])
     weight = _smoothstep((distance_from_hole - protected_radius_mm) / free)
-
     bent = rigid + weight[:, None] * (swept - rigid)
-
-    # The holes themselves ride on their own rigid transform, so their centres
-    # and axes come from the target frame at their own station.
-    hole_origin, _, hole_up, _ = _sample_path(
-        s_src, s_dst, path_points, dst_t, dst_u, dst_b
-    )
 
     bend_angles = _turn_angles(hole_origin)
     steep = bend_angles > max_bend_deg_per_node
@@ -280,7 +321,6 @@ def bend_to_path(
     if fold:
         problems.append(fold)
 
-    hole_tangents = _unit(np.gradient(hole_origin, axis=0))
     return BentPlate(
         points=bent,
         triangles=np.asarray(triangles, dtype=np.int64),

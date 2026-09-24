@@ -81,8 +81,12 @@ def build_marking(
     scale = height_mm / natural
 
     along = _unit(along)
-    across = _unit(across)
     outward = _unit(outward)
+    # Glyph x runs along the plate, glyph y across its face, and the
+    # extrusion sinks into it. The basis must be right-handed
+    # (x cross y = -outward) or the lettering comes out mirrored, so ``across``
+    # is derived here rather than trusted from the caller.
+    across = _unit(np.cross(outward, along))
 
     basis = vtk.vtkMatrix4x4()
     basis.Identity()
@@ -102,33 +106,42 @@ def build_marking(
     return placed.GetPolyDataOutput()
 
 
-def marking_for_plate(asset, hole_centres, hole_axes) -> vtk.vtkPolyData:
-    """Place the etched mark on a fitted plate's outer face.
+def marking_in_plate_space(asset) -> tuple[np.ndarray, np.ndarray]:
+    """The etched mark as ``(points, triangles)`` in the asset's own space.
 
-    Sits alongside the middle screw holes, running down the plate, offset
-    across the width so it does not cross a hole.
+    Built on the flat, unplaced plate — +x along it, +z out of its outer face —
+    so that the caller can move it through exactly the same rigid placement
+    and bend as the plate itself. A mark placed afterwards from the fitted
+    hole centres is straight while the plate is curved, and floats off it.
     """
-    centres = np.asarray(hole_centres, dtype=float).reshape(-1, 3)
-    axes = np.asarray(hole_axes, dtype=float).reshape(-1, 3)
-    if len(centres) < 2:
-        return vtk.vtkPolyData()
+    from vtkmodules.util.numpy_support import vtk_to_numpy
 
+    centres = np.asarray(asset.hole_centres_mm, dtype=float)
+    if len(centres) < 2:
+        return np.zeros((0, 3)), np.zeros((0, 3), dtype=np.int64)
     middle = len(centres) // 2
-    outward = _unit(axes[middle])
     along = _unit(centres[min(middle + 1, len(centres) - 1)] - centres[max(middle - 1, 0)])
-    across = np.cross(outward, along)
+    outward = _unit(np.asarray(asset.hole_axes[middle], dtype=float))
+    across = _unit(np.cross(outward, along))
 
     text = marking_text(asset)
-    # Start it back along the plate so the line is roughly centred, and push
-    # it to the edge of the width so it clears the screw holes.
     span = len(text) * ETCH_TEXT_HEIGHT_MM * 0.62
     origin = (
         centres[middle]
         - along * (span / 2.0)
-        + across * (asset.width_mm * 0.28)
+        - across * (asset.width_mm * 0.28 + ETCH_TEXT_HEIGHT_MM / 2.0)
         + outward * (asset.thickness_mm / 2.0)
     )
-    return build_marking(text, origin, along, across, outward)
+    glyphs = build_marking(text, origin, along, across, outward)
+    triangulate = vtk.vtkTriangleFilter()
+    triangulate.SetInputData(glyphs)
+    triangulate.Update()
+    polydata = triangulate.GetOutput()
+    if polydata.GetNumberOfPoints() == 0:
+        return np.zeros((0, 3)), np.zeros((0, 3), dtype=np.int64)
+    points = vtk_to_numpy(polydata.GetPoints().GetData()).astype(float)
+    cells = vtk_to_numpy(polydata.GetPolys().GetConnectivityArray()).astype(np.int64)
+    return points, cells.reshape(-1, 3)
 
 
 def _unit(v) -> np.ndarray:

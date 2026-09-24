@@ -371,12 +371,12 @@ class View3D(QWidget):
         else:
             self.node_glyph.SetInputData(empty_polydata())
 
-        asset = session.plate_asset
-        if fitted is not None and asset is not None and self.show_marking:
-            from ..render.marking import marking_for_plate
-
+        marking = session.plate_marking
+        if fitted is not None and marking is not None and self.show_marking:
+            # The mark was moved and bent with the plate, so it sits in the
+            # face it is etched into rather than being placed afterwards.
             self.marking_mapper.SetInputData(
-                marking_for_plate(asset, fitted.hole_centres, fitted.hole_axes)
+                triangles_to_polydata(marking[0], marking[1])
             )
             self.marking_actor.VisibilityOn()
         else:
