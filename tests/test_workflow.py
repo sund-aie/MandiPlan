@@ -25,7 +25,7 @@ def test_an_empty_session_asks_for_a_volume(qt_app):
     from mandiplan.ui.session import Session
 
     statuses = workflow_status(Session())
-    assert len(statuses) == 5
+    assert len(statuses) == 6
     assert not any(status.done for status in statuses)
     assert statuses[0].available
     assert "Open a DICOM folder" in statuses[0].summary
@@ -64,7 +64,7 @@ def test_the_workflow_advances_as_the_plan_is_built(loaded):
     # Step 4 is now reachable, and names the button to press.
     reconstruction = workflow_status(session)[3]
     assert reconstruction.available
-    assert "mid-sagittal" in reconstruction.summary
+    assert "Reconstruct from the healthy side" in reconstruction.summary
 
     session.estimate_symmetry_plane()
     session.build_graft()

@@ -42,7 +42,7 @@ from ..geometry.plate_fit import (
     rigid_fit,
 )
 from ..materials import Alloy, alloy_by_id
-from ..plate_assets import PlateAsset, asset_by_id, load_asset_mesh, load_assets
+from ..plate_assets import PlateAsset, asset_by_id, assets_in_family, load_asset_mesh, load_assets
 from ..geometry.resection import (
     CutPlane,
     PlanePlacement,
@@ -53,7 +53,15 @@ from ..geometry.resection import (
 from ..geometry.spline import ArchCurve
 from ..geometry.threshold import estimate_bone_threshold
 from ..geometry.volume import Volume
-from ..plate_catalog import FitReport, fit_check, kit_by_id, load_kits, load_systems, system_by_id
+from ..plate_catalog import (
+    FitReport,
+    fit_check,
+    kit_by_id,
+    load_kits,
+    load_systems,
+    system_by_id,
+    system_for_asset,
+)
 from ..render.reconstruct import Reconstruction, reconstruct
 from ..render.surface import (
     SurfaceExtractor,
@@ -215,8 +223,11 @@ class Session(QObject):
         self.plate_fit_problems: list[str] = []
         if load_assets():
             self.plate_asset = load_assets()[0]
+            self._adopt_asset(self.plate_asset)
 
         self._undo: list[_Snapshot] = []
+        #: What has been written out this session, in order.
+        self.exported: list[str] = []
 
     # -- volume -----------------------------------------------------------
 
@@ -937,12 +948,29 @@ class Session(QObject):
         """Choose which plate model is being planned, by catalogue id."""
         self.plate_asset = None if asset_id is None else asset_by_id(asset_id)
         if self.plate_asset is not None:
-            # The path is resampled at the asset's own screw-hole pitch, so
-            # the holes that get fitted are the holes the plate really has.
-            self.plate.pitch_mm = self.plate_asset.hole_pitch_mm
-            self.plate.width_mm = self.plate_asset.width_mm
-            self.plate.thickness_mm = self.plate_asset.thickness_mm
+            self._adopt_asset(self.plate_asset)
         self.update_plate_plan()
+
+    def _adopt_asset(self, asset) -> None:
+        """Take pitch, section and the length check from the chosen plate.
+
+        The path is resampled at the asset's own screw-hole pitch, so the
+        holes that get fitted are the holes the plate really has.
+        """
+        self.plate.pitch_mm = asset.hole_pitch_mm
+        self.plate.width_mm = asset.width_mm
+        self.plate.thickness_mm = asset.thickness_mm
+        self.plate_system = system_for_asset(asset)
+
+    def use_fitting_length(self) -> None:
+        """Switch to the shortest plate of this family that spans the plan."""
+        fit, asset = self.fit, self.plate_asset
+        if fit is None or fit.option is None or asset is None:
+            return
+        for candidate in assets_in_family(asset.family):
+            if candidate.hole_count == fit.option.holes:
+                self.set_plate_asset(candidate.id)
+                return
 
     def set_plate_clearance(self, clearance_mm: float) -> None:
         """How far the plate's inner face stands off the bone, in mm."""
@@ -1089,6 +1117,7 @@ class Session(QObject):
             self.plate_alloy(),
             self.bending_kit,
             use_insets=self.use_bending_insets,
+            locking=bool(getattr(asset, "locking", True)),
         )
         self.hole_distortion = report
         bent.distortion = report
@@ -1104,6 +1133,11 @@ class Session(QObject):
                 report.holes,
                 asset.hole_diameter_mm,
             )
+
+    def note_export(self, what: str) -> None:
+        if what not in self.exported:
+            self.exported.append(what)
+        self.plate_changed.emit()  # the workflow bar reads the list
 
     def bending_guide(self):
         """The clip-on guide that stops each bend of the selected plate at its

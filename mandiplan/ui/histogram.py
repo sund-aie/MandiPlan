@@ -108,7 +108,7 @@ class ThresholdPanel(QWidget):
         self.spin.setDecimals(1)
         self.spin.setSingleStep(5.0)
         self.spin.setSuffix(" gray value")
-        self.otsu_button = QPushButton("Reset to Otsu estimate")
+        self.otsu_button = QPushButton("Reset to the automatic estimate")
         self.note = QLabel(
             "CBCT gray values are not Hounsfield units — set this by eye on the bone."
         )

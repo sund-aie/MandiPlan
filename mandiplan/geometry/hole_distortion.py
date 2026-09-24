@@ -157,11 +157,15 @@ def predict_distortion(
     alloy,
     kit=None,
     use_insets: bool | None = None,
+    locking: bool = True,
 ) -> DistortionReport:
     """Predict what a bending plan does to every screw hole.
 
     ``hole_positions_mm`` and ``bend_positions_mm`` are arc positions along the
     plate. ``bend_angles_deg`` is the turn taken at each bend position.
+    ``locking`` says whether the plate's holes are threaded for locking
+    screws; an oval hole is a problem for those and not for a plain
+    countersunk hole, where the screw head still seats.
     """
     hole_positions = np.asarray(hole_positions_mm, dtype=float).reshape(-1)
     bend_positions = np.asarray(bend_positions_mm, dtype=float).reshape(-1)
@@ -235,30 +239,42 @@ def predict_distortion(
             )
         )
 
-    report.fatigue_fraction = _fatigue_fraction(report, alloy, cumulative_strain)
-    _judge(report, alloy, insets, kit)
+    report.fatigue_fraction = _fatigue_fraction(report, alloy)
+    _judge(report, alloy, insets, kit, locking)
     return report
 
 
-def _fatigue_fraction(report: DistortionReport, alloy, cumulative_strain: float) -> float:
+def _fatigue_fraction(report: DistortionReport, alloy) -> float:
     """Rough remaining fatigue life after cold work and hole ovalisation.
 
     Cold work at a bend and an out-of-round hole both cut fatigue life, and AO
     warns plainly that excessive or repeated bending ends in plate fracture.
-    This is an index for comparing plans, not a cycle count.
+    A plate fails at its worst-worked hole, so that hole sets the index, not
+    the sum over every hole: seven moderately bent holes are not seven times
+    as likely to break as one. An index for comparing plans, not a cycle
+    count.
     """
     worst = report.worst
     ovality = worst.ovality_pct / 100.0 if worst else 0.0
-    work = cumulative_strain / max(alloy.elongation_pct / 100.0, 1e-6)
+    peak = max((hole.strain for hole in report.holes), default=0.0)
+    work = peak / max(alloy.elongation_pct / 100.0, 1e-6)
     fraction = float(np.exp(-1.6 * work) * np.exp(-3.0 * ovality))
     return float(np.clip(fraction, 0.02, 1.0))
 
 
-def _judge(report: DistortionReport, alloy, insets: bool, kit) -> None:
+def _judge(report: DistortionReport, alloy, insets: bool, kit, locking: bool = True) -> None:
     compromised = [h for h in report.holes if not h.takes_locking_screw]
     severe = [h for h in report.holes if h.out_of_round_mm > LOCKING_MARGINAL_MM]
 
-    if severe:
+    if not locking:
+        if severe:
+            report.warnings.append(
+                f"{len(severe)} screw hole(s) go more than "
+                f"{LOCKING_MARGINAL_MM * 1000:.0f} um out of round. This plate takes "
+                "non-locking screws, which still seat in a slightly oval "
+                "countersink; check the heads sit flush."
+            )
+    elif severe:
         report.problems.append(
             f"{len(severe)} screw hole(s) are more than "
             f"{LOCKING_MARGINAL_MM * 1000:.0f} um out of round after bending. "
@@ -271,20 +287,20 @@ def _judge(report: DistortionReport, alloy, insets: bool, kit) -> None:
             "screws are unaffected; check any locking screw before relying on it."
         )
 
-    if not insets and getattr(kit, "insets_available", False) and compromised:
+    if locking and not insets and getattr(kit, "insets_available", False) and compromised:
         report.warnings.append(
             "This kit can take bending insets. Fitting them into the holes that "
             "will carry locking screws keeps those holes round while the plate "
             "is contoured."
         )
-    if report.fatigue_fraction < 0.5:
+    if report.fatigue_fraction < 0.25:
         report.problems.append(
             f"Estimated fatigue life is down to "
             f"{report.fatigue_fraction * 100:.0f}% of an unbent plate. "
             f"{alloy.name} tolerates repeated bending poorly; consider a "
             "preformed plate or a fresh one shaped in fewer passes."
         )
-    elif report.fatigue_fraction < 0.75:
+    elif report.fatigue_fraction < 0.6:
         report.warnings.append(
             f"Cold work has taken estimated fatigue life to "
             f"{report.fatigue_fraction * 100:.0f}% of an unbent plate."

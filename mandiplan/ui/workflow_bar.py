@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
 
 from .theme import set_role
 
-from ..workflow import workflow_status
+from ..workflow import STEPS, workflow_status
 
 DONE = QColor(24, 128, 56)
 CURRENT = QColor(26, 115, 232)
@@ -73,7 +73,7 @@ class WorkflowBar(QWidget):
         self.session = session
         self._page = 0
 
-        self.heading = QLabel("Step 1 of 5")
+        self.heading = QLabel(f"Step 1 of {len(STEPS)}")
         set_role(self.heading, "section")
         self.back = QPushButton("◀ Back")
         self.next = QPushButton("Next ▶")

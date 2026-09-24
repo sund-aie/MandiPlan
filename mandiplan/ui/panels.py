@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -29,7 +30,7 @@ from ..geometry.measure import format_deg, format_mm
 from ..geometry.plate import bend_table_rows
 from ..plate_assets import assets_in_family
 from ..plate_assets import families as plate_families
-from ..plate_catalog import load_kits, load_systems
+from ..plate_catalog import load_kits
 from .histogram import ThresholdPanel
 from .modes import Mode
 from .theme import set_role
@@ -40,6 +41,40 @@ def _hint(text: str) -> QLabel:
     label.setWordWrap(True)
     set_role(label, "hint")
     return label
+
+
+class _Section(QWidget):
+    """A titled section that opens and closes: detail on demand."""
+
+    def __init__(self, title: str, content: QWidget, expanded: bool = False, parent=None):
+        super().__init__(parent)
+        self.toggle = QToolButton()
+        self.toggle.setText(title)
+        self.toggle.setCheckable(True)
+        self.toggle.setChecked(expanded)
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setAutoRaise(True)
+        self.content = content
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(self.toggle)
+        layout.addWidget(content)
+        self.toggle.toggled.connect(self._show)
+        self._show(expanded)
+
+    def _show(self, shown: bool) -> None:
+        self.toggle.setArrowType(Qt.ArrowType.DownArrow if shown else Qt.ArrowType.RightArrow)
+        self.content.setVisible(shown)
+
+
+def _boxed(*widgets: QWidget) -> QWidget:
+    holder = QWidget()
+    layout = QVBoxLayout(holder)
+    layout.setContentsMargins(8, 0, 0, 0)
+    for widget in widgets:
+        layout.addWidget(widget)
+    return holder
 
 
 def _empty_state(text: str) -> QLabel:
@@ -457,7 +492,6 @@ class ResectionPanel(QWidget):
 class ReconstructionPanel(QWidget):
     """Rebuild the resected segment from the mirrored healthy side, flush."""
 
-    export_graft_requested = pyqtSignal()
     mode_requested = pyqtSignal(object)
 
     def __init__(self, session, parent=None):
@@ -471,7 +505,6 @@ class ReconstructionPanel(QWidget):
             "stumps and blend it in: one flush surface"
         )
         self.estimate_button = QPushButton("Re-estimate the plane of symmetry")
-        self.export_button = QPushButton("Export reconstructed jaw (STL)…")
         self.plane_info = QLabel("")
         self.plane_info.setWordWrap(True)
         self.coverage_info = QLabel("")
@@ -493,8 +526,6 @@ class ReconstructionPanel(QWidget):
                 "is filled from the pre-operative contour and shown in sand."
             )
         )
-        layout.addWidget(self.export_button)
-
         # -- optional hand refinement of the computed result ----------------
         self.smooth_junctions = QPushButton("Smooth the junctions")
         self.smooth_junctions.setToolTip(
@@ -537,7 +568,6 @@ class ReconstructionPanel(QWidget):
 
         self.estimate_button.clicked.connect(session.estimate_symmetry_plane)
         self.mirror_button.clicked.connect(session.build_reconstruction)
-        self.export_button.clicked.connect(self.export_graft_requested)
         self.smooth_junctions.clicked.connect(session.smooth_junctions)
         self.sculpt_button.toggled.connect(
             lambda on: self.mode_requested.emit(Mode.SCULPT if on else Mode.NAVIGATE)
@@ -593,7 +623,6 @@ class ReconstructionPanel(QWidget):
             )
             set_role(self.plane_info, "warning" if plane.symmetry < 0.75 else "hint")
         reconstruction = session.reconstruction
-        self.export_button.setEnabled(reconstruction is not None)
         lines = []
         if session.coverage is not None:
             lines.append(session.coverage.summary())
@@ -620,9 +649,6 @@ class PlatePanel(QWidget):
     mode_requested = pyqtSignal(object)
     #: plate mesh, hole centres, screw trajectories
     overlays_changed = pyqtSignal(bool, bool, bool, bool)
-    export_csv_requested = pyqtSignal()
-    export_stl_requested = pyqtSignal()
-    export_steps_requested = pyqtSignal()
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
@@ -681,38 +707,19 @@ class PlatePanel(QWidget):
         self.fit_status = QLabel("")
         self.fit_status.setWordWrap(True)
 
-        self.system_box = QComboBox()
-        for system in load_systems():
-            self.system_box.addItem(system.name, system.id)
         self.kit_box = QComboBox()
         for kit in load_kits():
             self.kit_box.addItem(kit.name, kit.id)
 
         self.draw_button = QPushButton("Draw plate path on the bone")
         self.draw_button.setCheckable(True)
+        self.draw_button.setProperty("primary", True)
         self.undo_point = QPushButton("Remove last point")
         self.clear_path = QPushButton("Clear path")
-
-        self.pitch = QDoubleSpinBox()
-        self.pitch.setRange(2.0, 40.0)
-        self.pitch.setSingleStep(0.5)
-        self.pitch.setSuffix(" mm")
-        self.pitch.setValue(session.plate.pitch_mm)
-        self.width = QDoubleSpinBox()
-        self.width.setRange(2.0, 40.0)
-        self.width.setSingleStep(0.5)
-        self.width.setSuffix(" mm")
-        self.width.setValue(session.plate.width_mm)
-        self.thickness = QDoubleSpinBox()
-        self.thickness.setRange(0.2, 10.0)
-        self.thickness.setSingleStep(0.1)
-        self.thickness.setSuffix(" mm")
-        self.thickness.setValue(session.plate.thickness_mm)
-
-        form = QFormLayout()
-        form.addRow("Screw-hole pitch", self.pitch)
-        form.addRow("Template width", self.width)
-        form.addRow("Template thickness", self.thickness)
+        self.verdict = QLabel("")
+        self.verdict.setWordWrap(True)
+        self.use_length = QPushButton("")
+        self.use_length.setVisible(False)
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
@@ -745,77 +752,62 @@ class PlatePanel(QWidget):
         self.summary.setWordWrap(True)
         self.fit_info = QLabel("")
         self.fit_info.setWordWrap(True)
-        self.export_csv = QPushButton("Export bend table (CSV)…")
-        self.export_stl = QPushButton("Export bending guide (STL)…")
-        self.export_stl.setToolTip(
-            "A clip-on guide, printed in TPU, that stops each bend at its planned "
-            "angle, with a bend-by-bend table"
-        )
-        self.export_steps = QPushButton("Export bench steps (CSV)…")
 
         layout = QVBoxLayout(self)
 
-        library = QFormLayout()
-        library.addRow("Plate family", self.family_box)
-        library.addRow("Model", self.model_box)
-        library.addRow("", self.status_badge)
-        library.addRow("Standoff", self.clearance)
-        library.addRow("Bending", self.bend_plate)
-        library.addRow("", self.show_distortion)
-        library.addRow("", self.use_insets)
-        toggles = QHBoxLayout()
-        toggles.addWidget(self.show_plate)
-        toggles.addWidget(self.show_holes)
-        toggles.addWidget(self.show_screws)
-        toggles.addWidget(self.show_marking)
-        library.addRow("Show", toggles)
-        library_box = QGroupBox("Plate library")
-        library_box.setLayout(library)
-        layout.addWidget(library_box)
-        layout.addWidget(self.fit_status)
-        holes_box = QGroupBox("Screw holes after bending")
-        holes_layout = QVBoxLayout()
-        holes_layout.addWidget(self.hole_report)
-        holes_box.setLayout(holes_layout)
-        layout.addWidget(holes_box)
-
-        properties_box = QGroupBox("Plate properties")
-        properties_layout = QVBoxLayout()
-        properties_layout.addWidget(self.properties)
-        properties_box.setLayout(properties_layout)
-        layout.addWidget(properties_box)
-
-        selection = QFormLayout()
-        selection.addRow("Plate system", self.system_box)
-        selection.addRow("Bending kit", self.kit_box)
-        chooser = QGroupBox("Bending")
-        chooser.setLayout(selection)
-        layout.addWidget(chooser)
-        layout.addWidget(
-            _hint(
-                "The bending kit and its working limits are generic profiles by "
-                "size class, not a manufacturer's catalogue. Check them against "
-                "the system you are holding and edit "
-                "mandiplan/data/plate_systems.json to match."
-            )
-        )
+        # 1. Draw the path: the one thing this step is for.
         layout.addWidget(self.draw_button)
         layout.addWidget(
-            _hint("Clicks are projected onto the bone surface.")
+            _hint(
+                "Click along the outer face of the jaw where the plate will lie; "
+                "after reconstructing, click across the rebuilt segment too."
+            )
         )
         row = QHBoxLayout()
         row.addWidget(self.undo_point)
         row.addWidget(self.clear_path)
         layout.addLayout(row)
-        box = QGroupBox("Plate dimensions")
-        box.setLayout(form)
-        layout.addWidget(box)
+
+        # 2. Which plate.
+        library = QFormLayout()
+        library.addRow("Plate", self.family_box)
+        library.addRow("Length", self.model_box)
+        library.addRow("", self.status_badge)
+        library_box = QGroupBox("Plate")
+        library_box.setLayout(library)
+        layout.addWidget(library_box)
+
+        # 3. Does it fit, in one line; the reasons on demand.
+        layout.addWidget(self.verdict)
+        layout.addWidget(self.use_length)
         layout.addWidget(self.summary)
-        layout.addWidget(self.fit_info)
+        self.details = _Section(
+            "Why: fit, contact and screw holes",
+            _boxed(self.fit_info, self.fit_status, self.hole_report),
+        )
+        layout.addWidget(self.details)
+
+        # 4. Bending.
+        bending = QFormLayout()
+        bending.addRow("", self.bend_plate)
+        bending.addRow("Standoff", self.clearance)
+        bending.addRow("Bending kit", self.kit_box)
+        bending_box = QGroupBox("Bending")
+        bending_box.setLayout(bending)
+        layout.addWidget(bending_box)
+        layout.addWidget(
+            _Section("Screw-hole options", _boxed(self.show_distortion, self.use_insets))
+        )
+        toggles = QGridLayout()
+        toggles.addWidget(self.show_plate, 0, 0)
+        toggles.addWidget(self.show_holes, 0, 1)
+        toggles.addWidget(self.show_screws, 1, 0)
+        toggles.addWidget(self.show_marking, 1, 1)
+        show = QWidget()
+        show.setLayout(toggles)
+        layout.addWidget(_Section("Show", show))
+        layout.addWidget(_Section("Plate properties", _boxed(self.properties)))
         layout.addWidget(self.tabs, 1)
-        layout.addWidget(self.export_csv)
-        layout.addWidget(self.export_steps)
-        layout.addWidget(self.export_stl)
 
         self.family_box.currentIndexChanged.connect(self._on_family)
         self.model_box.currentIndexChanged.connect(self._on_model)
@@ -830,9 +822,6 @@ class PlatePanel(QWidget):
             self.show_marking,
         ):
             box.toggled.connect(self._emit_overlays)
-        self.system_box.currentIndexChanged.connect(
-            lambda i: self._on_system(self.system_box.itemData(i))
-        )
         self.kit_box.currentIndexChanged.connect(
             lambda i: session.set_bending_kit(self.kit_box.itemData(i))
         )
@@ -841,14 +830,7 @@ class PlatePanel(QWidget):
         )
         self.undo_point.clicked.connect(session.remove_last_plate_point)
         self.clear_path.clicked.connect(session.clear_plate_path)
-        self.pitch.valueChanged.connect(lambda v: session.set_plate_settings(pitch_mm=v))
-        self.width.valueChanged.connect(lambda v: session.set_plate_settings(width_mm=v))
-        self.thickness.valueChanged.connect(
-            lambda v: session.set_plate_settings(thickness_mm=v)
-        )
-        self.export_csv.clicked.connect(self.export_csv_requested)
-        self.export_stl.clicked.connect(self.export_stl_requested)
-        self.export_steps.clicked.connect(self.export_steps_requested)
+        self.use_length.clicked.connect(session.use_fitting_length)
         session.plate_changed.connect(self.refresh)
         self._reload_models()
 
@@ -896,8 +878,36 @@ class PlatePanel(QWidget):
             self.show_marking.isChecked(),
         )
 
+    def _select_current_asset(self) -> None:
+        """Show the plate the session is using, however it was chosen."""
+        asset = self.session.plate_asset
+        if asset is None:
+            return
+        if self.family_box.currentData() != asset.family:
+            index = self.family_box.findData(asset.family)
+            if index >= 0:
+                self.family_box.blockSignals(True)
+                self.family_box.setCurrentIndex(index)
+                self.family_box.blockSignals(False)
+                self._loading_models = True
+                try:
+                    self.model_box.clear()
+                    for candidate in assets_in_family(asset.family):
+                        self.model_box.addItem(
+                            f"{candidate.hole_count} holes, {candidate.length_mm:.0f} mm",
+                            candidate.id,
+                        )
+                finally:
+                    self._loading_models = False
+        index = self.model_box.findData(asset.id)
+        if index >= 0 and index != self.model_box.currentIndex():
+            self.model_box.blockSignals(True)
+            self.model_box.setCurrentIndex(index)
+            self.model_box.blockSignals(False)
+
     def refresh_library(self) -> None:
         """Mirror the selected asset's identity, status and fit into the panel."""
+        self._select_current_asset()
         asset = self.session.plate_asset
         if asset is None:
             self.status_badge.setText("No plate selected")
@@ -972,23 +982,13 @@ class PlatePanel(QWidget):
             "danger" if report.problems else ("warning" if compromised else "hint"),
         )
 
-    def _on_system(self, system_id: str) -> None:
-        self.session.set_plate_system(system_id)
-        for spin, value in (
-            (self.pitch, self.session.plate.pitch_mm),
-            (self.width, self.session.plate.width_mm),
-            (self.thickness, self.session.plate.thickness_mm),
-        ):
-            spin.blockSignals(True)
-            spin.setValue(value)
-            spin.blockSignals(False)
-
     def _refresh_fit(self) -> None:
         fit = self.session.fit
         self.steps_table.setRowCount(0)
         if fit is None:
             self.fit_info.setText("")
             return
+        self._refresh_verdict(fit)
         lines = [fit.verdict]
         if fit.holes_proximal or fit.holes_distal:
             lines.append(
@@ -1008,12 +1008,43 @@ class PlatePanel(QWidget):
         self.steps_table.resizeColumnsToContents()
         self.steps_table.resizeRowsToContents()
 
+    def _refresh_verdict(self, fit) -> None:
+        session = self.session
+        problems = list(fit.problems) + list(session.plate_fit_problems)
+        warnings = list(session.plate_fit_warnings)
+        if problems:
+            text = f"Needs attention: {problems[0]}"
+            if len(problems) > 1:
+                text += f" (+{len(problems) - 1} more below)"
+            role = "danger"
+        elif warnings:
+            text = f"Fits, with {len(warnings)} point(s) to check below."
+            role = "warning"
+        else:
+            text = "Fits: the plate spans the plan with sound screw purchase each side."
+            role = "hint"
+        self.verdict.setText(text)
+        set_role(self.verdict, role)
+        asset = session.plate_asset
+        option = fit.option
+        if asset is not None and option is not None and option.holes != asset.hole_count:
+            self.use_length.setText(
+                f"Use the {option.holes}-hole length ({option.length_mm:.0f} mm), "
+                "the shortest that spans the plan"
+            )
+            self.use_length.setVisible(True)
+        else:
+            self.use_length.setVisible(False)
+
     def refresh(self) -> None:
         self.refresh_library()
         plan = self.session.plate_plan
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
         self._refresh_fit()
+        if plan is None or self.session.fit is None:
+            self.verdict.setText("")
+            self.use_length.setVisible(False)
         if plan is None:
             self.summary.setText(
                 f"{len(self.session.plate_points)} path points — "
@@ -1050,3 +1081,64 @@ class PlatePanel(QWidget):
 
 def _plain(value: float) -> str:
     return "" if value is None or not np.isfinite(value) else f"{value:.3f}"
+
+
+class ExportPanel(QWidget):
+    """Every file the plan produces, in one place, each saying what it is for."""
+
+    #: (key, button text, what it is for)
+    ITEMS = (
+        ("jaw", "Reconstructed jaw (STL)", "The mandible as rebuilt, to print as a model."),
+        ("segment", "Mirrored segment only (STL)", "Just the part that fills the defect."),
+        ("fragment", "Resected segment (STL)", "The bone the cuts remove."),
+        ("plate", "Bent plate (STL)", "The plate as planned, to print and bend against."),
+        ("guide", "Bending guide (STL + table)", "Clip-on guide that stops each bend at its angle."),
+        ("bends", "Bend table (CSV)", "Angle at every screw hole."),
+        ("steps", "Bench steps (CSV)", "The bending steps for the chosen kit, in order."),
+        ("resection", "Resection summary (CSV)", "Cut positions, angles and margins."),
+    )
+    export_requested = pyqtSignal(str)
+
+    def __init__(self, session, parent=None):
+        super().__init__(parent)
+        self.session = session
+        self.buttons: dict[str, QPushButton] = {}
+        layout = QVBoxLayout(self)
+        layout.addWidget(
+            _hint(
+                "Every file carries the MandiPlan attribution; tables carry the "
+                "disclaimer. Plates are generic approximations — check them "
+                "against the plate in your hand."
+            )
+        )
+        for key, text, purpose in self.ITEMS:
+            button = QPushButton(text + "…")
+            button.setToolTip(purpose)
+            button.clicked.connect(lambda _c=False, k=key: self.export_requested.emit(k))
+            self.buttons[key] = button
+            layout.addWidget(button)
+            layout.addWidget(_hint(purpose))
+        layout.addStretch(1)
+        for signal in (
+            session.reconstruction_changed,
+            session.resection_changed,
+            session.plate_changed,
+            session.volume_changed,
+        ):
+            signal.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self) -> None:
+        session = self.session
+        ready = {
+            "jaw": session.reconstruction is not None,
+            "segment": session.reconstruction is not None,
+            "fragment": bool(session.planes) and session.surface is not None,
+            "plate": session.plate_mesh() is not None,
+            "guide": session.bent_plate is not None,
+            "bends": session.plate_plan is not None,
+            "steps": bool(session.steps),
+            "resection": session.report is not None,
+        }
+        for key, button in self.buttons.items():
+            button.setEnabled(ready[key])

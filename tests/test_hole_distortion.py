@@ -261,3 +261,48 @@ def test_mismatched_bend_inputs_are_refused():
         predict_distortion(
             HOLES, 0.0, THICKNESS, [1.0], [3.0], alloy_by_id("cp-ti-grade-4"),
         )
+
+
+def test_an_oval_hole_is_a_problem_only_for_a_locking_plate():
+    """A plain countersunk hole still seats a screw when it goes a little oval."""
+    from mandiplan.materials import alloy_by_id
+    from mandiplan.plate_catalog import kit_by_id
+
+    holes = np.arange(8) * 8.0
+    bends = np.full(8, 16.0)
+    kwargs = dict(alloy=alloy_by_id("cp-ti-grade-4"), kit=kit_by_id("bending-irons"))
+    locking = predict_distortion(holes, 2.5, 2.4, bends, holes, locking=True, **kwargs)
+    plain = predict_distortion(holes, 2.5, 2.4, bends, holes, locking=False, **kwargs)
+    assert any("locking screw will not index" in p for p in locking.problems)
+    assert not any("out of round" in p for p in plain.problems)
+    assert any("non-locking screws" in w for w in plain.warnings)
+
+
+def test_fatigue_is_set_by_the_worst_hole_not_the_count_of_bent_holes():
+    from mandiplan.materials import alloy_by_id
+    from mandiplan.plate_catalog import kit_by_id
+
+    alloy, kit = alloy_by_id("cp-ti-grade-4"), kit_by_id("bending-irons")
+    one = predict_distortion(np.array([0.0, 40.0, 80.0]), 2.5, 2.4, np.array([16.0, 0.0, 0.0]),
+                             np.array([0.0, 40.0, 80.0]), alloy, kit, locking=False)
+    many = predict_distortion(np.arange(0.0, 90.0, 40.0), 2.5, 2.4, np.full(3, 16.0),
+                              np.arange(0.0, 90.0, 40.0), alloy, kit, locking=False)
+    assert many.fatigue_fraction == pytest.approx(one.fatigue_fraction, rel=0.05)
+
+
+def test_the_bend_limit_comes_from_the_alloy_and_the_bridge():
+    """A 2.4 mm grade 4 plate on an 8 mm pitch takes the ~20° a chin needs."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "make_plate_assets", Path(__file__).resolve().parents[1] / "tools" / "make_plate_assets.py"
+    )
+    tool = importlib.util.module_from_spec(spec)
+    sys.modules["make_plate_assets"] = tool  # dataclasses look their module up
+    spec.loader.exec_module(tool)
+    limit = tool.working_bend_limit(tool.LP_24, 8.0, "cp-ti-grade-4")
+    assert 22.0 <= limit <= 30.0
+    # A thicker plate of the same alloy takes less per bridge.
+    assert tool.working_bend_limit(tool.HEAVY_28, 9.0, "cp-ti-grade-4") < limit

@@ -300,7 +300,10 @@ def families(root: Path | None = None) -> list[tuple[str, str]]:
     """``(family id, human label)`` for each installed family, in order."""
     seen: dict[str, str] = {}
     for asset in load_assets(root):
-        seen.setdefault(asset.family, asset.name.split(",")[0])
+        # Everything but the hole count: "Locking reconstruction plate 2.4,
+        # preformed angle", not just "Locking reconstruction plate 2.4",
+        # which three families share.
+        seen.setdefault(asset.family, asset.name.rsplit(", ", 1)[0])
     return list(seen.items())
 
 

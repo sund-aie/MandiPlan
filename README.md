@@ -280,7 +280,8 @@ The palette is deliberately quiet. One accent blue marks the active tool and
 primary actions and appears nowhere else; the viewport is a flat cool
 near-white so the ivory bone reads against it without a border around the
 view. Planning state is carried by hue rather than saturation — muted warm red
-for the resected fragment, muted teal for the mirrored segment, titanium grey
+for the resected fragment, pale teal for the mirrored segment, sand where there
+was no mirror donor, titanium grey
 for the plate, amber only while a landmark is being edited.
 
 Icons are drawn in code (`mandiplan/ui/icons.py`), so there are no image files
@@ -304,23 +305,37 @@ you are: a dot per step, green once it is finished, and a line naming either
 what has been achieved or the next thing to do. Steps that cannot be started
 yet say what they are waiting for.
 
-**1 · Load and threshold.** *File → Open DICOM folder*. MandiPlan reads the
-voxel spacing from the header, re-orients the volume to patient axes, and shows
-the matrix, voxel size and field of view in millimetres. A series with gantry
-tilt, sheared slice positions, non-uniform slice spacing or an oblique
-orientation is refused with an explanation rather than loaded distorted.
+**1 · Load and threshold.** *File → Open DICOM folder*, or *File → Open
+sample scan* to try everything on the real head CBCT bundled with the
+application. MandiPlan reads the voxel spacing from the header, re-orients the
+volume to patient axes, and shows the matrix, voxel size and field of view in
+millimetres. A series with gantry tilt, sheared slice positions, non-uniform
+slice spacing or an oblique orientation is refused with an explanation rather
+than loaded distorted. A scan too large to plan on in memory (a 0.25 mm head
+scan is 300 million voxels) is averaged over whole blocks of voxels into a
+coarser working grid, and the load says so; world coordinates stay exact.
 
 CBCT gray values are not Hounsfield units — they depend on the scanner, the
 field of view and the exposure — so there is no fixed bone threshold. The
-histogram panel seeds one from Otsu's method over this volume's own histogram
-and leaves it on a live slider; the isosurface follows as you drag. "Keep
-largest connected component" is the only morphology applied. No smoothing is
-applied at all, because a smoothed surface no longer coincides with the
-gray values you thresholded.
+slider is seeded from the scan's own histogram: a real head scan holds air,
+soft tissue and bone, and the seed is the split between the last two (a
+two-class split draws the skin), over a range that ignores metal fillings.
+Move it by eye; the isosurface follows as you drag. No smoothing is applied,
+because a smoothed surface no longer coincides with the gray values you
+thresholded.
 
 **2 · Arch curve and reformat.** Switch to the *Slices* tab, press *Place arch
 points*, and click 5–10 points along the jaw in the axial view. A cubic spline
 is fitted through them and resampled at uniform **arc length**.
+
+Once the curve is drawn the mandible is **separated from the rest of the
+skull** by itself. With the teeth in occlusion a real scan is one connected
+mass of bone — mandible, maxilla and skull — and a cutting plane, being
+infinite, would take a slice of all three. MandiPlan finds the bite along the
+arch (the dark line between bright upper and lower crowns), cuts only the tooth
+contacts along it, and splits any remaining contact at the jaw joints at its
+thinnest, darkest point. The bone panel reports the separated mandible's
+volume; the checkbox there shows all bone again if you need it.
 
 Draw the curve along the buccal cortex, where the plate will actually sit — not
 through the dental arch. Arc length is the right quantity for a plate, but only
@@ -335,7 +350,7 @@ as a mean ray-sum that looks like an OPG. Below it is a buccolingual
 cross-section at any point along the curve; ← and → step it along, Shift for
 5 mm steps.
 
-**3 · Measure.** Choose *Measure* and click two points, or *Angle* and click
+**Measuring, at any step.** Choose *Measure* and click two points, or *Angle* and click
 three — the angle is reported at the middle point, which is how you record a
 gonial angle or check a bend against the plan. In the 3-D view you get
 a straight-line distance. In the panoramic view you get three numbers, labelled
@@ -344,7 +359,7 @@ distance, and the flattened distance between the points. The x-axis of that
 view is arc length, not a straight line, and the readout says so — across a
 curved mandible the two differ by several millimetres.
 
-**4 · Resection.** *Add cutting plane* drops a plane perpendicular to the arch
+**3 · Resection.** *Add cutting plane* drops a plane perpendicular to the arch
 curve; drag its handles in the 3-D view, or set it by numbers in the panel:
 position along the arch curve in millimetres, obliquity (yaw about the superior
 axis), inclination (tilt about the buccolingual direction), and offsets in
@@ -358,30 +373,37 @@ landmarks, and the readout gives the signed distance from each cut plane to
 each of them — positive means the point is on the resected side. *Undo cut*
 puts it back; Ctrl+Z undoes editing steps.
 
-**5 · Mirror reconstruction.** *Estimate mid-sagittal plane* finds the
-patient's plane of symmetry by maximising the overlap of the bone with its own
-reflection, and reports the score it reached — a low score means this patient
-is not symmetric enough for mirroring to be trusted, and you can see that
-before you rely on it. *Mirror healthy side into the defect* reflects the
-retained bone and clips it to the resection: that mirrored piece is the
-reconstruction target, and it exports as an STL.
+**4 · Reconstruction.** *Reconstruct from the healthy side* finds the patient's
+plane of symmetry (and reports how much bone mirrors onto bone, so a patient
+too asymmetric for mirroring shows it), mirrors the healthy side into the
+defect, and makes it **flush**: the mirror is registered to each cut stump
+separately, the two corrections are blended smoothly across the defect, and
+the mirror is blended into the retained bone over 3 mm before a single surface
+is built. The result is one closed piece that replaces the bone in the view —
+ivory where it is the patient's own bone, pale teal where it is mirrored. The
+panel reports each junction's mismatch before and after registration.
 
-Where the defect crosses the midline, mirroring runs out of donor: the bone
-that would be mirrored into the crossing part is inside the resection too. The
-panel measures that span and says so rather than quietly returning a partial
-graft. For that span the missing bone is estimated by blending this patient's
-own cross-sections at the two ends of the gap and sweeping them along the arch
-curve — an interpolation of their anatomy, shown in a different colour from the
-mirrored part so the two are never confused.
+Where the defect crosses the midline there is no healthy counterpart to
+mirror; that part is filled from the pre-operative contour, coloured sand, and
+reported, never silently merged.
 
-**6 · Plate.** Pick a plate system and a bending kit at the top of the panel.
-The system sets the screw-hole pitch and the plate's width and thickness; the
-kit decides which instrument each instruction names and how many passes a bend
-is split into.
+If a junction still wants rounding, *Smooth the junctions* does it for you, and
+*Brush on the jaw* (or key 7) gives Smooth, Fill and Carve brushes with a size
+and a strength: left-drag on the jaw, right-drag to turn it. Every stroke can
+be undone, *Back to computed* restores the computed surface, and the panel says
+how far your edits have moved it.
 
-*Draw plate path on the bone* and click along the bone in the 3-D view; clicks
-are projected onto the surface. The path is resampled at the screw-hole pitch,
-and each interior node gets three signed angles in the plate's own frame:
+**5 · Plate.** *Draw plate path on the bone* and click along the outer face of
+the jaw — after reconstructing, across the rebuilt segment too, since the plate
+follows the reconstruction. Then choose the plate and its length from the
+library; its pitch, section and the lengths it comes in drive everything
+below. Pick the bending kit you will use.
+
+Clicks are projected onto the bone, the normal under each is fitted over the
+plate's footprint rather than taken from one point of a rough surface, and the
+path is a smooth curve through the clicks (a plate cannot follow a wiggle
+shorter than its hole pitch). It is resampled at the screw-hole pitch, and each
+interior node gets three signed angles in the plate's own frame:
 
 | angle | what it is |
 |---|---|
@@ -394,14 +416,13 @@ repeated in the CSV header. Note that for a plate on the buccal surface most of
 the arch curvature shows up as out-of-plane bend, since the plate's own plane
 is the tangent plane of the bone.
 
-The panel then answers the question that matters at the bench: **does this
-plate fit?** It picks the shortest length in the chosen system that covers the
-path, says how many holes to trim, counts how many screw holes land on retained
-bone either side of the defect, and refuses the plan in red when either side
-has too few for purchase or when no length in the system is long enough — in
-which case it says a custom plate is needed rather than leaving you to work it
-out. Bends steeper than the working limit set for that system are listed as
-notes.
+The panel then answers the question that matters at the bench in one line:
+**does this plate fit?** If a different length of the same plate spans the
+plan better it offers it. The reasons sit under *Why*: how many screw holes land
+on retained bone either side of the defect (three for a load-bearing plate),
+whether a bridge is bent past what the alloy takes over that length (about 26°
+for a 2.4 mm grade 4 plate on an 8 mm pitch), how far the bone contact is from
+the planned standoff, and what the bends do to the screw holes.
 
 The **Bench steps** tab turns all of that into instructions for the kit you
 picked, measured from the proximal cut end of the plate because that is what a
@@ -416,24 +437,41 @@ conventions:
 > 4. At 31.4 mm (hole 3): 1.0° of twist clockwise is needed; bending irons
 >    cannot twist. Use twisting forceps here.
 
-*Export bend table (CSV)* writes the angle table, *Export bench steps (CSV)*
-the instructions above, and *Export bending template (STL)* sweeps the plate's
-own cross-section along the path for printing and bending against.
+**6 · Export.** Every file in one place: the reconstructed jaw, the mirrored
+segment alone, the resected segment, the bent plate, the bending guide, the bend
+table, the bench steps and the resection summary. Every STL carries the
+attribution; every table carries the disclaimer.
+
+### The bending guide
+
+A plate is bent by eye against a model, over and over. The bending guide
+removes the guessing. It is a chain of saddles, one per screw hole, printed in
+one piece (TPU 95A, or PETG) and clipped onto the plate as it comes out of the
+packet, straight or preformed. A window over each hole leaves it free for the
+bending irons; a thin strap links each saddle to the next.
+
+Where two saddles meet, over the bridge between two holes, their ends are cut
+on the mitre of the planned bend at that bridge, overbent by the alloy's
+springback. On the side the bend closes they stand apart by a wedge; bend the
+bridge that way until the two saddles touch, let go, and the plate relaxes onto
+the plan. On the other side the ends are square and simply move apart, so the
+guide also shows which way to bend. Each saddle carries its hole number, and
+the table written next to the STL says, bridge by bridge, what the bend is and
+when to stop. Twist closes no gap and has no stop; it is listed for checking by
+eye.
 
 ### The plate catalogue is yours to correct
 
-`mandiplan/data/plate_systems.json` holds generic profiles grouped by size
-class — 2.0, 2.4 and 2.7 mm bars, a pre-bent angle bar, and a custom plate. It
-is **not a manufacturer's catalogue and carries no part numbers**: the pitches,
-widths, thicknesses and hole counts are plausible defaults, not specifications.
-Check them against the sheet for the system you actually hold and edit the file
-to match; `bend_warning_deg` and `min_bend_radius_mm` are working limits you set
-for yourself, not manufacturer ratings.
+The plate library (`mandiplan/data/plates`) is generic, dimensioned from
+published size classes, and every plate says so. Its working limits — how far a
+bridge may be bent, how tight a radius the alloy takes — are derived from the
+alloy's rated ductility and the bridge between two screw seats, not from any
+manufacturer's rating.
 
-`mandiplan/data/bending_kits.json` is the same idea for instruments: bending
-irons, three-point pliers, a bar press, twisting forceps, and a template wire.
-Add your department's set with its own instrument names and the steps will read
-the way your kit is labelled.
+`mandiplan/data/bending_kits.json` describes the instruments: bending irons,
+three-point pliers, a bar press, twisting forceps, and a template wire. Add your
+department's set with its own instrument names and the steps will read the way
+your kit is labelled.
 
 ## Privacy
 
@@ -446,11 +484,12 @@ exported files carry no PHI only because they carry no header data at all.
 
 ## How it is checked
 
-There is no patient CBCT in this repository, so accuracy is checked against a
-phantom generated from a closed-form curve: an elliptical cross-section swept
-along a circular arc, with configurable anisotropic voxels, a bone-like
-intensity plateau and Gaussian noise. Arc length, cross-section axes, turn
-angle per node and solid volume are all known exactly.
+Accuracy is checked two ways.
+
+**Against a phantom** generated from a closed-form curve — an elliptical
+cross-section swept along a circular arc, with configurable anisotropic voxels,
+a bone-like intensity plateau and Gaussian noise — where arc length,
+cross-section axes, turn angle per node and solid volume are all known exactly.
 
 | what is checked | tolerance | worst measured |
 |---|---|---|
@@ -462,51 +501,55 @@ angle per node and solid volume are all known exactly.
 | total plate length vs. analytic arc length | 2% | 0.38% |
 | resected fragment volume vs. analytic wedge | 3% | 0.03% |
 | mid-sagittal plane offset on a symmetric phantom | 0.6 mm | 0.06 mm |
-| mirrored graft volume vs. the fragment it replaces | 5% | 0.02% |
+| mirrored volume vs. the fragment it replaces | 5% | 0.02% |
 | un-mirrorable span across the midline vs. analytic | 1.5 mm | 0.0 mm |
-| estimated segment across the gap vs. analytic | 3% | 0.4% |
 | DICOM round trip: spacing and orientation preserved | exact | exact |
 
-The cross-section figures are dominated by where the bone edge level is put,
-not by the reformat: sampling the same profile at the exact half-maximum gives
-0.04%. That is the same judgement a human makes placing a caliper on a cortical
-outline, and it is the practical floor on any of these measurements.
+**Against a real scan.** `mandiplan/data/reference/dz_cbct_jaws.npz` is a head
+CBCT from the 3D Slicer sample data ("CBCT-MR Head"), which the 3D Slicer
+project states was donated by the person in the images to be used without
+restriction; `tools/make_reference_case.py` rebuilds it from the public file
+and checks its checksum. It has everything a phantom lacks: soft tissue in the
+histogram, teeth in occlusion, fillings, condyles in their fossae, asymmetry.
+The tests check that the threshold lands on bone, that the separated mandible
+keeps both condyles and none of the maxilla or palate, that a cut removes
+mandible only, and that the reconstruction of a lateral defect is one piece
+with junction steps under 0.15 mm and smaller than a plain mirror's (0.05 mm
+against 0.47 mm on this scan). The same checks were run by hand on the two
+dental-surgery CBCTs in the 3D Slicer sample data.
 
-`pytest` runs all of it, including an end-to-end pass through the real
-application: load, flatten, measure, resect, draw a plate, export.
+The bending guide is checked geometrically: two neighbouring saddles do not
+touch up to the stop angle and do just past it, for a curl and for an in-plane
+bend, and bending the wrong way opens the gap.
+
+`pytest` runs all of it, including end-to-end passes through the real
+application: load, separate, cut, reconstruct, refine, draw a plate, bend it,
+export.
 
 ## Known limitations
 
-- **There is no library of mandibles behind the reconstruction.** Where
-  mirroring has no donor, the missing bone is interpolated from this patient's
-  own cross-sections at the two ends of the gap. It is not predicted from a
-  population of normal mandibles, because building that needs a curated set of
-  real CBCT scans, and this application makes no network calls and ships no
-  patient data. If you assemble a de-identified set yourself, a statistical
-  shape model fitted to it would replace the interpolation — that is a
-  substantial piece of work, not a setting.
+- **One real reference scan, not a population.** The reconstruction is the
+  patient's own mirrored anatomy; where the defect crosses the midline and
+  there is nothing to mirror, the gap is filled from the pre-operative contour,
+  which is wrong wherever the lesion has already changed the bone. A
+  statistical shape model built from many de-identified mandibles would do
+  better there; it needs that data set, which this application does not ship.
 - Mirroring assumes the healthy side is normal. A patient whose contralateral
   side is also diseased, previously operated, or simply asymmetric will get a
   target that is wrong in exactly the way the symmetry score warns about.
-- The plate catalogue is generic. Dimensions come from an editable file, not
-  from any manufacturer, and nothing in the application knows the real bending
-  characteristics of the alloy in your hand.
-- The bending steps assume the plate starts straight (except for the pre-bent
-  angle profile, which is only told to you, not modelled bend by bend).
-- Segmentation is threshold plus largest-connected-component. Scatter from
-  restorations, or a mandible touching the maxilla at the threshold you pick,
-  will need the threshold moved by hand; there is no editing brush.
+- The mandible separation needs teeth or joint contacts it can find. Heavy
+  metal artefact across the bite, or a curve drawn far from the mandible, can
+  leave a piece on the wrong side; the bone panel's checkbox shows all bone,
+  and the separated volume is reported so a wrong split is visible.
+- The plate library is generic. Its dimensions come from published size
+  classes, not from any manufacturer, and nothing in the application knows the
+  real bending characteristics of the plate in your hand.
+- The bending guide's stops are as good as the print: 0.1 mm of printing error
+  on a saddle wall is about 1.3° of bend. Twist has no stop. A flexible filament
+  gives a little under load; bend slowly to contact.
 - Two cutting planes. That covers a segmental resection but not a
   hemimandibulectomy with a condylar cut.
-- The bending template is a ribbon swept along the path. At a very tight bend
-  its inner corners can self-intersect; check the STL before printing.
 - Margin distances are measured to points you place by eye, not to a segmented
   lesion.
 - Multi-frame enhanced-CT DICOM is not handled; one file per slice is expected.
-- The arch curve is planar — seeds are placed in one axial slice. A jaw with
-  significant vertical curvature across the region of interest is flattened
-  against a curve that does not follow it in z.
-- Rebuilding the panoramic reformat resamples the whole volume, so on a large
-  field of view it takes a few seconds after each change to the curve or to the
-  slab settings.
 - Nothing is saved between runs except what you export. There is no case file.

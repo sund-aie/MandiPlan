@@ -186,7 +186,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 26.0,
         "protected_radius_mm": 2.5,
         "bendable": "at the notches between holes"
       },
@@ -526,7 +526,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 26.0,
         "protected_radius_mm": 2.5,
         "bendable": "at the notches between holes"
       },
@@ -946,7 +946,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 26.0,
         "protected_radius_mm": 2.5,
         "bendable": "at the notches between holes"
       },
@@ -1478,7 +1478,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 26.0,
         "protected_radius_mm": 2.5,
         "bendable": "at the notches between holes"
       },
@@ -1786,7 +1786,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 23.0,
         "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
@@ -2190,7 +2190,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 23.0,
         "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
@@ -2658,7 +2658,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 23.0,
         "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
@@ -2981,7 +2981,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 15.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 22.0,
         "protected_radius_mm": 3.0,
         "bendable": "at the notches between holes"
       },
@@ -3400,7 +3400,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 15.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 22.0,
         "protected_radius_mm": 3.0,
         "bendable": "at the notches between holes"
       },
@@ -3723,7 +3723,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 6.0,
-        "max_bend_deg_per_node": 22.0,
+        "max_bend_deg_per_node": 37.0,
         "protected_radius_mm": 2.2,
         "bendable": "at the notches between holes"
       },
@@ -4061,7 +4061,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 6.0,
-        "max_bend_deg_per_node": 22.0,
+        "max_bend_deg_per_node": 37.0,
         "protected_radius_mm": 2.2,
         "bendable": "at the notches between holes"
       },
@@ -4190,7 +4190,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 4.0,
-        "max_bend_deg_per_node": 30.0,
+        "max_bend_deg_per_node": 45.0,
         "protected_radius_mm": 2.05,
         "bendable": "at the notches between holes"
       },
@@ -4319,7 +4319,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 4.0,
-        "max_bend_deg_per_node": 30.0,
+        "max_bend_deg_per_node": 45.0,
         "protected_radius_mm": 2.05,
         "bendable": "at the notches between holes"
       },
@@ -4480,7 +4480,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 4.0,
-        "max_bend_deg_per_node": 30.0,
+        "max_bend_deg_per_node": 45.0,
         "protected_radius_mm": 2.05,
         "bendable": "at the notches between holes"
       },
@@ -4673,7 +4673,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 4.0,
-        "max_bend_deg_per_node": 30.0,
+        "max_bend_deg_per_node": 45.0,
         "protected_radius_mm": 2.05,
         "bendable": "at the notches between holes"
       },
@@ -4938,7 +4938,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 23.0,
         "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
@@ -5348,7 +5348,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 23.0,
         "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
@@ -5694,7 +5694,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 23.0,
         "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
@@ -6104,7 +6104,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 23.0,
         "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
@@ -6616,7 +6616,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 15.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 22.0,
         "protected_radius_mm": 3.0,
         "bendable": "at the notches between holes"
       },
@@ -7183,7 +7183,7 @@
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 15.0,
+        "max_bend_deg_per_node": 23.0,
         "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },

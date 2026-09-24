@@ -96,7 +96,9 @@ class Family:
     sources: tuple[str, ...]
     notes: str
     min_bend_radius_mm: float = 12.0
-    max_bend_deg_per_node: float = 15.0
+    #: Leave unset to derive it from the section and the alloy; see
+    #: :func:`working_bend_limit`.
+    max_bend_deg_per_node: float | None = None
     #: Per-gap notch overrides, e.g. the long bridge of a bridged miniplate.
     gap_notches: dict[int, NotchSpec] = field(default_factory=dict)
     #: Preform program: ("arch", from_hole, to_hole, degrees) curls the plate
@@ -105,6 +107,27 @@ class Family:
     preform: tuple[tuple[str, int, int, float], ...] = ()
     marking: tuple[str, ...] = ()
     code: str = ""
+
+
+def working_bend_limit(section: Section, pitch_mm: float, material_id: str) -> float:
+    """Largest bend one bridge between two holes can take, in degrees.
+
+    The bend is made over the bridge between two screw seats, so its radius
+    is at least the bridge length over the angle. The outer fibre strain of a
+    bend of radius R in a plate of thickness t is t / (2R + t); keeping it to
+    80% of the alloy's rated elongation, and no tighter than the alloy's own
+    minimum bend radius, gives the smallest radius, and the bridge length
+    over that radius is the angle. For a 2.4 mm grade 4 plate on an 8 mm
+    pitch that is about 26°: the chin, some 20° a pitch, is inside it.
+    """
+    from mandiplan.materials import alloy_by_id
+
+    alloy = alloy_by_id(material_id)
+    t = section.thickness_mm
+    allowed = 0.8 * alloy.elongation_pct / 100.0
+    radius = max(alloy.min_bend_radius_mm(t), t * (1.0 - allowed) / (2.0 * allowed))
+    bridge = max(pitch_mm - section.hole.seat_diameter_mm, 0.5)
+    return float(min(math.floor(math.degrees(bridge / radius)), 45.0))
 
 
 def evenly(count: int, pitch: float) -> tuple[float, ...]:
@@ -206,7 +229,6 @@ FAMILIES: tuple[Family, ...] = (
         load_bearing=False,
         sources=(SRC_PRIMARY, SRC_NOTCH),
         min_bend_radius_mm=6.0,
-        max_bend_deg_per_node=22.0,
         notes=(
             "NOT load-bearing. Holds a vascularised bone graft in place; it "
             "does not carry the mandible across a defect on its own."
@@ -230,7 +252,6 @@ FAMILIES: tuple[Family, ...] = (
         load_bearing=False,
         sources=(SRC_MINI,),
         min_bend_radius_mm=4.0,
-        max_bend_deg_per_node=30.0,
         notes=(
             "NOT load-bearing. Fracture and osteotomy fixation along Champy's "
             "lines. Too narrow to carry an etched mark."
@@ -649,7 +670,11 @@ def entry(family: Family, suffix: str, shape, points, triangles, holes, axes, an
         "dimension_sources": list(family.sources),
         "deformation": {
             "min_bend_radius_mm": family.min_bend_radius_mm,
-            "max_bend_deg_per_node": family.max_bend_deg_per_node,
+            "max_bend_deg_per_node": (
+                family.max_bend_deg_per_node
+                if family.max_bend_deg_per_node is not None
+                else working_bend_limit(s, s.pitch_mm, family.material_id)
+            ),
             "protected_radius_mm": round(s.hole.seat_diameter_mm / 2.0 + 0.5, 4),
             "bendable": "at the notches between holes",
         },

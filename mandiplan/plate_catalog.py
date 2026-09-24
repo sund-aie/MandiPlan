@@ -93,6 +93,38 @@ class BendingKit:
         return bend_kind in self.handles
 
 
+def system_for_asset(asset) -> PlateSystem:
+    """The plate system a chosen plate model belongs to.
+
+    Pitch, section and the lengths on offer all come from the plate library,
+    so the path is resampled at the pitch of the holes that are actually
+    fitted, and the length check offers the lengths that actually exist.
+    """
+    from .plate_assets import assets_in_family
+
+    family = assets_in_family(asset.family) or [asset]
+    counts = tuple(sorted({a.hole_count for a in family}))
+    span = (asset.hole_count - 1) * asset.hole_pitch_mm
+    margin = max((asset.length_mm - span) / 2.0, 0.0)
+    shape = "preformed" if asset.preform_angle_deg or "preform" in asset.name else "straight"
+    return PlateSystem(
+        id=f"family:{asset.family}",
+        name=asset.name.rsplit(", ", 1)[0],
+        shape=shape,
+        hole_pitch_mm=float(asset.hole_pitch_mm),
+        end_margin_mm=float(margin),
+        width_mm=float(asset.width_mm),
+        thickness_mm=float(asset.thickness_mm),
+        hole_counts=counts,
+        bend_warning_deg=float(asset.deformation.max_bend_deg_per_node),
+        min_bend_radius_mm=float(asset.deformation.min_bend_radius_mm),
+        # Load-bearing reconstruction needs three screws in sound bone each
+        # side of a defect; a miniplate or primary plate is held by two.
+        min_holes_per_side=3 if asset.load_bearing else 2,
+        preformed_angle_deg=asset.preform_angle_deg,
+    )
+
+
 @lru_cache(maxsize=1)
 def load_systems() -> tuple[PlateSystem, ...]:
     raw = json.loads((DATA_DIR / "plate_systems.json").read_text(encoding="utf-8"))

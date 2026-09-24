@@ -38,11 +38,11 @@ from ..exporting import (
 )
 from ..geometry.cpr import cross_section_world_point
 from ..geometry.measure import angle_deg, distance_mm, format_mm
-from .cohort_panel import CohortPanel
 from .image_view import ImageView, Overlay
 from .modes import Mode
 from .panels import (
     ArchPanel,
+    ExportPanel,
     PlatePanel,
     ReconstructionPanel,
     ResectionPanel,
@@ -183,18 +183,18 @@ class MainWindow(QMainWindow):
         self.toolbox.addItem(self.resection_panel, "3 · Resection planning")
         self.toolbox.addItem(self.reconstruction_panel, "4 · Mirror reconstruction")
         self.toolbox.addItem(self.plate_panel, "5 · Plate path and bends")
+        self.export_panel = ExportPanel(self.session)
+        self.toolbox.addItem(self.export_panel, "6 · Export")
+        self.export_panel.export_requested.connect(self.export_item)
 
         self.workflow_bar = WorkflowBar(self.session)
-        self.cohort_panel = CohortPanel()
         planning = QWidget()
         planning_layout = QVBoxLayout(planning)
         planning_layout.setContentsMargins(0, 0, 0, 0)
         planning_layout.addWidget(self.workflow_bar)
-        planning_layout.addWidget(self.cohort_panel)
         planning_layout.addWidget(self.toolbox, 1)
 
         card(self.workflow_bar)
-        card(self.cohort_panel)
 
         self.planning_dock = QDockWidget("Planning", self)
         self.planning_dock.setWidget(planning)
@@ -219,10 +219,6 @@ class MainWindow(QMainWindow):
         ):
             panel.mode_requested.connect(self.set_mode)
         self.plate_panel.overlays_changed.connect(self.view3d.set_plate_overlays)
-        self.plate_panel.export_csv_requested.connect(self.export_bend_csv)
-        self.plate_panel.export_stl_requested.connect(self.export_bending_guide)
-        self.plate_panel.export_steps_requested.connect(self.export_steps_csv)
-        self.reconstruction_panel.export_graft_requested.connect(self.export_graft_stl)
 
     def _build_actions(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
@@ -263,9 +259,10 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
 
         help_menu = self.menuBar().addMenu("&Help")
-        cohort_action = QAction("Cohort and data sources", self)
-        cohort_action.triggered.connect(self.show_cohort)
-        help_menu.addAction(cohort_action)
+        guide_action = QAction("Quick guide", self)
+        guide_action.setShortcut("F1")
+        guide_action.triggered.connect(self.show_guide)
+        help_menu.addAction(guide_action)
         about = QAction("About MandiPlan", self)
         about.triggered.connect(self.show_about)
         help_menu.addAction(about)
@@ -354,8 +351,8 @@ class MainWindow(QMainWindow):
         toolbar.addAction(fit_action)
 
         help_action = QAction(icon("help"), "", self)
-        help_action.setToolTip("Cohort, data sources and about")
-        help_action.triggered.connect(self.show_cohort)
+        help_action.setToolTip("Quick guide (F1)")
+        help_action.triggered.connect(self.show_guide)
         toolbar.addAction(help_action)
 
         self.panel_action = QAction(icon("panel"), "", self)
@@ -452,10 +449,25 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001 - reporting must not raise
             pass
 
-    def show_cohort(self) -> None:
-        self.cohort_panel.refresh()
-        self.cohort_panel.expand()
-        self.planning_dock.setVisible(True)
+    def show_guide(self) -> None:
+        """The steps in order, and the mouse, in one short page."""
+        QMessageBox.information(
+            self,
+            f"{APP_NAME} — quick guide",
+            "1  Scan: File › Open DICOM folder (or Open sample scan). Set the bone "
+            "threshold with the slider until the bone looks right.\n"
+            "2  Arch: click 5–10 points along the outer face of the mandible in the "
+            "axial view. The mandible is then separated from the skull by itself.\n"
+            "3  Resection: Add cut twice, drag each cut along the jaw, check the "
+            "red segment.\n"
+            "4  Reconstruction: Reconstruct from the healthy side. Optionally smooth "
+            "the junctions or brush on the jaw (key 7).\n"
+            "5  Plate: draw the plate path on the jaw, pick the plate, read the "
+            "verdict.\n"
+            "6  Export: the jaw, the bent plate, the bending guide and the tables.\n\n"
+            "Mouse: left-drag rotates, right-drag zooms, middle-drag pans; in Refine "
+            "jaw mode left-drag sculpts and right-drag rotates. Ctrl+Z undoes.",
+        )
 
     def show_about(self) -> None:
         QMessageBox.information(
@@ -788,7 +800,20 @@ class MainWindow(QMainWindow):
                 bent=self.session.bent_plate,
                 contact=self.session.plate_contact,
             )
+            self.session.note_export("bend table")
             self.show_message(f"Bend table written to {path}")
+
+    def export_item(self, key: str) -> None:
+        {
+            "jaw": self.export_graft_stl,
+            "segment": self.export_mirrored_segment_stl,
+            "fragment": self.export_fragment_stl,
+            "plate": self.export_plate_stl,
+            "guide": self.export_bending_guide,
+            "bends": self.export_bend_csv,
+            "steps": self.export_steps_csv,
+            "resection": self.export_resection_csv,
+        }[key]()
 
     def export_bending_guide(self) -> None:
         """The clip-on guide that stops every bend at its angle, with its table."""
@@ -805,6 +830,7 @@ class MainWindow(QMainWindow):
             stl, table = write_bending_guide(path, guide, asset)
         finally:
             self.set_busy(False)
+        self.session.note_export("bending guide")
         self.show_message(f"Bending guide written to {stl}; bend-by-bend table in {table.name}")
 
     def export_plate_stl(self) -> None:
@@ -821,7 +847,8 @@ class MainWindow(QMainWindow):
         if path:
             write_plate_stl(path, fitted)
             status = asset.status_label.lower() if asset else "plate"
-            self.show_message(f"Fitted plate ({status}) written to {path}")
+            self.session.note_export("bent plate")
+            self.show_message(f"Bent plate ({status}) written to {path}")
 
     def export_steps_csv(self) -> None:
         if not self.session.steps:
@@ -838,6 +865,7 @@ class MainWindow(QMainWindow):
                 self.session.bending_kit,
                 self.session.fit,
             )
+            self.session.note_export("bench steps")
             self.show_message(f"Bench steps written to {path}")
 
     def export_graft_stl(self) -> None:
@@ -851,6 +879,7 @@ class MainWindow(QMainWindow):
         )
         if path:
             write_surface_stl(path, surface)
+            self.session.note_export("reconstructed jaw")
             self.show_message(f"Reconstructed jaw written to {path}")
 
     def export_mirrored_segment_stl(self) -> None:
@@ -864,6 +893,7 @@ class MainWindow(QMainWindow):
         )
         if path:
             write_surface_stl(path, surface)
+            self.session.note_export("mirrored segment")
             self.show_message(f"Mirrored segment written to {path}")
 
     def export_resection_csv(self) -> None:
@@ -878,6 +908,7 @@ class MainWindow(QMainWindow):
         )
         if path:
             write_plan_summary_csv(path, rows, "MandiPlan resection summary")
+            self.session.note_export("resection summary")
             self.show_message(f"Resection summary written to {path}")
 
     def export_fragment_stl(self) -> None:
@@ -889,4 +920,5 @@ class MainWindow(QMainWindow):
         )
         if path:
             write_surface_stl(path, self.session.fragment_surface)
+            self.session.note_export("resected segment")
             self.show_message(f"Fragment written to {path}")

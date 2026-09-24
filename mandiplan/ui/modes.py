@@ -6,13 +6,14 @@ from enum import Enum
 
 
 class Mode(Enum):
+    # In the order of the workflow: the toolbar lists them this way.
     NAVIGATE = "Navigate"
-    MEASURE = "Measure"
-    ANGLE = "Angle"
     ARCH = "Arch curve"
-    PLATE = "Plate path"
     LANDMARK = "Margin point"
     SCULPT = "Refine jaw"
+    PLATE = "Plate path"
+    MEASURE = "Measure"
+    ANGLE = "Angle"
 
     @property
     def hint(self) -> str:

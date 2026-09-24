@@ -147,11 +147,11 @@ def test_resection_preview_cut_and_readout(window, phantom_folder):
 
 def test_the_workflow_bar_tracks_the_toolbox_and_the_plan(window):
     window.toolbox.setCurrentIndex(1)
-    assert "Step 2 of 5" in window.workflow_bar.heading.text()
+    assert "Step 2 of 6" in window.workflow_bar.heading.text()
     # The bar and the panels are two views of the same position.
     window.workflow_bar.step_selected.emit(3)
     assert window.toolbox.currentIndex() == 3
-    assert "Step 4 of 5" in window.workflow_bar.heading.text()
+    assert "Step 4 of 6" in window.workflow_bar.heading.text()
     window.toolbox.setCurrentIndex(0)
     assert "Done — Volume loaded" in window.workflow_bar.detail.text()
 
@@ -425,24 +425,28 @@ def test_changing_the_pitch_changes_the_table(window):
     session.set_plate_settings(pitch_mm=9.0)
 
 
-def test_choosing_a_plate_system_drives_the_pitch_and_the_fit(window, tmp_path):
+def test_choosing_a_plate_drives_the_pitch_and_the_fit(window, tmp_path):
+    """The plate chosen sets the pitch the path is laid out at, and the fit."""
     from mandiplan.exporting import write_steps_csv
 
     session = window.session
     panel = window.plate_panel
-    index = panel.system_box.findData("recon-2.7-bar")
-    panel.system_box.setCurrentIndex(index)
+    panel.family_box.setCurrentIndex(panel.family_box.findData("generic-recon-2.8"))
 
-    assert session.plate_system.id == "recon-2.7-bar"
-    assert session.plate.pitch_mm == pytest.approx(session.plate_system.hole_pitch_mm)
-    assert session.plate_plan.pitch_mm == pytest.approx(session.plate_system.hole_pitch_mm)
-    assert panel.pitch.value() == pytest.approx(session.plate_system.hole_pitch_mm)
+    asset = session.plate_asset
+    assert asset.family == "generic-recon-2.8"
+    assert session.plate_system.hole_pitch_mm == pytest.approx(asset.hole_pitch_mm)
+    assert session.plate.pitch_mm == pytest.approx(asset.hole_pitch_mm)
+    assert session.plate_plan.pitch_mm == pytest.approx(asset.hole_pitch_mm)
+    # The lengths on offer are the lengths the library has in this family.
+    assert set(session.plate_system.hole_counts) == {11, 17}
 
     fit = session.fit
     assert fit is not None
     assert fit.option is not None
     assert fit.option.length_mm >= session.plate_plan.total_length_mm
     assert "-hole" in panel.fit_info.text()
+    assert panel.verdict.text()
 
     assert session.steps
     assert panel.steps_table.rowCount() == len(session.steps)
@@ -460,7 +464,18 @@ def test_choosing_a_plate_system_drives_the_pitch_and_the_fit(window, tmp_path):
     assert "distance_from_cut_end_mm" in text
     assert session.plate_system.name in text
 
-    panel.system_box.setCurrentIndex(panel.system_box.findData("recon-2.4-bar"))
+    panel.family_box.setCurrentIndex(panel.family_box.findData("generic-recon-2.4-lp"))
+
+
+def test_the_panel_follows_a_plate_chosen_elsewhere(window):
+    """Choosing a plate from code (or 'use the length that fits') shows in the panel."""
+    session = window.session
+    panel = window.plate_panel
+    session.set_plate_asset("generic-recon-2.4-lock-16h")
+    assert panel.family_box.currentData() == "generic-recon-2.4-lock"
+    assert panel.model_box.currentData() == "generic-recon-2.4-lock-16h"
+    session.set_plate_asset("generic-recon-2.4-lp-12h")
+    assert panel.model_box.currentData() == "generic-recon-2.4-lp-12h"
 
 
 def test_changing_the_bending_kit_changes_the_instructions(window):
@@ -478,12 +493,13 @@ def test_a_custom_plate_needs_no_bench_steps(window):
     session = window.session
     panel = window.plate_panel
     session.clear_planes()  # judge the plate on its own, with no defect to span
-    panel.system_box.setCurrentIndex(panel.system_box.findData("custom-psi"))
+    asset_id = session.plate_asset.id
+    session.set_plate_system("custom-psi")
     assert session.fit.fits
     assert "Custom plate" in panel.fit_info.text()
     assert len(session.steps) == 1
     assert "no bending steps" in session.steps[0].text
-    panel.system_box.setCurrentIndex(panel.system_box.findData("recon-2.4-bar"))
+    session.set_plate_asset(asset_id)
 
 
 def test_a_plate_that_stops_short_of_the_defect_is_refused(window, phantom_folder):

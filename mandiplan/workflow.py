@@ -78,15 +78,16 @@ def _resection_step(session) -> tuple[bool, str, str]:
 def _reconstruction_step(session) -> tuple[bool, str, str]:
     if not session.planes:
         return False, "a resection", "Place the cutting planes first."
-    if session.symmetry_plane is None:
-        return False, "", "Estimate the mid-sagittal plane."
-    if session.graft_surface is None:
-        return False, "", "Mirror the healthy side into the defect."
+    if session.reconstruction is None:
+        return False, "", "Press Reconstruct from the healthy side."
     coverage = session.coverage
     detail = ""
     if coverage is not None and coverage.crosses_midline:
-        detail = f", {coverage.uncovered_mm:.1f} mm not mirrorable"
-    return True, "", f"Graft {session.graft_volume_mm3:.0f} mm³{detail}."
+        detail = f", {coverage.uncovered_mm:.1f} mm without a mirror donor"
+    edited = session.reconstruction_edited_mm
+    if edited > 0:
+        detail += f", refined by hand (up to {edited:.1f} mm)"
+    return True, "", f"Reconstructed; mirrored segment {session.graft_volume_mm3:.0f} mm³{detail}."
 
 
 def _plate_step(session) -> tuple[bool, str, str]:
@@ -105,12 +106,21 @@ def _plate_step(session) -> tuple[bool, str, str]:
     )
 
 
+def _export_step(session) -> tuple[bool, str, str]:
+    if session.reconstruction is None and session.plate_plan is None:
+        return False, "a reconstruction or a plate", "Reconstruct or plan a plate first."
+    if not session.exported:
+        return False, "", "Export the jaw, the bent plate and the bending guide."
+    return True, "", "Exported: " + ", ".join(session.exported) + "."
+
+
 STEPS = (
     ("Volume and bone threshold", _volume_step),
     ("Arch curve and reformat", _arch_step),
     ("Resection planning", _resection_step),
     ("Mirror reconstruction", _reconstruction_step),
     ("Plate path and bends", _plate_step),
+    ("Export", _export_step),
 )
 
 
