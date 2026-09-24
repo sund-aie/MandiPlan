@@ -154,6 +154,7 @@ def _load_plan(win, qt_app, folder):
     for s_mm in np.linspace(frames.length_mm * 0.15, frames.length_mm * 0.85, 10):
         _, _, buccolingual = frames.frame_at(float(s_mm))
         win.session.add_plate_point(frames.point_at(float(s_mm)) + buccolingual * 12.0)
+    win.session.build_reconstruction()
     qt_app.processEvents()
 
 
@@ -269,11 +270,58 @@ def test_random_sequences_of_real_actions(win, qt_app, errors, phantom_dir):
         ("undo cut", session.undo_cut),
         ("graft", session.build_graft),
         ("mode", lambda: win.set_mode(rng.choice(list(Mode)))),
+        ("threshold", lambda: session.set_threshold(
+            rng.uniform(spec.air_value, spec.bone_value))),
+        ("separate mandible", lambda: session.set_separate_mandible(rng.random() > 0.3)),
+        ("ensure mandible", session.ensure_mandible),
+        ("sculpt", lambda: _sculpt_somewhere(session, rng)),
+        ("brush", lambda: setattr(session, "brush", rng.choice(["smooth", "fill", "carve"]))),
+        ("smooth junctions", session.smooth_junctions),
+        ("undo edit", session.undo_edit),
+        ("reset edits", session.reset_edits),
+        ("length that fits", session.use_fitting_length),
+        ("export", lambda: win.export_item(rng.choice([k for k, _t, _p in win.export_panel.ITEMS]))),
     ]
     failures: list[str] = []
     for step in range(260):
         name, action = rng.choice(actions)
         _run(qt_app, errors, f"step {step}: {name}", action, failures)
+    assert not failures, "\n\n".join(failures[:5])
+
+
+def _sculpt_somewhere(session, rng) -> None:
+    surface = session.reconstructed_surface
+    if surface is None or not surface.GetNumberOfPoints():
+        session.sculpt([0.0, 0.0, 0.0])  # says what is missing, nothing more
+        return
+    point = surface.GetPoint(rng.randrange(surface.GetNumberOfPoints()))
+    session.sculpt(point, new_stroke=rng.random() > 0.5)
+
+
+def test_every_control_on_the_real_sample_scan(win, qt_app, errors):
+    """The same sweep on a real head CBCT: separation, reconstruction, plate."""
+    from mandiplan.reference_cases import load_sample
+
+    failures: list[str] = []
+    run = lambda label, fn: _run(qt_app, errors, label, fn, failures)  # noqa: E731
+    session = win.session
+    run("open the sample scan", win.open_sample_scan)
+    for point in load_sample()[3]:
+        run("arch point", lambda p=point: session.add_arch_seed(p))
+    run("separate the mandible", session.ensure_mandible)
+    frames = session.frames
+    for fraction, sign in ((0.22, 1.0), (0.40, -1.0)):
+        i = frames.index_of(fraction * frames.length_mm)
+        run("cut", lambda i=i, sign=sign: session.add_plane(
+            frames.points[i], sign * frames.tangents[i]))
+    run("reconstruct", session.build_reconstruction)
+    for s_mm in np.linspace(frames.length_mm * 0.12, frames.length_mm * 0.88, 10):
+        _, _, out = frames.frame_at(float(s_mm))
+        run("plate point", lambda s_mm=s_mm, out=out: session.add_plate_point(
+            frames.point_at(float(s_mm)) + out * 12.0))
+    assert session.mandible is not None and session.mandible.separated
+    assert session.reconstruction is not None
+    failures.extend(_sweep(win, qt_app, errors, "sample"))
     assert not failures, "\n\n".join(failures[:5])
 
 
