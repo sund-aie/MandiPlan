@@ -12,6 +12,7 @@ class Mode(Enum):
     ARCH = "Arch curve"
     PLATE = "Plate path"
     LANDMARK = "Margin point"
+    SCULPT = "Refine jaw"
 
     @property
     def hint(self) -> str:
@@ -27,4 +28,8 @@ class Mode(Enum):
             ),
             Mode.PLATE: "Click along the bone in the 3-D view to draw the plate path.",
             Mode.LANDMARK: "Click on the bone to mark a tumour margin point.",
+            Mode.SCULPT: (
+                "Click or drag on the reconstructed jaw to smooth, fill or carve it; "
+                "pick the brush in the reconstruction step. Right-drag still rotates."
+            ),
         }[self]

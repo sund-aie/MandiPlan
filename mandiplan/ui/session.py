@@ -10,6 +10,7 @@ import copy
 from dataclasses import dataclass
 
 import numpy as np
+from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from .. import constants
@@ -24,6 +25,7 @@ from ..geometry.mirror import (
     mirror_coverage,
 )
 from ..geometry.mandible import MandibleIsolation, isolate_mandible, masked_bone_volume
+from ..geometry.sculpt import SurfaceSculptor, vertex_normals
 from ..geometry.mesh_io import MeshLoadError
 from ..geometry.plate import PlatePlan, compute_plate_plan, fair_plate_path
 from ..geometry.hole_distortion import ovalise_mesh, predict_distortion
@@ -115,6 +117,8 @@ class Session(QObject):
     reconstruction_changed = pyqtSignal()
     plate_changed = pyqtSignal()
     mandible_changed = pyqtSignal()
+    #: The reconstructed surface was edited by hand; only its shape changed.
+    reconstruction_edited = pyqtSignal()
     message = pyqtSignal(str)
     #: True while a slow computation runs, so the window can show it is busy.
     busy = pyqtSignal(bool)
@@ -172,7 +176,15 @@ class Session(QObject):
         #: mirrored donor together. ``graft_surface`` is the donor part alone.
         self.reconstruction: Reconstruction | None = None
         self._reconstruction_key = None
-        self.graft_surface = None
+        self._graft_surface = None
+        self._graft_stale = False
+        #: Hand edits to the reconstruction (``geometry/sculpt.py``).
+        self._sculptor: SurfaceSculptor | None = None
+        self.brush = "smooth"
+        self.brush_radius_mm = 5.0
+        self.brush_strength = 0.5
+        self._plate_projector: SurfaceProjector | None = None
+        self._plate_projector_source = None
 
         self.plate_points: list[np.ndarray] = []
         self.plate_normals: list[np.ndarray] = []
@@ -732,9 +744,11 @@ class Session(QObject):
         finally:
             self.busy.emit(False)
         self._reconstruction_key = self._reconstruction_inputs()
-        self.graft_surface = clip_closed(
+        self._sculptor = None
+        self._graft_surface = clip_closed(
             self.reconstruction.surface, self.planes, keep_resected=True
         )
+        self._graft_stale = False
         for line in self.reconstruction.report.warnings:
             self.message.emit(line)
         self.reconstruction_changed.emit()
@@ -760,7 +774,96 @@ class Session(QObject):
     def _clear_reconstruction(self) -> None:
         self.reconstruction = None
         self._reconstruction_key = None
-        self.graft_surface = None
+        self._graft_surface = None
+        self._graft_stale = False
+        self._sculptor = None
+
+    @property
+    def graft_surface(self):
+        """The mirrored segment alone: the reconstruction inside the cuts."""
+        if self._graft_stale and self.reconstruction is not None:
+            self._graft_surface = clip_closed(
+                self.reconstruction.surface, self.planes, keep_resected=True
+            )
+            self._graft_stale = False
+        return self._graft_surface
+
+    # -- hand edits to the reconstruction ------------------------------------
+
+    @property
+    def reconstruction_edited_mm(self) -> float:
+        """How far the edits have moved the surface from what was computed."""
+        return self._sculptor.max_change_mm() if self._sculptor is not None else 0.0
+
+    @property
+    def can_undo_edit(self) -> bool:
+        return self._sculptor is not None and self._sculptor.can_undo
+
+    def _ensure_sculptor(self) -> SurfaceSculptor | None:
+        if self.reconstruction is None:
+            return None
+        if self._sculptor is None:
+            surface = self.reconstruction.surface
+            points = vtk_to_numpy(surface.GetPoints().GetData()).astype(float)
+            triangles = vtk_to_numpy(surface.GetPolys().GetConnectivityArray()).reshape(-1, 3)
+            self._sculptor = SurfaceSculptor(points, triangles)
+        return self._sculptor
+
+    def sculpt(self, point, new_stroke: bool = True) -> None:
+        """One dab of the current brush at ``point`` on the reconstruction."""
+        sculptor = self._ensure_sculptor()
+        if sculptor is None:
+            self.message.emit("Reconstruct the jaw first; the brushes refine the result.")
+            return
+        if new_stroke:
+            sculptor.checkpoint()
+        if sculptor.stroke(point, self.brush_radius_mm, self.brush_strength, self.brush):
+            self._show_edit()
+
+    def smooth_junctions(self) -> None:
+        """Round the surface off where each cut meets the mirrored segment."""
+        sculptor = self._ensure_sculptor()
+        if sculptor is None or not self.planes:
+            return
+        sculptor.checkpoint()
+        moved = sculptor.smooth_near_planes(self.planes)
+        self._show_edit()
+        self.message.emit(f"Smoothed {moved:,} surface points at the junctions.")
+
+    def undo_edit(self) -> None:
+        if self._sculptor is not None and self._sculptor.undo():
+            self._show_edit()
+
+    def reset_edits(self) -> None:
+        """Back to the reconstruction exactly as computed."""
+        if self._sculptor is not None and self._sculptor.edited:
+            self._sculptor.reset()
+            self._show_edit()
+
+    def _show_edit(self) -> None:
+        surface = self.reconstruction.surface
+        points = self._sculptor.points
+        surface.GetPoints().SetData(numpy_to_vtk(points, deep=True))
+        normals = numpy_to_vtk(vertex_normals(points, self._sculptor.triangles), deep=True)
+        normals.SetName("Normals")
+        surface.GetPointData().SetNormals(normals)
+        surface.Modified()
+        self._graft_stale = True
+        self._plate_projector = None
+        self.reconstruction_edited.emit()
+
+    @property
+    def plate_projector(self) -> SurfaceProjector | None:
+        """Projects plate path clicks onto the bone the plate will sit on:
+        the reconstructed jaw once there is one, since the plate spans the
+        rebuilt segment, and the patient's own bone before that."""
+        surface = self.reconstructed_surface or self.surface
+        if surface is None or not surface.GetNumberOfPoints():
+            return None
+        if self._plate_projector is None or self._plate_projector_source is not surface:
+            self._plate_projector = SurfaceProjector(surface)
+            self._plate_projector_source = surface
+        return self._plate_projector
 
     @property
     def graft_volume_mm3(self) -> float:
@@ -800,12 +903,13 @@ class Session(QObject):
 
     def add_plate_point(self, world_point) -> None:
         self.ensure_mandible()
-        if self.projector is None:
+        projector = self.plate_projector
+        if projector is None:
             self.message.emit("Extract a bone surface before drawing a plate path.")
             return
         self._push_undo()
-        point, _ = self.projector.project(world_point)
-        normal = self.projector.footprint_normal(point, self.PLATE_FOOTPRINT_MM)
+        point, _ = projector.project(world_point)
+        normal = projector.footprint_normal(point, self.PLATE_FOOTPRINT_MM)
         self.plate_points.append(point)
         self.plate_normals.append(normal)
         self.update_plate_plan()

@@ -214,7 +214,9 @@ class MainWindow(QMainWindow):
         self.toolbox.currentChanged.connect(self.workflow_bar.set_page)
         self.workflow_bar.step_selected.connect(self.toolbox.setCurrentIndex)
         self.volume_panel.load_requested.connect(self.open_dicom_folder)
-        for panel in (self.arch_panel, self.resection_panel, self.plate_panel):
+        for panel in (
+            self.arch_panel, self.resection_panel, self.plate_panel, self.reconstruction_panel
+        ):
             panel.mode_requested.connect(self.set_mode)
         self.plate_panel.overlays_changed.connect(self.view3d.set_plate_overlays)
         self.plate_panel.export_csv_requested.connect(self.export_bend_csv)
@@ -297,6 +299,7 @@ class MainWindow(QMainWindow):
             Mode.LANDMARK: ("landmark", "4"),
             Mode.MEASURE: ("measure", "5"),
             Mode.ANGLE: ("angle", "6"),
+            Mode.SCULPT: ("sculpt", "7"),
         }
         for mode in Mode:
             glyph, key = mode_icons[mode]
@@ -414,6 +417,7 @@ class MainWindow(QMainWindow):
                 (self.arch_panel.place_button, Mode.ARCH),
                 (self.plate_panel.draw_button, Mode.PLATE),
                 (self.resection_panel.landmark_button, Mode.LANDMARK),
+                (self.reconstruction_panel.sculpt_button, Mode.SCULPT),
             ):
                 button.blockSignals(True)
                 button.setChecked(mode == owner)

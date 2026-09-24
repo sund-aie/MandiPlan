@@ -70,6 +70,20 @@ def _draw_mirror(p: QPainter) -> None:
     p.drawPath(_path([(15, 5), (21, 12), (15, 19), (15, 5)]))
 
 
+def _draw_sculpt(p: QPainter) -> None:
+    """A brush over a rounded surface."""
+    surface = QPainterPath()
+    surface.moveTo(3, 20)
+    surface.cubicTo(QPointF(7, 14), QPointF(17, 14), QPointF(21, 20))
+    p.drawPath(surface)
+    p.save()
+    p.translate(15.5, 4.0)
+    p.rotate(35)
+    p.drawRect(QRectF(-1.6, 0, 3.2, 7.5))
+    p.drawPath(_path([(-2.4, 7.5), (0, 12.5), (2.4, 7.5)]))
+    p.restore()
+
+
 def _draw_resection(p: QPainter) -> None:
     """A mandibular arc with two cut planes across it."""
     body = QPainterPath()
@@ -179,6 +193,7 @@ _GLYPHS = {
     "threshold": _draw_threshold,
     "arch": _draw_arch,
     "mirror": _draw_mirror,
+    "sculpt": _draw_sculpt,
     "resection": _draw_resection,
     "plate": _draw_plate,
     "measure": _draw_measure,

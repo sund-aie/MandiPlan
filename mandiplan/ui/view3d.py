@@ -126,11 +126,25 @@ class View3D(QWidget):
         self.picker.SetTolerance(0.005)
         self.interactor.AddObserver("LeftButtonPressEvent", self._on_left_button, 1.0)
 
+        # Refining the jaw needs the left button for the brush. A style of its
+        # own takes left press/drag/release (an observer on a style replaces
+        # its default handler) and hands rotation to the right button.
+        self.sculpt_style = vtk.vtkInteractorStyleTrackballCamera()
+        self.sculpt_style.AddObserver("LeftButtonPressEvent", self._sculpt_press)
+        self.sculpt_style.AddObserver("LeftButtonReleaseEvent", self._sculpt_release)
+        self.sculpt_style.AddObserver("MouseMoveEvent", self._sculpt_move)
+        self.sculpt_style.AddObserver("RightButtonPressEvent", lambda o, e: o.OnLeftButtonDown())
+        self.sculpt_style.AddObserver("RightButtonReleaseEvent", lambda o, e: o.OnLeftButtonUp())
+        self._depth_picker = vtk.vtkWorldPointPicker()
+        self._sculpting = False
+        self._last_dab: np.ndarray | None = None
+
         session.surface_changed.connect(self.refresh_surface)
         session.resection_changed.connect(self.refresh_resection)
         session.plate_changed.connect(self.refresh_plate)
         session.arch_changed.connect(self.refresh_arch)
         session.reconstruction_changed.connect(self.refresh_reconstruction)
+        session.reconstruction_edited.connect(self.render)
 
     def start(self) -> None:
         self.interactor.Initialize()
@@ -265,6 +279,20 @@ class View3D(QWidget):
         self.renderer.AddActor(self.graft_actor)
 
         self.measure_mapper = vtk.vtkPolyDataMapper()
+        # The brush: a faint sphere of the brush's radius under the cursor.
+        self.brush_source = vtk.vtkSphereSource()
+        self.brush_source.SetThetaResolution(32)
+        self.brush_source.SetPhiResolution(16)
+        brush_mapper = vtk.vtkPolyDataMapper()
+        brush_mapper.SetInputConnection(self.brush_source.GetOutputPort())
+        self.brush_actor = vtk.vtkActor()
+        self.brush_actor.SetMapper(brush_mapper)
+        self.brush_actor.GetProperty().SetColor(0.30, 0.55, 0.95)
+        self.brush_actor.GetProperty().SetOpacity(0.25)
+        self.brush_actor.PickableOff()
+        self.brush_actor.VisibilityOff()
+        self.renderer.AddActor(self.brush_actor)
+
         self.measure_actor = vtk.vtkActor()
         self.measure_actor.SetMapper(self.measure_mapper)
         self.measure_actor.GetProperty().SetColor(1.0, 0.9, 0.3)
@@ -441,6 +469,56 @@ class View3D(QWidget):
         self.mode = mode
         if mode not in (Mode.MEASURE, Mode.ANGLE):
             self.clear_measurement()
+        sculpting = mode == Mode.SCULPT
+        self.interactor.SetInteractorStyle(self.sculpt_style if sculpting else self.camera_style)
+        if not sculpting:
+            self.brush_actor.VisibilityOff()
+            self.render()
+
+    # -- refining the reconstruction -------------------------------------------
+
+    def _brush_point(self) -> np.ndarray | None:
+        """The point on the reconstructed jaw under the cursor, or None."""
+        surface = self.session.reconstructed_surface
+        if surface is None:
+            return None
+        x, y = self.interactor.GetEventPosition()
+        self._depth_picker.Pick(x, y, 0, self.renderer)
+        point = np.array(self._depth_picker.GetPickPosition(), dtype=float)
+        bounds = np.array(surface.GetBounds()).reshape(3, 2)
+        margin = self.session.brush_radius_mm
+        if np.any(point < bounds[:, 0] - margin) or np.any(point > bounds[:, 1] + margin):
+            return None  # the background, not the jaw
+        return point
+
+    def _sculpt_press(self, style, event) -> None:
+        point = self._brush_point()
+        if point is None:
+            return
+        self._sculpting = True
+        self._last_dab = point
+        self.session.sculpt(point, new_stroke=True)
+
+    def _sculpt_release(self, style, event) -> None:
+        self._sculpting = False
+        self._last_dab = None
+
+    def _sculpt_move(self, style, event) -> None:
+        point = self._brush_point()
+        if point is None:
+            self.brush_actor.VisibilityOff()
+        else:
+            self.brush_source.SetCenter(*point)
+            self.brush_source.SetRadius(self.session.brush_radius_mm)
+            self.brush_actor.VisibilityOn()
+        if self._sculpting and point is not None:
+            # A dab every quarter radius along the drag, not every mouse event.
+            if np.linalg.norm(point - self._last_dab) >= 0.25 * self.session.brush_radius_mm:
+                self._last_dab = point
+                self.session.sculpt(point, new_stroke=False)
+        elif not self._sculpting:
+            style.OnMouseMove()  # keep right-drag rotation and wheel zoom working
+        self.render()
 
     def clear_measurement(self) -> None:
         self._measure_points.clear()
@@ -540,13 +618,15 @@ class View3D(QWidget):
     # -- picking -----------------------------------------------------------
 
     def _on_left_button(self, obj, event) -> None:
-        if self.mode == Mode.NAVIGATE:
+        if self.mode in (Mode.NAVIGATE, Mode.SCULPT):
             return
         x, y = self.interactor.GetEventPosition()
         if not self.picker.Pick(x, y, 0, self.renderer):
             return
         actor = self.picker.GetActor()
-        if actor not in (self.bone_actor, self.fragment_actor):
+        # The reconstruction replaces the bone in the view once it exists, and
+        # the plate is planned on it: clicks on it count as clicks on bone.
+        if actor not in (self.bone_actor, self.fragment_actor, self.graft_actor):
             return
         point = np.array(self.picker.GetPickPosition(), dtype=float)
         if self.mode in (Mode.MEASURE, Mode.ANGLE):

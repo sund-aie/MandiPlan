@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -457,6 +458,7 @@ class ReconstructionPanel(QWidget):
     """Rebuild the resected segment from the mirrored healthy side, flush."""
 
     export_graft_requested = pyqtSignal()
+    mode_requested = pyqtSignal(object)
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
@@ -492,16 +494,92 @@ class ReconstructionPanel(QWidget):
             )
         )
         layout.addWidget(self.export_button)
+
+        # -- optional hand refinement of the computed result ----------------
+        self.smooth_junctions = QPushButton("Smooth the junctions")
+        self.smooth_junctions.setToolTip(
+            "Computed: rounds the surface off within 3 mm of each cut"
+        )
+        self.sculpt_button = QPushButton("Brush on the jaw")
+        self.sculpt_button.setCheckable(True)
+        self.brush_box = QComboBox()
+        self.brush_box.addItem("Smooth", "smooth")
+        self.brush_box.addItem("Fill (add bone)", "fill")
+        self.brush_box.addItem("Carve (remove bone)", "carve")
+        self.brush_radius = QDoubleSpinBox()
+        self.brush_radius.setRange(1.0, 15.0)
+        self.brush_radius.setSingleStep(0.5)
+        self.brush_radius.setSuffix(" mm")
+        self.brush_radius.setValue(session.brush_radius_mm)
+        self.brush_strength = QSlider(Qt.Orientation.Horizontal)
+        self.brush_strength.setRange(5, 100)
+        self.brush_strength.setValue(int(round(session.brush_strength * 100)))
+        self.undo_edit = QPushButton("Undo edit")
+        self.reset_edits = QPushButton("Back to computed")
+        self.edit_info = QLabel("")
+        self.edit_info.setWordWrap(True)
+
+        refine = QFormLayout()
+        refine.addRow(self.smooth_junctions)
+        refine.addRow(self.sculpt_button)
+        refine.addRow("Brush", self.brush_box)
+        refine.addRow("Size", self.brush_radius)
+        refine.addRow("Strength", self.brush_strength)
+        edits = QHBoxLayout()
+        edits.addWidget(self.undo_edit)
+        edits.addWidget(self.reset_edits)
+        refine.addRow(edits)
+        refine.addRow(self.edit_info)
+        self.refine_box = QGroupBox("Refine the result (optional)")
+        self.refine_box.setLayout(refine)
+        layout.addWidget(self.refine_box)
         layout.addStretch(1)
 
         self.estimate_button.clicked.connect(session.estimate_symmetry_plane)
         self.mirror_button.clicked.connect(session.build_reconstruction)
         self.export_button.clicked.connect(self.export_graft_requested)
+        self.smooth_junctions.clicked.connect(session.smooth_junctions)
+        self.sculpt_button.toggled.connect(
+            lambda on: self.mode_requested.emit(Mode.SCULPT if on else Mode.NAVIGATE)
+        )
+        self.brush_box.currentIndexChanged.connect(
+            lambda _i: setattr(session, "brush", self.brush_box.currentData())
+        )
+        self.brush_radius.valueChanged.connect(
+            lambda v: setattr(session, "brush_radius_mm", float(v))
+        )
+        self.brush_strength.valueChanged.connect(
+            lambda v: setattr(session, "brush_strength", v / 100.0)
+        )
+        self.undo_edit.clicked.connect(session.undo_edit)
+        self.reset_edits.clicked.connect(session.reset_edits)
         session.reconstruction_changed.connect(self.refresh)
+        session.reconstruction_edited.connect(self.refresh_edits)
         self.refresh()
+
+    def refresh_edits(self) -> None:
+        session = self.session
+        ready = session.reconstruction is not None
+        self.refine_box.setEnabled(ready)
+        self.undo_edit.setEnabled(session.can_undo_edit)
+        moved = session.reconstruction_edited_mm
+        self.reset_edits.setEnabled(moved > 0.0)
+        if not ready:
+            self.edit_info.setText("Available once the jaw is reconstructed.")
+            set_role(self.edit_info, "empty")
+        elif moved > 0.0:
+            self.edit_info.setText(
+                f"Edited by hand: up to {moved:.2f} mm from the computed surface. "
+                "Exports include the edits."
+            )
+            set_role(self.edit_info, "warning")
+        else:
+            self.edit_info.setText("As computed: no hand edits.")
+            set_role(self.edit_info, "hint")
 
     def refresh(self) -> None:
         session = self.session
+        self.refresh_edits()
         plane = session.symmetry_plane
         if plane is None:
             self.plane_info.setText(

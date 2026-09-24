@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from vtkmodules.util.numpy_support import vtk_to_numpy
 import vtk
 
 from helpers import rel_error
@@ -275,6 +276,54 @@ def test_mirror_reconstruction_through_the_interface(window, phantom_folder):
     session.clear_planes()
     assert session.reconstruction is None
     assert not window.view3d.graft_actor.GetVisibility()
+
+
+def test_the_reconstruction_can_be_refined_by_hand_and_exported(window, tmp_path):
+    from mandiplan.exporting import write_surface_stl
+
+    session = window.session
+    session.clear_planes()
+    mid = session.frames.length_mm / 2.0
+    for s, sign in ((mid + 12.0, +1.0), (mid + 34.0, -1.0)):
+        index = session.frames.index_of(s)
+        session.add_plane(session.frames.points[index], sign * session.frames.tangents[index])
+    session.build_reconstruction()
+    panel = window.reconstruction_panel
+    assert panel.refine_box.isEnabled()
+    assert "As computed" in panel.edit_info.text()
+
+    window.set_mode(Mode.SCULPT)
+    assert window.view3d.interactor.GetInteractorStyle() is window.view3d.sculpt_style
+    assert panel.sculpt_button.isChecked()
+
+    surface = session.reconstructed_surface
+    before = vtk_to_numpy(surface.GetPoints().GetData()).copy()
+    target = before[np.argmax(before[:, 2])]  # a point on the jaw's upper border
+    session.brush = "fill"
+    session.sculpt(target)
+    after = vtk_to_numpy(surface.GetPoints().GetData())
+    assert np.max(np.linalg.norm(after - before, axis=1)) > 0.01
+    assert "Edited by hand" in panel.edit_info.text()
+
+    # The export is the edited surface.
+    path = write_surface_stl(tmp_path / "jaw.stl", surface)
+    reader = vtk.vtkSTLReader()
+    reader.SetFileName(str(path))
+    reader.Update()
+    exported = vtk_to_numpy(reader.GetOutput().GetPoints().GetData())
+    assert np.min(np.linalg.norm(exported - after[np.argmax(np.linalg.norm(after - before, axis=1))], axis=1)) < 1e-3
+
+    session.smooth_junctions()
+    session.undo_edit()
+    session.reset_edits()
+    assert np.allclose(vtk_to_numpy(surface.GetPoints().GetData()), before)
+    assert "As computed" in panel.edit_info.text()
+
+    # The plate is planned on the reconstructed jaw, across the rebuilt part.
+    assert session.plate_projector.polydata is surface
+    window.set_mode(Mode.NAVIGATE)
+    assert window.view3d.interactor.GetInteractorStyle() is window.view3d.camera_style
+    session.clear_planes()
 
 
 def test_a_defect_across_the_midline_is_reported_as_partly_unmirrorable(window):
