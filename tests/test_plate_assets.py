@@ -169,7 +169,6 @@ def test_a_plate_is_not_a_rectangle(catalogue):
 
     for x in xs:
         assert width_at(x) == pytest.approx(asset.width_mm, abs=0.1), x
-    import json
 
     entry = next(e for e in json.loads(
         (plate_assets.DATA_DIR / "plates.json").read_text())["plates"]

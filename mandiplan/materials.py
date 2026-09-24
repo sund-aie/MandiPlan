@@ -35,7 +35,6 @@ bending plan needs; it is not a substitute for bending the plate and looking.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 

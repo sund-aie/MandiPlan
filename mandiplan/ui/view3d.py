@@ -45,7 +45,7 @@ PLATE_COLOUR = (0.722, 0.733, 0.757)     # titanium-like neutral metallic grey
 ARCH_COLOUR = (0.278, 0.600, 0.502)      # muted green: the planning curve
 MARK_COLOUR = (0.902, 0.678, 0.200)      # amber, active editing state only
 GRAFT_COLOUR = (0.400, 0.667, 0.647)     # muted teal: the mirrored segment
-BRIDGE_COLOUR = (0.839, 0.706, 0.478)    # muted sand: the reconstruction bridge
+NO_DONOR_COLOUR = (0.839, 0.706, 0.478)  # muted sand: no mirror donor there
 
 
 class _VtkWidget(QVTKRenderWindowInteractor):
@@ -243,21 +243,26 @@ class View3D(QWidget):
         self.mark_actor.GetProperty().SetColor(*MARK_COLOUR)
         self.renderer.AddActor(self.mark_actor)
 
+        # The reconstructed mandible is one surface; its point scalars say
+        # which part is retained bone, mirrored donor, or no-donor fill.
+        region_colours = vtk.vtkLookupTable()
+        region_colours.SetNumberOfTableValues(3)
+        region_colours.SetTableRange(0.0, 2.0)
+        region_colours.SetTableValue(0, *BONE_COLOUR, 1.0)
+        region_colours.SetTableValue(1, *GRAFT_COLOUR, 1.0)
+        region_colours.SetTableValue(2, *NO_DONOR_COLOUR, 1.0)
+        region_colours.Build()
         self.graft_mapper = vtk.vtkPolyDataMapper()
+        self.graft_mapper.SetLookupTable(region_colours)
+        self.graft_mapper.SetScalarRange(0.0, 2.0)
+        self.graft_mapper.SetScalarModeToUsePointData()
+        self.graft_mapper.SetColorModeToMapScalars()
+        self.graft_mapper.InterpolateScalarsBeforeMappingOn()
         self.graft_actor = vtk.vtkActor()
         self.graft_actor.SetMapper(self.graft_mapper)
-        self.graft_actor.GetProperty().SetColor(*GRAFT_COLOUR)
-        self.graft_actor.GetProperty().SetOpacity(0.55)
+        self.graft_actor.GetProperty().SetSpecular(0.15)
         self.graft_actor.VisibilityOff()
         self.renderer.AddActor(self.graft_actor)
-
-        self.bridge_mapper = vtk.vtkPolyDataMapper()
-        self.bridge_actor = vtk.vtkActor()
-        self.bridge_actor.SetMapper(self.bridge_mapper)
-        self.bridge_actor.GetProperty().SetColor(*BRIDGE_COLOUR)
-        self.bridge_actor.GetProperty().SetOpacity(0.55)
-        self.bridge_actor.VisibilityOff()
-        self.renderer.AddActor(self.bridge_actor)
 
         self.measure_mapper = vtk.vtkPolyDataMapper()
         self.measure_actor = vtk.vtkActor()
@@ -272,7 +277,6 @@ class View3D(QWidget):
             self.bone_mapper,
             self.fragment_mapper,
             self.graft_mapper,
-            self.bridge_mapper,
             self.measure_mapper,
         ):
             mapper.SetInputData(empty_polydata())
@@ -294,6 +298,15 @@ class View3D(QWidget):
 
     def refresh_resection(self) -> None:
         session = self.session
+        if session.reconstructed_surface is not None:
+            # A built reconstruction owns the view until the plan changes.
+            self.bone_actor.VisibilityOff()
+            self.fragment_actor.VisibilityOff()
+            self._sync_plane_widgets()
+            self.render()
+            return
+        self.graft_actor.VisibilityOff()
+        self.bone_actor.VisibilityOn()
         if session.cut_applied and session.retained_surface is not None:
             self.bone_mapper.SetInputData(session.retained_surface)
             self.bone_mapper.ScalarVisibilityOff()
@@ -330,15 +343,20 @@ class View3D(QWidget):
         self.bone_mapper.SetColorModeToMapScalars()
 
     def refresh_reconstruction(self) -> None:
-        for surface, mapper, actor in (
-            (self.session.graft_surface, self.graft_mapper, self.graft_actor),
-            (self.session.bridge_surface, self.bridge_mapper, self.bridge_actor),
-        ):
-            if surface is None:
-                actor.VisibilityOff()
-            else:
-                mapper.SetInputData(surface)
-                actor.VisibilityOn()
+        """Show the reconstructed mandible in place of the pre-operative bone."""
+        surface = self.session.reconstructed_surface
+        if surface is None:
+            self.graft_actor.VisibilityOff()
+            self.bone_actor.VisibilityOn()
+            self.refresh_resection()
+            return
+        self.graft_mapper.SetInputData(surface)
+        self.graft_actor.VisibilityOn()
+        # The reconstruction already contains the retained bone; drawing the
+        # pre-operative surface and the fragment preview over it would hide
+        # exactly the junctions it is meant to show.
+        self.bone_actor.VisibilityOff()
+        self.fragment_actor.VisibilityOff()
         self.render()
 
     def refresh_arch(self) -> None:

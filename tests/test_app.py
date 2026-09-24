@@ -68,7 +68,9 @@ def test_threshold_is_seeded_and_adjustable(window, phantom_folder):
 def test_panoramic_view_is_built_on_millimetre_axes(window):
     session = window.session
     assert session.panoramic is not None
-    assert session.panoramic.pixel_mm == pytest.approx(session.cpr.step_mm)
+    assert session.panoramic.pixel_mm == pytest.approx(
+        max(session.cpr.step_mm, float(np.min(session.volume.spacing)))
+    )
     assert "arc length" in session.panoramic.x_label
     assert window.panoramic_view.has_image()
     assert window.cross_view.has_image()
@@ -245,7 +247,7 @@ def test_mirror_reconstruction_through_the_interface(window, phantom_folder):
     assert plane is not None
     assert abs(plane.point[0] - spec.centre_xy[0]) < 1.0
     assert plane.symmetry > 0.9
-    assert "Symmetry score" in window.reconstruction_panel.plane_info.text()
+    assert "mirrors onto bone" in window.reconstruction_panel.plane_info.text()
 
     assert session.coverage is not None
     assert not session.coverage.crosses_midline
@@ -257,7 +259,22 @@ def test_mirror_reconstruction_through_the_interface(window, phantom_folder):
     session.execute_cut()
     assert rel_error(session.graft_volume_mm3, session.report.fragment_volume_mm3) < 0.1
     session.undo_cut()
-    assert "Mirrored graft volume" in window.reconstruction_panel.coverage_info.text()
+    text = window.reconstruction_panel.coverage_info.text()
+    assert "Mirrored segment volume" in text
+    assert "Junction 1" in text and "Junction 2" in text
+    # The reconstruction is one piece that replaces the bone in the view.
+    rebuilt = session.reconstructed_surface
+    connectivity = vtk.vtkPolyDataConnectivityFilter()
+    connectivity.SetInputData(rebuilt)
+    connectivity.SetExtractionModeToAllRegions()
+    connectivity.Update()
+    assert connectivity.GetNumberOfExtractedRegions() == 1
+    assert window.view3d.graft_actor.GetVisibility()
+    assert not window.view3d.bone_actor.GetVisibility()
+    # Moving a cut makes the reconstruction stale; it is dropped, not kept.
+    session.clear_planes()
+    assert session.reconstruction is None
+    assert not window.view3d.graft_actor.GetVisibility()
 
 
 def test_a_defect_across_the_midline_is_reported_as_partly_unmirrorable(window):
@@ -278,9 +295,11 @@ def test_a_defect_across_the_midline_is_reported_as_partly_unmirrorable(window):
     assert coverage.uncovered_mm > 15.0
     assert "no healthy counterpart" in window.reconstruction_panel.coverage_info.text()
 
-    session.build_graft()
-    assert session.bridge_surface is not None
-    assert session.bridge_surface.GetNumberOfPoints() > 0
+    session.build_reconstruction()
+    report = session.reconstruction.report
+    assert report.donorless_voxels > 0
+    assert session.reconstructed_surface.GetNumberOfPoints() > 0
+    assert "no mirror donor" in window.reconstruction_panel.coverage_info.text()
 
 
 def _buccal_path(spec, count: int = 12, half_span_deg: float = 60.0):

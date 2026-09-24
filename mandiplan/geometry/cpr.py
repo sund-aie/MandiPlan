@@ -196,6 +196,18 @@ def build_frames(curve: ArchCurve, step_mm: float, up=SUPERIOR) -> ArchFrames:
     )
 
 
+def image_pixel_mm(volume, frames: ArchFrames) -> float:
+    """Pixel size of the reformatted images, mm.
+
+    The arch is stepped finely for the geometry, but an image sampled far
+    finer than the scan's own voxels shows nothing more and costs the square
+    of the difference: a 0.2 mm panoramic of a 0.5 mm scan is six times the
+    work, several seconds a click on a real scan. So the images are sampled at
+    the voxel size, or the arch step if that is coarser.
+    """
+    return float(max(frames.step_mm, float(np.min(volume.spacing))))
+
+
 def _z_grid(volume, z_min, z_max, pixel_mm):
     lo, hi = volume.bounds_mm
     z_min = float(lo[2]) if z_min is None else float(z_min)
@@ -221,20 +233,24 @@ def build_panoramic(
     """
     if mode not in AGGREGATION_MODES:
         raise ValueError(f"aggregation mode must be one of {AGGREGATION_MODES}")
-    pixel_mm = frames.step_mm
+    pixel_mm = image_pixel_mm(volume, frames)
     z0, z = _z_grid(volume, z_min, z_max, pixel_mm)
+    s = np.arange(0.0, frames.length_mm + 1e-9, pixel_mm)
+    points = np.column_stack([np.interp(s, frames.s, frames.points[:, a]) for a in range(3)])
+    normals = np.column_stack([np.interp(s, frames.s, frames.normals[:, a]) for a in range(3)])
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
 
     n_off = max(int(round(slab_mm / pixel_mm)) + 1, 2)
     offsets = np.linspace(-slab_mm / 2.0, slab_mm / 2.0, n_off)
 
-    rows, cols = len(z), len(frames.s)
+    rows, cols = len(z), len(s)
     fill = float(volume.array.min())
     acc = np.full((rows, cols), -np.inf if mode == "max" else 0.0)
 
     pts = np.empty((rows, cols, 3))
     pts[:, :, 2] = z[:, None]
     for d in offsets:
-        xy = frames.points[:, :2] + d * frames.normals[:, :2]
+        xy = points[:, :2] + d * normals[:, :2]
         pts[:, :, 0] = xy[None, :, 0]
         pts[:, :, 1] = xy[None, :, 1]
         values = volume.sample(pts, fill=fill)
@@ -268,7 +284,7 @@ def build_cross_section(
     The plane is spanned by the buccolingual normal ``n_i`` and the superior
     axis.  The x-axis of the result is the signed offset along ``+n_i``.
     """
-    pixel_mm = frames.step_mm
+    pixel_mm = image_pixel_mm(volume, frames)
     i = frames.index_of(s_mm)
     p = frames.points[i]
     n = frames.normals[i]

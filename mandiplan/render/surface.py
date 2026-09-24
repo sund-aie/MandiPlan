@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import vtk
+from vtkmodules.util.numpy_support import vtk_to_numpy
 
 from ..geometry.resection import CutPlane
 from .convert import volume_to_vtk
@@ -45,10 +46,27 @@ class SurfaceExtractor:
         self._normals.AutoOrientNormalsOn()
         self._normals.ComputePointNormalsOn()
 
-    def update(self, threshold: float, largest_component: bool = True) -> vtk.vtkPolyData:
+    def update(
+        self,
+        threshold: float,
+        largest_component: bool = True,
+        keep_fraction: float | None = None,
+    ) -> vtk.vtkPolyData:
+        """The isosurface at ``threshold``.
+
+        ``largest_component`` keeps only the largest connected piece.
+        ``keep_fraction`` instead keeps every piece at least that fraction of
+        the largest: specks of noise go, but a mandible scanned with the mouth
+        open is not thrown away for being smaller than the skull.
+        """
         self._contour.SetValue(0, float(threshold))
         self._contour.Update()
-        if largest_component and self._contour.GetOutput().GetNumberOfPoints() > 0:
+        has_points = self._contour.GetOutput().GetNumberOfPoints() > 0
+        if keep_fraction is not None and has_points:
+            self._select_significant(keep_fraction)
+            self._triangles.SetInputConnection(self._connectivity.GetOutputPort())
+        elif largest_component and has_points:
+            self._connectivity.SetExtractionModeToLargestRegion()
             self._triangles.SetInputConnection(self._connectivity.GetOutputPort())
         else:
             self._triangles.SetInputConnection(self._contour.GetOutputPort())
@@ -56,6 +74,18 @@ class SurfaceExtractor:
         result = vtk.vtkPolyData()
         result.DeepCopy(self._normals.GetOutput())
         return result
+
+
+    def _select_significant(self, fraction: float) -> None:
+        connectivity = self._connectivity
+        connectivity.SetExtractionModeToAllRegions()
+        connectivity.Update()
+        sizes = vtk_to_numpy(connectivity.GetRegionSizes())
+        connectivity.SetExtractionModeToSpecifiedRegions()
+        connectivity.InitializeSpecifiedRegionList()
+        if sizes.size:
+            for region in np.flatnonzero(sizes >= fraction * sizes.max()):
+                connectivity.AddSpecifiedRegion(int(region))
 
 
 def extract_isosurface(

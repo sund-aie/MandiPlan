@@ -10,7 +10,7 @@ import copy
 from dataclasses import dataclass
 
 import numpy as np
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from .. import constants
 from ..bending_steps import BendStep, generate_steps
@@ -19,11 +19,10 @@ from ..geometry import cpr
 from ..geometry.mirror import (
     MidSagittalPlane,
     MirrorCoverage,
-    bridge_mesh,
     estimate_midsagittal_plane,
-    estimate_profile,
     mirror_coverage,
 )
+from ..geometry.mandible import MandibleIsolation, isolate_mandible, masked_bone_volume
 from ..geometry.mesh_io import MeshLoadError
 from ..geometry.plate import PlatePlan, compute_plate_plan
 from ..geometry.hole_distortion import ovalise_mesh, predict_distortion
@@ -52,13 +51,12 @@ from ..geometry.spline import ArchCurve
 from ..geometry.threshold import estimate_bone_threshold
 from ..geometry.volume import Volume
 from ..plate_catalog import FitReport, fit_check, kit_by_id, load_kits, load_systems, system_by_id
-from ..render.convert import triangles_to_polydata
+from ..render.reconstruct import Reconstruction, reconstruct
 from ..render.surface import (
     SurfaceExtractor,
     SurfaceProjector,
     clip_closed,
     mesh_volume_mm3,
-    reflect_polydata,
 )
 
 
@@ -115,7 +113,17 @@ class Session(QObject):
     resection_changed = pyqtSignal()
     reconstruction_changed = pyqtSignal()
     plate_changed = pyqtSignal()
+    mandible_changed = pyqtSignal()
     message = pyqtSignal(str)
+    #: True while a slow computation runs, so the window can show it is busy.
+    busy = pyqtSignal(bool)
+
+    #: Pieces of bone smaller than this fraction of the largest are noise.
+    SPECK_FRACTION = 0.05
+    #: Wait this long after the last change to the arch or threshold before
+    #: separating the mandible, so a run of clicks or a slider drag triggers
+    #: it once.
+    MANDIBLE_DELAY_MS = 900
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -125,7 +133,16 @@ class Session(QObject):
         self.surface = None
         self._extractor: SurfaceExtractor | None = None
         self.projector: SurfaceProjector | None = None
-        self.keep_largest_component = True
+        #: Separate the mandible from the skull once the arch curve exists.
+        self.separate_mandible = True
+        self.mandible: MandibleIsolation | None = None
+        self._mandible_key = None
+        #: The scan with the non-mandible bone removed; ``None`` when nothing
+        #: had to be removed. See :attr:`bone_volume`.
+        self._bone_volume: Volume | None = None
+        self._mandible_timer = QTimer(self)
+        self._mandible_timer.setSingleShot(True)
+        self._mandible_timer.timeout.connect(self.ensure_mandible)
 
         self.arch_seeds: list[np.ndarray] = []
         self.arch_curve: ArchCurve | None = None
@@ -146,8 +163,11 @@ class Session(QObject):
 
         self.symmetry_plane: MidSagittalPlane | None = None
         self.coverage: MirrorCoverage | None = None
+        #: The reconstructed mandible: one flush surface, retained bone and
+        #: mirrored donor together. ``graft_surface`` is the donor part alone.
+        self.reconstruction: Reconstruction | None = None
+        self._reconstruction_key = None
         self.graft_surface = None
-        self.bridge_surface = None
 
         self.plate_points: list[np.ndarray] = []
         self.plate_normals: list[np.ndarray] = []
@@ -207,8 +227,8 @@ class Session(QObject):
         self.report = None
         self.symmetry_plane = None
         self.coverage = None
-        self.graft_surface = None
-        self.bridge_surface = None
+        self._clear_reconstruction()
+        self._drop_mandible()
         self._undo.clear()
         self.volume_changed.emit()
         for warning in geometry.warnings:
@@ -222,21 +242,97 @@ class Session(QObject):
         self.rebuild_surface()
 
     def rebuild_surface(self) -> None:
+        """The bone surface at the current threshold: all bone, until the
+        mandible has been separated again for this threshold."""
         if self.volume is None:
             return
-        self.surface = self._extractor.update(
-            self.threshold, largest_component=self.keep_largest_component
+        self._drop_mandible()
+        self._set_surface(
+            self._extractor.update(self.threshold, keep_fraction=self.SPECK_FRACTION)
         )
+        self._schedule_mandible()
+
+    def _set_surface(self, surface) -> None:
+        self.surface = surface
         self.projector = (
             SurfaceProjector(self.surface) if self.surface.GetNumberOfPoints() else None
         )
         self.cut_applied = False
         self.fragment_surface = None
         self.retained_surface = None
-        self.graft_surface = None
-        self.bridge_surface = None
+        self._clear_reconstruction()
         self.surface_changed.emit()
         self.update_plate_plan()
+
+    # -- mandible ----------------------------------------------------------
+
+    @property
+    def bone_volume(self) -> Volume | None:
+        """The scan as the planning steps should see it: the mandible's bone
+        only, once it has been separated from the skull."""
+        return self._bone_volume if self._bone_volume is not None else self.volume
+
+    def set_separate_mandible(self, enabled: bool) -> None:
+        self.separate_mandible = bool(enabled)
+        if self.separate_mandible:
+            self.ensure_mandible()
+        elif self.volume is not None:
+            self.rebuild_surface()
+
+    def _schedule_mandible(self) -> None:
+        if self.separate_mandible and self.frames is not None:
+            self._mandible_timer.start(self.MANDIBLE_DELAY_MS)
+
+    def _mandible_inputs(self):
+        seeds = tuple(tuple(np.round(seed, 4)) for seed in self.arch_seeds)
+        return (id(self.volume), round(float(self.threshold), 6), seeds)
+
+    def ensure_mandible(self) -> None:
+        """Separate the mandible from the rest of the skull, if it is not yet.
+
+        Runs by itself shortly after the arch curve or the threshold changes,
+        and before any step that needs the mandible alone (cuts, the mirror,
+        the plate). See ``geometry/mandible.py`` for how.
+        """
+        self._mandible_timer.stop()
+        if self.volume is None or self.frames is None or not self.separate_mandible:
+            return
+        key = self._mandible_inputs()
+        if key == self._mandible_key:
+            return
+        self.busy.emit(True)
+        try:
+            isolation = isolate_mandible(self.volume, self.threshold, self.frames)
+        except ValueError as error:
+            self.message.emit(str(error))
+            return
+        finally:
+            self.busy.emit(False)
+        had_mask = self._bone_volume is not None
+        self.mandible = isolation
+        self._mandible_key = key
+        if isolation.separated:
+            self._bone_volume = masked_bone_volume(self.volume, isolation)
+            surface = SurfaceExtractor(self._bone_volume).update(self.threshold)
+            self._set_surface(surface)
+        else:
+            self._bone_volume = None
+            if had_mask:
+                self._set_surface(
+                    self._extractor.update(self.threshold, keep_fraction=self.SPECK_FRACTION)
+                )
+        if isolation.separated:
+            self.message.emit(isolation.summary())
+        self.mandible_changed.emit()
+
+    def _drop_mandible(self) -> None:
+        self._mandible_timer.stop()
+        changed = self.mandible is not None
+        self.mandible = None
+        self._mandible_key = None
+        self._bone_volume = None
+        if changed:
+            self.mandible_changed.emit()
 
     @property
     def surface_volume_mm3(self) -> float:
@@ -294,6 +390,7 @@ class Session(QObject):
         self._resolve_all_planes()
         self.arch_changed.emit()
         self.update_reformats()
+        self._schedule_mandible()
 
     def _resolve_all_planes(self) -> None:
         """Rebuild every cut from its placement against the current frames.
@@ -372,6 +469,8 @@ class Session(QObject):
                 "it and takes its angulation from the jaw at that point."
             )
             return
+        # A cut must only ever remove mandible: separate it first.
+        self.ensure_mandible()
         self._push_undo()
         index = len(self.planes) + 1
         placement = self._placement_for(origin, normal)
@@ -537,6 +636,7 @@ class Session(QObject):
         self.plate_changed.emit()
 
     def execute_cut(self) -> None:
+        self.ensure_mandible()
         if self.surface is None or not self.planes:
             return
         self._push_undo()
@@ -557,7 +657,8 @@ class Session(QObject):
         """Find the patient's mid-sagittal plane from the bone itself."""
         if self.volume is None:
             return
-        self.symmetry_plane = estimate_midsagittal_plane(self.volume, self.threshold)
+        self.ensure_mandible()
+        self.symmetry_plane = estimate_midsagittal_plane(self.bone_volume, self.threshold)
         if self.symmetry_plane.symmetry < 0.75:
             self.message.emit(
                 f"The best symmetry plane only maps {self.symmetry_plane.symmetry:.0%} "
@@ -567,6 +668,11 @@ class Session(QObject):
 
     def update_reconstruction(self) -> None:
         """Mirror the healthy side into the defect and measure what it misses."""
+        if (
+            self.reconstruction is not None
+            and self._reconstruction_key != self._reconstruction_inputs()
+        ):
+            self._clear_reconstruction()
         self.coverage = None
         if (
             self.symmetry_plane is None
@@ -584,48 +690,64 @@ class Session(QObject):
         )
         self.reconstruction_changed.emit()
 
-    def build_graft(self) -> None:
-        """Build the mirrored graft, and estimate any span it cannot reach."""
-        if self.surface is None or self.symmetry_plane is None or not self.planes:
-            self.message.emit(
-                "Place the cutting planes and estimate the mid-sagittal plane first."
-            )
-            return
-        retained = self.retained_surface
-        if retained is None:
-            retained = clip_closed(self.surface, self.planes, keep_resected=False)
-        mirrored = reflect_polydata(retained, self.symmetry_plane)
-        self.graft_surface = clip_closed(mirrored, self.planes, keep_resected=True)
+    def build_reconstruction(self) -> None:
+        """Rebuild the resected segment from the mirrored healthy side.
 
-        self.bridge_surface = None
-        if self.coverage is not None and self.coverage.uncovered_spans:
-            self.bridge_surface = self._build_bridge(self.coverage.uncovered_spans[0])
+        One flush surface: the mirror is registered to each stump, warped
+        smoothly between them, and blended into the retained bone before a
+        single surface is contoured. See ``geometry/reconstruction.py``.
+        """
+        if self.volume is None or self.surface is None or not self.planes:
+            self.message.emit("Place the cutting planes before reconstructing.")
+            return
+        self.ensure_mandible()
+        if self.symmetry_plane is None:
+            # The computer finds the plane of symmetry itself; the operator can
+            # still re-run the estimate from the panel.
+            self.estimate_symmetry_plane()
+        if self.symmetry_plane is None:
+            return
+        self.busy.emit(True)
+        try:
+            self.reconstruction = reconstruct(
+                self.bone_volume,
+                self.threshold,
+                self.surface,
+                self.planes,
+                self.symmetry_plane,
+            )
+        finally:
+            self.busy.emit(False)
+        self._reconstruction_key = self._reconstruction_inputs()
+        self.graft_surface = clip_closed(
+            self.reconstruction.surface, self.planes, keep_resected=True
+        )
+        for line in self.reconstruction.report.warnings:
+            self.message.emit(line)
         self.reconstruction_changed.emit()
 
-    def _build_bridge(self, span: tuple[float, float]):
-        """Estimate the bone across a span that mirroring cannot cover."""
-        if self.volume is None or self.frames is None:
-            return None
-        margin = 1.0
-        ends = (
-            max(span[0] - margin, 0.0),
-            min(span[1] + margin, self.frames.length_mm),
+    #: The panel and older callers know this step as building the graft.
+    build_graft = build_reconstruction
+
+    @property
+    def reconstructed_surface(self):
+        return None if self.reconstruction is None else self.reconstruction.surface
+
+    def _reconstruction_inputs(self):
+        """What a reconstruction depends on; a change makes it stale."""
+        planes = tuple(
+            (tuple(np.round(p.origin, 6)), tuple(np.round(p.normal, 9))) for p in self.planes
         )
-        profiles = []
-        for s in ends:
-            cross = cpr.build_cross_section(
-                self.volume, self.frames, s, width_mm=self.cpr.cross_width_mm
-            )
-            profile = estimate_profile(cross, self.threshold, s)
-            if profile is None:
-                self.message.emit(
-                    f"No bone found at {s:.1f} mm along the curve, so the missing "
-                    "segment cannot be estimated there."
-                )
-                return None
-            profiles.append(profile)
-        points, triangles = bridge_mesh(self.frames, profiles[0], profiles[1])
-        return triangles_to_polydata(points, triangles)
+        plane = self.symmetry_plane
+        symmetry = None if plane is None else (
+            tuple(np.round(plane.point, 6)), tuple(np.round(plane.normal, 9))
+        )
+        return (planes, symmetry, round(float(self.threshold), 6), id(self.surface))
+
+    def _clear_reconstruction(self) -> None:
+        self.reconstruction = None
+        self._reconstruction_key = None
+        self.graft_surface = None
 
     @property
     def graft_volume_mm3(self) -> float:
@@ -664,6 +786,7 @@ class Session(QObject):
         )
 
     def add_plate_point(self, world_point) -> None:
+        self.ensure_mandible()
         if self.projector is None:
             self.message.emit("Extract a bone surface before drawing a plate path.")
             return

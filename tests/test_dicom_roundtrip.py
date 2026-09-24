@@ -102,3 +102,22 @@ def test_irregular_slice_spacing_is_refused(written_series, tmp_path):
 
     with pytest.raises(DicomLoadError, match="not uniform"):
         inspect_geometry([str(p) for p in sorted(irregular.glob("*.dcm"))])
+
+
+def test_a_scan_too_large_for_memory_is_block_averaged_with_exact_geometry(written_series):
+    """World positions survive the working grid; only the voxel size changes."""
+    spec, volume, folder = written_series
+    budget = volume.array.size // 5
+    loaded, geometry, _ = load_folder(folder, voxel_budget=budget)
+
+    assert geometry.working_factor == 2
+    assert loaded.array.size <= budget
+    assert np.allclose(loaded.spacing, 2 * volume.spacing)
+    # Each working voxel is the mean of the 2x2x2 block it covers, and sits
+    # at that block's centre.
+    assert np.allclose(loaded.origin, volume.origin + 0.5 * volume.spacing, atol=1e-6)
+    block = volume.array[:2, :2, :2].astype(float)
+    assert loaded.array[0, 0, 0] == pytest.approx(block.mean(), abs=1.0)
+    centre = loaded.index_to_world(np.array(loaded.size_xyz) // 2)
+    assert loaded.sample(centre[None])[0] == pytest.approx(volume.sample(centre[None])[0], abs=60.0)
+    assert any("millimetres" in w for w in geometry.warnings)

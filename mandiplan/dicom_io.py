@@ -8,6 +8,13 @@ Two failure modes matter more than anything else this module does:
 Either silently distorts the volume, and a distorted volume makes every
 millimetre the application reports wrong.  Both are detected here and refused
 with an explanatory message rather than corrected in place.
+
+One change is made on purpose, and announced: a scan too large to hold in
+memory is averaged over whole blocks of voxels (2x2x2, 3x3x3, ...) into a
+coarser working grid. A full-head CBCT at 0.25 mm is 300 million voxels, some
+8 GB once contoured, and would take the application down on most machines.
+Block averaging keeps every world coordinate exact; only the voxel size
+changes, and it is reported with the load.
 """
 
 from __future__ import annotations
@@ -27,6 +34,10 @@ _MAX_SPACING_VARIATION = 0.01
 _MIN_SPACING_TOLERANCE_MM = 0.01
 # Direction cosines must be this close to a signed axis permutation.
 _MIN_AXIS_ALIGNMENT = 0.999
+#: Largest working volume, in voxels, before it is block-averaged. 80 M voxels
+#: is 320 MB as float32, which leaves room for the surface, the reformats and
+#: the reconstruction on an 8 GB machine.
+WORKING_VOXEL_BUDGET = 80_000_000
 
 
 class DicomLoadError(RuntimeError):
@@ -61,6 +72,8 @@ class SeriesGeometry:
     max_shear_deg: float
     spacing_variation: float
     warnings: list[str] = field(default_factory=list)
+    #: Voxels averaged per axis to make the working grid (1 = native).
+    working_factor: int = 1
 
 
 def list_series(folder: str | Path) -> list[SeriesInfo]:
@@ -214,13 +227,18 @@ def inspect_geometry(files: list[str]) -> SeriesGeometry:
 
 
 def _reorient_to_lps(
-    array: np.ndarray, spacing: np.ndarray, origin: np.ndarray, direction: np.ndarray
+    array: np.ndarray,
+    spacing: np.ndarray,
+    origin: np.ndarray,
+    direction: np.ndarray,
+    factor: int = 1,
 ) -> Volume:
     """Transpose/flip an axis-aligned array so index axes follow world +x, +y, +z.
 
     ``array`` is indexed ``[axis2, axis1, axis0]`` (SimpleITK convention) and
     ``direction`` is the 3x3 matrix whose column ``a`` is the world direction
-    of image axis ``a``.
+    of image axis ``a``. With ``factor > 1`` the result is averaged over
+    ``factor``³ blocks on the way, without a full-resolution float copy.
     """
     world_axis = np.argmax(np.abs(direction), axis=0)  # per image axis
     if sorted(world_axis.tolist()) != [0, 1, 2]:
@@ -258,14 +276,47 @@ def _reorient_to_lps(
     for w in flips:
         out = np.flip(out, axis=2 - w)  # world x,y,z -> numpy axis 2,1,0
 
-    return Volume(
-        array=np.ascontiguousarray(out, dtype=np.float32),
-        spacing=new_spacing,
-        origin=new_origin,
-    )
+    if factor > 1:
+        data = block_average(out, factor)
+        # A block's value belongs at the centre of the voxels it averaged.
+        new_origin = new_origin + 0.5 * (factor - 1) * new_spacing
+        new_spacing = new_spacing * factor
+    else:
+        data = np.ascontiguousarray(out, dtype=np.float32)
+    return Volume(array=data, spacing=new_spacing, origin=new_origin)
 
 
-def load_series(files: list[str]) -> tuple[Volume, SeriesGeometry]:
+def block_average(array: np.ndarray, factor: int) -> np.ndarray:
+    """Mean over ``factor``³ blocks, as float32; trailing partial blocks are dropped.
+
+    Works one output slice at a time so the full-resolution data is never
+    converted to float in one piece.
+    """
+    nz, ny, nx = (int(v) // factor for v in array.shape)
+    if min(nz, ny, nx) < 2:
+        raise DicomLoadError("The series is too small to reduce to a working grid.")
+    out = np.empty((nz, ny, nx), dtype=np.float32)
+    for k in range(nz):
+        slab = np.asarray(
+            array[k * factor : (k + 1) * factor, : ny * factor, : nx * factor],
+            dtype=np.float32,
+        )
+        out[k] = slab.reshape(factor, ny, factor, nx, factor).mean(axis=(0, 2, 4))
+    return out
+
+
+def working_factor(shape, budget: int = WORKING_VOXEL_BUDGET) -> int:
+    """Smallest whole-voxel block size that brings ``shape`` within ``budget``."""
+    voxels = float(np.prod([int(v) for v in shape]))
+    factor = 1
+    while voxels / factor**3 > budget:
+        factor += 1
+    return factor
+
+
+def load_series(
+    files: list[str], voxel_budget: int = WORKING_VOXEL_BUDGET
+) -> tuple[Volume, SeriesGeometry]:
     """Validate and load a DICOM series into an LPS-aligned :class:`Volume`."""
     import SimpleITK as sitk
 
@@ -275,15 +326,32 @@ def load_series(files: list[str]) -> tuple[Volume, SeriesGeometry]:
     reader.SetFileNames(list(files))
     image = reader.Execute()
 
-    array = sitk.GetArrayFromImage(image).astype(np.float32)
+    # A view in the stored type: no full-resolution float copy is made.
+    array = sitk.GetArrayViewFromImage(image)
     spacing = np.asarray(image.GetSpacing(), dtype=float)
     origin = np.asarray(image.GetOrigin(), dtype=float)
     direction = np.asarray(image.GetDirection(), dtype=float).reshape(3, 3)
-    return _reorient_to_lps(array, spacing, origin, direction), geometry
+    factor = working_factor(array.shape, voxel_budget)
+    volume = _reorient_to_lps(array, spacing, origin, direction, factor)
+    del array, image
+    if factor > 1:
+        native = float(np.min(spacing))
+        geometry.working_factor = factor
+        geometry.warnings.append(
+            f"This scan is {np.prod(volume.size_xyz) * factor**3 / 1e6:.0f} million "
+            f"voxels at {native:.2f} mm, more than fits in memory for planning. "
+            f"MandiPlan works on it at {float(volume.spacing.min()):.2f} mm "
+            f"({np.prod(volume.size_xyz) / 1e6:.0f} million voxels), each the average "
+            f"of {factor}×{factor}×{factor} scan voxels. Distances are still in "
+            "millimetres from the DICOM spacing."
+        )
+    return volume, geometry
 
 
 def load_folder(
-    folder: str | Path, series_uid: str | None = None
+    folder: str | Path,
+    series_uid: str | None = None,
+    voxel_budget: int = WORKING_VOXEL_BUDGET,
 ) -> tuple[Volume, SeriesGeometry, SeriesInfo]:
     """Load one series from ``folder`` (the largest one unless ``series_uid`` is given)."""
     series = list_series(folder)
@@ -296,5 +364,5 @@ def load_folder(
         chosen = matches[0]
     else:
         chosen = max(series, key=lambda s: s.n_files)
-    volume, geometry = load_series(chosen.files)
+    volume, geometry = load_series(chosen.files, voxel_budget)
     return volume, geometry, chosen

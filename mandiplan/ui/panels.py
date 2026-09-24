@@ -83,28 +83,51 @@ class VolumePanel(QWidget):
         )
         self.info.setWordWrap(True)
         self.threshold_panel = ThresholdPanel()
-        self.largest = QCheckBox("Keep largest connected component")
-        self.largest.setChecked(True)
+        self.separate = QCheckBox("Separate the mandible from the skull")
+        self.separate.setChecked(session.separate_mandible)
+        self.separate.setToolTip(
+            "Once the arch curve is drawn, the lower jaw is cut free of the upper "
+            "teeth and the skull so cuts, mirror and exports touch the mandible only"
+        )
         self.surface_info = QLabel("")
         self.surface_info.setWordWrap(True)
+        self.mandible_info = QLabel("")
+        self.mandible_info.setWordWrap(True)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.load_button)
         layout.addWidget(self.info)
         layout.addWidget(self.threshold_panel)
-        layout.addWidget(self.largest)
         layout.addWidget(self.surface_info)
+        layout.addWidget(self.separate)
+        layout.addWidget(self.mandible_info)
         layout.addStretch(1)
 
         self.load_button.clicked.connect(self.load_requested)
         self.threshold_panel.threshold_changed.connect(session.set_threshold)
-        self.largest.toggled.connect(self._on_largest)
+        self.separate.toggled.connect(session.set_separate_mandible)
         session.volume_changed.connect(self.refresh_volume)
         session.surface_changed.connect(self.refresh_surface)
+        session.mandible_changed.connect(self.refresh_mandible)
+        session.arch_changed.connect(self.refresh_mandible)
+        self.refresh_mandible()
 
-    def _on_largest(self, checked: bool) -> None:
-        self.session.keep_largest_component = checked
-        self.session.rebuild_surface()
+    def refresh_mandible(self) -> None:
+        session = self.session
+        if not session.separate_mandible:
+            self.mandible_info.setText("Showing all bone; cuts may reach the skull.")
+            set_role(self.mandible_info, "warning")
+        elif session.mandible is not None:
+            self.mandible_info.setText(session.mandible.summary())
+            set_role(self.mandible_info, "hint")
+        elif session.frames is None:
+            self.mandible_info.setText(
+                "The mandible is separated automatically once the arch curve is drawn."
+            )
+            set_role(self.mandible_info, "empty")
+        else:
+            self.mandible_info.setText("Separating the mandible…")
+            set_role(self.mandible_info, "hint")
 
     def refresh_volume(self) -> None:
         session = self.session
@@ -431,7 +454,7 @@ class ResectionPanel(QWidget):
 
 
 class ReconstructionPanel(QWidget):
-    """Mirror the healthy side into the defect, and say what it cannot reach."""
+    """Rebuild the resected segment from the mirrored healthy side, flush."""
 
     export_graft_requested = pyqtSignal()
 
@@ -439,57 +462,80 @@ class ReconstructionPanel(QWidget):
         super().__init__(parent)
         self.session = session
 
-        self.estimate_button = QPushButton("Estimate mid-sagittal plane")
-        self.mirror_button = QPushButton("Mirror healthy side into the defect")
-        self.export_button = QPushButton("Export reconstruction target (STL)…")
-        self.plane_info = QLabel("No symmetry plane estimated.")
+        self.mirror_button = QPushButton("Reconstruct from the healthy side")
+        self.mirror_button.setProperty("primary", True)
+        self.mirror_button.setToolTip(
+            "Mirror the healthy side into the defect, register it to both "
+            "stumps and blend it in: one flush surface"
+        )
+        self.estimate_button = QPushButton("Re-estimate the plane of symmetry")
+        self.export_button = QPushButton("Export reconstructed jaw (STL)…")
+        self.plane_info = QLabel("")
         self.plane_info.setWordWrap(True)
         self.coverage_info = QLabel("")
         self.coverage_info.setWordWrap(True)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self.estimate_button)
-        layout.addWidget(self.plane_info)
         layout.addWidget(self.mirror_button)
         layout.addWidget(self.coverage_info)
+        layout.addWidget(self.plane_info)
+        layout.addWidget(self.estimate_button)
         layout.addWidget(
             _hint(
-                "The mirrored healthy side is the reconstruction target. Where the "
-                "defect crosses the midline there is no healthy counterpart to "
-                "mirror, and that span is estimated by blending this patient's own "
-                "cross-sections across the gap — an interpolation, not a prediction "
-                "from a population of mandibles."
+                "The healthy side is mirrored in the patient's own plane of "
+                "symmetry, then registered to each cut stump so the mirror meets "
+                "the bone that stays, and blended into it before one surface is "
+                "built. The junction figures below are how far apart mirror and "
+                "stump were before and after that registration. Where the defect "
+                "crosses the midline there is no healthy counterpart; that part "
+                "is filled from the pre-operative contour and shown in sand."
             )
         )
         layout.addWidget(self.export_button)
         layout.addStretch(1)
 
         self.estimate_button.clicked.connect(session.estimate_symmetry_plane)
-        self.mirror_button.clicked.connect(session.build_graft)
+        self.mirror_button.clicked.connect(session.build_reconstruction)
         self.export_button.clicked.connect(self.export_graft_requested)
         session.reconstruction_changed.connect(self.refresh)
+        self.refresh()
 
     def refresh(self) -> None:
         session = self.session
         plane = session.symmetry_plane
         if plane is None:
-            self.plane_info.setText("No symmetry plane estimated.")
+            self.plane_info.setText(
+                "The plane of symmetry is found automatically when you reconstruct."
+            )
+            set_role(self.plane_info, "hint")
         else:
             self.plane_info.setText(
-                f"Mid-sagittal plane at x = {plane.point[0]:.2f} mm, tilted "
-                f"{plane.tilt_deg:.2f}° from the left-right axis.\n"
-                f"Symmetry score: {plane.symmetry:.0%} of bone mirrors onto bone."
+                f"Plane of symmetry tilted {plane.tilt_deg:.2f}° from the "
+                f"left-right axis; {plane.symmetry:.0%} of bone mirrors onto bone."
             )
+            set_role(self.plane_info, "warning" if plane.symmetry < 0.75 else "hint")
+        reconstruction = session.reconstruction
+        self.export_button.setEnabled(reconstruction is not None)
         lines = []
         if session.coverage is not None:
             lines.append(session.coverage.summary())
-        if session.graft_surface is not None:
+        if reconstruction is None:
             lines.append(
-                f"Mirrored graft volume: {session.graft_volume_mm3:.0f} mm³"
+                "Reconstructing replaces the pre-operative bone in the view: ivory "
+                "is retained bone, teal the mirrored segment."
+                if session.planes
+                else "Place the cuts, then reconstruct."
             )
-        if session.bridge_surface is not None:
-            lines.append("The un-mirrorable span is shown as an estimated segment.")
+            self.coverage_info.setText("\n".join(lines))
+            set_role(self.coverage_info, "empty")
+            return
+        lines.extend(reconstruction.report.summary_lines())
+        lines.append(f"Mirrored segment volume: {session.graft_volume_mm3:.0f} mm³")
         self.coverage_info.setText("\n".join(lines))
+        set_role(
+            self.coverage_info,
+            "warning" if reconstruction.report.donorless_voxels else "hint",
+        )
 
 
 class PlatePanel(QWidget):

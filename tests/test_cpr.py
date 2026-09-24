@@ -47,10 +47,13 @@ def test_panoramic_arc_length_of_the_bone_matches_analytic(
 
 def test_panoramic_axes_are_millimetres(phantom, arch_frames):
     pan = cpr.build_panoramic(phantom, arch_frames, slab_mm=8.0, mode="mean")
-    assert pan.pixel_mm == pytest.approx(arch_frames.step_mm)
-    assert pan.width_mm == pytest.approx(
-        (pan.image.shape[1] - 1) * arch_frames.step_mm
+    # Sampled at the voxel size, never finer than the scan can show.
+    assert pan.pixel_mm == pytest.approx(
+        max(arch_frames.step_mm, float(np.min(phantom.spacing)))
     )
+    assert pan.width_mm == pytest.approx((pan.image.shape[1] - 1) * pan.pixel_mm)
+    # The columns still cover the whole arch, in millimetres of arc length.
+    assert pan.width_mm == pytest.approx(arch_frames.length_mm, abs=pan.pixel_mm)
     assert pan.col_to_mm(0) == 0.0
     assert "arc length" in pan.x_label
 

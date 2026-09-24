@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QEventLoop, QSize, Qt
 from PyQt6.QtGui import QAction, QActionGroup, QColor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -234,7 +234,8 @@ class MainWindow(QMainWindow):
             ("Export fitted plate (STL)…", self.export_plate_stl),
             ("Export bending template (STL)…", self.export_template_stl),
             ("Export bench steps (CSV)…", self.export_steps_csv),
-            ("Export reconstruction target (STL)…", self.export_graft_stl),
+            ("Export reconstructed jaw (STL)…", self.export_graft_stl),
+            ("Export mirrored segment only (STL)…", self.export_mirrored_segment_stl),
             ("Export resection summary (CSV)…", self.export_resection_csv),
             ("Export resected fragment (STL)…", self.export_fragment_stl),
         ):
@@ -381,6 +382,7 @@ class MainWindow(QMainWindow):
         session.reformat_changed.connect(self.refresh_reformats)
         session.resection_changed.connect(self.refresh_reformats)
         session.message.connect(self.show_message)
+        session.busy.connect(self.set_busy)
         self.view3d.surface_picked.connect(self._on_surface_pick)
         self.view3d.plane_translated.connect(self._on_plane_translated)
 
@@ -415,6 +417,20 @@ class MainWindow(QMainWindow):
             self.hint_label.setText(f"{mode.value}: {mode.hint}")
         finally:
             self._setting_mode = False
+
+    def set_busy(self, busy: bool) -> None:
+        """A wait cursor, and a repaint, around the few slow steps."""
+        if busy:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            self.statusBar().showMessage("Working…")
+            # Paint the cursor and message now, but take no clicks: a click
+            # handled in the middle of the computation would re-enter it.
+            QApplication.processEvents(
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+            )
+        else:
+            QApplication.restoreOverrideCursor()
+            self.statusBar().clearMessage()
 
     def show_message(self, text: str) -> None:
         self.statusBar().showMessage(text, 8000)
@@ -810,16 +826,30 @@ class MainWindow(QMainWindow):
             self.show_message(f"Bench steps written to {path}")
 
     def export_graft_stl(self) -> None:
-        surface = self.session.graft_surface
+        """Export the reconstructed mandible: retained bone and mirror, flush."""
+        surface = self.session.reconstructed_surface
         if surface is None:
-            self.show_message("Mirror the healthy side first.")
+            self.show_message("Reconstruct the defect first.")
             return
         path = self._save_path(
-            "Export reconstruction target", "STL files (*.stl)", "reconstruction.stl"
+            "Export reconstructed jaw", "STL files (*.stl)", "reconstructed_mandible.stl"
         )
         if path:
             write_surface_stl(path, surface)
-            self.show_message(f"Reconstruction target written to {path}")
+            self.show_message(f"Reconstructed jaw written to {path}")
+
+    def export_mirrored_segment_stl(self) -> None:
+        """Export only the mirrored segment that fills the defect."""
+        surface = self.session.graft_surface
+        if surface is None:
+            self.show_message("Reconstruct the defect first.")
+            return
+        path = self._save_path(
+            "Export mirrored segment", "STL files (*.stl)", "mirrored_segment.stl"
+        )
+        if path:
+            write_surface_stl(path, surface)
+            self.show_message(f"Mirrored segment written to {path}")
 
     def export_resection_csv(self) -> None:
         rows = self.resection_panel.summary_rows()
