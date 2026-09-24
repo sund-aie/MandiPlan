@@ -149,13 +149,13 @@ def reflect_polydata(polydata: vtk.vtkPolyData, plane) -> vtk.vtkPolyData:
 
     transform = vtk.vtkTransform()
     transform.SetMatrix(matrix)
-    filt = vtk.vtkTransformPolyDataFilter()
+    filt = vtk.vtkTransformFilter()
     filt.SetTransform(transform)
     filt.SetInputData(polydata)
     filt.Update()
 
     reverse = vtk.vtkReverseSense()
-    reverse.SetInputData(filt.GetOutput())
+    reverse.SetInputData(filt.GetPolyDataOutput())
     reverse.ReverseCellsOn()
     reverse.ReverseNormalsOn()
     reverse.Update()

@@ -419,6 +419,15 @@ class MainWindow(QMainWindow):
     def show_message(self, text: str) -> None:
         self.statusBar().showMessage(text, 8000)
 
+    def show_error(self, text: str) -> None:
+        """An action failed; say so plainly and leave the plan as it was."""
+        self.statusBar().showMessage(text, 15000)
+        try:
+            # Leave the view consistent with whatever state survived.
+            self.view3d.render()
+        except Exception:  # noqa: BLE001 - reporting must not raise
+            pass
+
     def show_cohort(self) -> None:
         self.cohort_panel.refresh()
         self.cohort_panel.expand()

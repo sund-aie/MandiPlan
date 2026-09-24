@@ -435,11 +435,11 @@ def build_plate(profile: PlateProfile, holes: int) -> tuple[vtk.vtkPolyData, np.
 def _translate(polydata: vtk.vtkPolyData, offset) -> vtk.vtkPolyData:
     transform = vtk.vtkTransform()
     transform.Translate(*offset)
-    filt = vtk.vtkTransformPolyDataFilter()
+    filt = vtk.vtkTransformFilter()
     filt.SetTransform(transform)
     filt.SetInputData(polydata)
     filt.Update()
-    return filt.GetOutput()
+    return filt.GetPolyDataOutput()
 
 
 def _preform(

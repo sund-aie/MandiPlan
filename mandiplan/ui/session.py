@@ -241,9 +241,23 @@ class Session(QObject):
 
     # -- arch curve --------------------------------------------------------
 
+    #: Two arch seeds closer than this are one click, not two. Nobody laying
+    #: 5-10 points along a 100 mm arch means to put two of them a twentieth
+    #: of a millimetre apart; a double-click does. A spline through
+    #: coincident points is undefined, so the second is dropped.
+    SEED_MERGE_TOLERANCE_MM = 0.05
+
     def add_arch_seed(self, point) -> None:
+        point = np.asarray(point, dtype=float).reshape(3)
+        for existing in self.arch_seeds:
+            if np.linalg.norm(existing - point) < self.SEED_MERGE_TOLERANCE_MM:
+                self.message.emit(
+                    "That point is already on the arch curve — click a little "
+                    "further along."
+                )
+                return
         self._push_undo()
-        self.arch_seeds.append(np.asarray(point, dtype=float).reshape(3))
+        self.arch_seeds.append(point)
         self._rebuild_arch()
 
     def remove_last_arch_seed(self) -> None:
@@ -259,12 +273,19 @@ class Session(QObject):
         self._rebuild_arch()
 
     def _rebuild_arch(self) -> None:
+        self.arch_curve = None
+        self.frames = None
         if len(self.arch_seeds) >= 2:
-            self.arch_curve = ArchCurve(np.vstack(self.arch_seeds))
-            self.frames = cpr.build_frames(self.arch_curve, self.cpr.step_mm)
-        else:
-            self.arch_curve = None
-            self.frames = None
+            try:
+                self.arch_curve = ArchCurve(np.vstack(self.arch_seeds))
+                self.frames = cpr.build_frames(self.arch_curve, self.cpr.step_mm)
+            except ValueError as error:
+                # Degenerate seeds. Losing the curve is recoverable; raising
+                # out of a mouse-click handler is not.
+                self.arch_curve = None
+                self.frames = None
+                self.message.emit(f"The arch curve could not be built: {error}")
+        if self.frames is None:
             self.panoramic = None
             self.cross_section = None
         self._resolve_all_planes()
@@ -337,6 +358,15 @@ class Session(QObject):
         if len(self.planes) >= constants.MAX_RESECTION_PLANES:
             self.message.emit(
                 f"MandiPlan plans up to {constants.MAX_RESECTION_PLANES} cutting planes."
+            )
+            return
+        if self.frames is None:
+            # A cut is a position along the mandible plus angles measured
+            # against the local jaw frame, so it has nothing to anchor to
+            # until the arch curve exists.
+            self.message.emit(
+                "Draw the arch curve first — a cutting plane is placed along "
+                "it and takes its angulation from the jaw at that point."
             )
             return
         self._push_undo()

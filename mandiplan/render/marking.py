@@ -95,11 +95,11 @@ def build_marking(
 
     transform = vtk.vtkTransform()
     transform.SetMatrix(basis)
-    placed = vtk.vtkTransformPolyDataFilter()
+    placed = vtk.vtkTransformFilter()
     placed.SetTransform(transform)
     placed.SetInputData(glyphs)
     placed.Update()
-    return placed.GetOutput()
+    return placed.GetPolyDataOutput()
 
 
 def marking_for_plate(asset, hole_centres, hole_axes) -> vtk.vtkPolyData:
