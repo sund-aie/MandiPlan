@@ -47,7 +47,7 @@ def capture(window, path: Path, viewport_path: Path | None = None) -> list[Path]
     return written
 
 
-def build_window(width: int, height: int, phantom: bool):
+def build_window(width: int, height: int, phantom: bool, sample: bool = False):
     from mandiplan.ui.main_window import MainWindow
     from mandiplan.ui.theme import stylesheet
     from PyQt6.QtWidgets import QApplication
@@ -58,9 +58,61 @@ def build_window(width: int, height: int, phantom: bool):
     window.resize(width, height)
     window.show()
     app.processEvents()
-    if phantom:
+    if sample:
+        _load_sample(window)
+    elif phantom:
         _load_phantom(window)
     return app, window
+
+
+def _load_sample(window) -> None:
+    """Open the bundled real scan and draw its arch curve."""
+    from PyQt6.QtWidgets import QApplication
+
+    from mandiplan.reference_cases import load_sample
+
+    window.open_sample_scan()
+    for point in load_sample()[3]:
+        window.session.add_arch_seed(point)
+    window.session.ensure_mandible()
+    QApplication.processEvents()
+
+
+def reconstruct_defect(window, out_dir: Path) -> list[Path]:
+    """Cut a lateral body segment, reconstruct it, and capture the result."""
+    import numpy as np
+    from PyQt6.QtWidgets import QApplication
+
+    session = window.session
+    frames = session.frames
+    for fraction, sign in ((0.22, 1.0), (0.40, -1.0)):
+        i = frames.index_of(fraction * frames.length_mm)
+        session.add_plane(frames.points[i], sign * frames.tangents[i])
+    session.build_reconstruction()
+    for line in session.reconstruction.report.summary_lines():
+        print("  " + line)
+    from mandiplan.render.reconstruct import junction_steps
+
+    steps = junction_steps(session.reconstruction.volume, session.threshold, session.planes)
+    print("  surface step across each junction: " + ", ".join(f"{v:.2f} mm" for v in steps))
+
+    centre = frames.point_at(0.31 * frames.length_mm)
+    _, _, outward = frames.frame_at(0.31 * frames.length_mm)
+    view = outward + np.array([0.0, 0.0, 0.25])
+    view /= np.linalg.norm(view)
+    renderer = window.view3d.renderer
+    renderer.ResetCamera()
+    camera = renderer.GetActiveCamera()
+    camera.SetFocalPoint(*centre)
+    camera.SetPosition(*(centre + view * 170.0))
+    camera.SetViewUp(0.0, 0.0, 1.0)
+    renderer.ResetCameraClippingRange()
+    camera.Zoom(1.2)
+    window.view3d.render()
+    QApplication.processEvents()
+    return capture(
+        window, out_dir / "reconstruction.png", out_dir / "reconstruction-viewport.png"
+    )
 
 
 def _load_phantom(window) -> None:
@@ -245,11 +297,30 @@ def main(argv: list[str] | None = None) -> int:
         help="draw a plate path and capture the fitted plate asset",
     )
     parser.add_argument("--asset", default=None, help="plate asset id to fit")
+    parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="use the bundled real scan instead of the phantom",
+    )
+    parser.add_argument(
+        "--reconstruct",
+        action="store_true",
+        help="cut a lateral defect, reconstruct it and capture the result",
+    )
     args = parser.parse_args(argv)
 
     _, window = build_window(
-        args.width, args.height, args.phantom or args.cut_sweep or args.plate
+        args.width,
+        args.height,
+        args.phantom or args.cut_sweep or args.plate or args.reconstruct,
+        sample=args.sample,
     )
+    if args.reconstruct:
+        for path in reconstruct_defect(window, Path(args.out)):
+            print(path)
+        if not args.plate:
+            window.close()
+            return 0
     if args.plate:
         for path in fit_plate(window, Path(args.out), args.asset):
             print(path)

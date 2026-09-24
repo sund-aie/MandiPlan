@@ -26,6 +26,9 @@ mandiplan = "mandiplan.__main__:main"
 [tool.setuptools.packages.find]
 include = ["mandiplan*"]
 
+[tool.setuptools.package-data]
+mandiplan = ["data/*.json", "data/plates/*", "data/reference/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

@@ -44,7 +44,7 @@ RESECT_COLOUR = (0.804, 0.416, 0.361)    # muted warm red: the defect
 PLATE_COLOUR = (0.722, 0.733, 0.757)     # titanium-like neutral metallic grey
 ARCH_COLOUR = (0.278, 0.600, 0.502)      # muted green: the planning curve
 MARK_COLOUR = (0.902, 0.678, 0.200)      # amber, active editing state only
-GRAFT_COLOUR = (0.400, 0.667, 0.647)     # muted teal: the mirrored segment
+GRAFT_COLOUR = (0.600, 0.792, 0.776)     # pale teal: the mirrored segment
 NO_DONOR_COLOUR = (0.839, 0.706, 0.478)  # muted sand: no mirror donor there
 
 
@@ -357,6 +357,7 @@ class View3D(QWidget):
         # exactly the junctions it is meant to show.
         self.bone_actor.VisibilityOff()
         self.fragment_actor.VisibilityOff()
+        self._sync_plane_widgets()
         self.render()
 
     def refresh_arch(self) -> None:
@@ -491,6 +492,10 @@ class View3D(QWidget):
                 rep = self._plane_widgets[index].GetRepresentation()
                 rep.SetOrigin(*(float(v) for v in plane.origin))
                 rep.SetNormal(*(float(v) for v in plane.normal))
+                # Over a finished reconstruction the planes are reference
+                # lines, not the subject: keep them grabbable but faint.
+                faded = self.session.reconstructed_surface is not None
+                rep.GetPlaneProperty().SetOpacity(0.08 if faded else 0.35)
                 self._plane_widgets[index].SetEnabled(not self.session.cut_applied)
         finally:
             self._syncing = False

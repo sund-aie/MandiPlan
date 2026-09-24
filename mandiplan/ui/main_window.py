@@ -228,6 +228,10 @@ class MainWindow(QMainWindow):
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.open_dicom_folder)
         file_menu.addAction(open_action)
+        sample_action = QAction("Open sample scan", self)
+        sample_action.setToolTip("A public head CBCT bundled with MandiPlan, to try the workflow")
+        sample_action.triggered.connect(self.open_sample_scan)
+        file_menu.addAction(sample_action)
         file_menu.addSeparator()
         for text, slot in (
             ("Export plate bend table (CSV)…", self.export_bend_csv),
@@ -467,6 +471,10 @@ class MainWindow(QMainWindow):
         if not folder:
             return
         self.load_folder(folder)
+
+    def open_sample_scan(self) -> None:
+        self.session.load_sample_scan()
+        self.show_message("Opened the bundled sample scan.")
 
     def load_folder(self, folder: str) -> None:
         try:

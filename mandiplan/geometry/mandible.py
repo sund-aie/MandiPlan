@@ -323,7 +323,9 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
         if skull.any():
             seeds = mandible & (distance < 15.0)[None] & (height_above < -2.0)
             markers = seeds.astype(np.uint8) + 2 * (skull & ~seeds).astype(np.uint8)
-            split = _split_at_narrowest(mandible, markers, spacing)
+            split = _split_at_narrowest(
+                mandible, markers, volume.array[box], threshold, spacing
+            )
             region = (split == 1) & mandible
             labels = _components(region)
             target = _label_at(labels, station_index, radius)
@@ -351,13 +353,22 @@ def _pool(mask: np.ndarray, factor: int) -> np.ndarray:
     return padded.reshape(nz, factor, ny, factor, nx, factor).any(axis=(1, 3, 5))
 
 
-def _split_at_narrowest(region: np.ndarray, markers: np.ndarray, spacing) -> np.ndarray:
-    """Marker watershed of ``region`` on its inverted distance map.
+def _split_at_narrowest(
+    region: np.ndarray, markers: np.ndarray, gray: np.ndarray, threshold: float, spacing
+) -> np.ndarray:
+    """Marker watershed of ``region``: the split follows thin, dark bone.
 
-    Where two marked parts meet through bone, the boundary settles on the
-    narrowest connection. The flooding is done on a grid of about 1 mm —
-    the split only has to find a joint space, and at 0.5 mm it costs ten
-    times as long — and the labels are carried back to the full grid.
+    Two cues mark where the mandible meets the skull. The connection is
+    narrow (a condyle in its fossa, a coronoid tip), and it is dark: the joint
+    space is only bridged by voxels that straddle it and average down to
+    near the threshold, while the condylar neck is solid cortex. At 0.5 mm
+    the narrowness alone finds the joint; at the 1 mm of a medical CT the
+    joint space is often bridged across its whole width and only the gray
+    value still tells it from the neck. So the flooding height is the sum
+    of the two, each scaled to 0-1.
+
+    The flooding runs on a grid of about 1 mm and the labels are carried
+    back to the full grid.
     """
     import SimpleITK as sitk
 
@@ -367,24 +378,30 @@ def _split_at_narrowest(region: np.ndarray, markers: np.ndarray, spacing) -> np.
         seeds = _pool(markers == 1, factor)
         skull = _pool(markers == 2, factor) & ~seeds
         coarse_markers = seeds.astype(np.uint8) + 2 * skull.astype(np.uint8)
+        coarse_gray = _block_mean(gray, factor)
         coarse_spacing = [float(v) * factor for v in spacing]
     else:
-        coarse, coarse_markers = region, markers
+        coarse, coarse_markers, coarse_gray = region, markers, gray
         coarse_spacing = [float(v) for v in spacing]
 
     image = sitk.GetImageFromArray(coarse.astype(np.uint8))
     image.SetSpacing(coarse_spacing)
-    distance_map = sitk.SignedMaurerDistanceMap(
-        image, insideIsPositive=True, squaredDistance=False, useImageSpacing=True
+    distance = sitk.GetArrayFromImage(
+        sitk.SignedMaurerDistanceMap(
+            image, insideIsPositive=True, squaredDistance=False, useImageSpacing=True
+        )
     )
+    thin = np.clip(distance / 3.0, 0.0, 1.0)
+    inside = coarse_gray[coarse] if coarse.any() else coarse_gray.ravel()
+    bright = float(np.percentile(inside, 90.0)) if inside.size else threshold + 1.0
+    dense = np.clip((coarse_gray - threshold) / max(bright - threshold, 1e-6), 0.0, 1.0)
+    height = sitk.GetImageFromArray((-(thin + dense)).astype(np.float32))
+    height.SetSpacing(coarse_spacing)
     marker_image = sitk.GetImageFromArray(coarse_markers)
-    marker_image.CopyInformation(image)
+    marker_image.CopyInformation(height)
     labels = sitk.GetArrayFromImage(
         sitk.MorphologicalWatershedFromMarkers(
-            sitk.InvertIntensity(distance_map, maximum=0.0),
-            marker_image,
-            markWatershedLine=False,
-            fullyConnected=True,
+            height, marker_image, markWatershedLine=False, fullyConnected=True
         )
     )
     if factor > 1:
@@ -392,6 +409,13 @@ def _split_at_narrowest(region: np.ndarray, markers: np.ndarray, spacing) -> np.
             labels = np.repeat(labels, factor, axis=axis)
         labels = labels[: region.shape[0], : region.shape[1], : region.shape[2]]
     return labels
+
+
+def _block_mean(array: np.ndarray, factor: int) -> np.ndarray:
+    pad = [(0, (-n) % factor) for n in array.shape]
+    padded = np.pad(array.astype(np.float32), pad, mode="edge")
+    nz, ny, nx = (n // factor for n in padded.shape)
+    return padded.reshape(nz, factor, ny, factor, nx, factor).mean(axis=(1, 3, 5))
 
 
 def _reference_heights(bite: Bite, points: np.ndarray) -> np.ndarray:

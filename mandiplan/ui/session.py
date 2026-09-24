@@ -15,6 +15,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from .. import constants
 from ..bending_steps import BendStep, generate_steps
 from ..dicom_io import SeriesGeometry, SeriesInfo, load_folder
+from ..reference_cases import SAMPLE_SCAN, load_sample
 from ..geometry import cpr
 from ..geometry.mirror import (
     MidSagittalPlane,
@@ -97,7 +98,7 @@ class VolumeInfo:
         sx, sy, sz = volume.spacing
         return [
             f"Series: {self.series.description or '(no description)'}",
-            f"Slices: {self.series.n_files}",
+            f"Slices: {self.series.n_files or int(volume.size_xyz[2])}",
             f"Matrix: {nx} × {ny} × {nz} voxels",
             f"Voxel size: {sx:.3f} × {sy:.3f} × {sz:.3f} mm",
             f"Field of view: {volume.extent_mm[0]:.1f} × {volume.extent_mm[1]:.1f}"
@@ -205,6 +206,14 @@ class Session(QObject):
 
     def load_dicom_folder(self, folder: str, series_uid: str | None = None) -> None:
         volume, geometry, series = load_folder(folder, series_uid)
+        self._load_volume(volume, geometry, series, folder)
+
+    def load_sample_scan(self) -> None:
+        """Open the bundled public head CBCT (see ``reference_cases``)."""
+        volume, geometry, series, _ = load_sample()
+        self._load_volume(volume, geometry, series, str(SAMPLE_SCAN))
+
+    def _load_volume(self, volume, geometry, series, folder: str) -> None:
         self.volume = volume
         self._extractor = SurfaceExtractor(volume)
         self.info = VolumeInfo(series=series, geometry=geometry, folder=folder)
