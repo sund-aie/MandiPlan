@@ -56,6 +56,9 @@ class ImageView(QWidget):
         self._zoom = 1.0
         self._pan = QPointF(0.0, 0.0)
         self._fit_pending = True
+        #: The operator zoomed or panned; until then the image is kept fitted
+        #: to the view whatever its size.
+        self._user_view = False
         self._panning_from: QPointF | None = None
         self.overlays: list[Overlay] = []
 
@@ -87,7 +90,7 @@ class ImageView(QWidget):
         self.y_label = y_label
         self.row_axis_up = row_axis_up
         self._pixmap = self._to_pixmap(self._image)
-        if not keep_view:
+        if not keep_view or not self._user_view:
             self._fit_pending = True
         self.update()
 
@@ -166,13 +169,14 @@ class ImageView(QWidget):
             centre.x() - cx * self._zoom, centre.y() - cy * self._zoom
         )
         self._fit_pending = False
+        self._user_view = False
         self.update()
 
     # -- events ------------------------------------------------------------
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
-        if self._fit_pending:
+        if self._fit_pending or not self._user_view:
             self.fit()
 
     def wheelEvent(self, event):  # noqa: N802
@@ -184,6 +188,7 @@ class ImageView(QWidget):
         self._zoom = float(np.clip(self._zoom * factor, 0.05, 400.0))
         after = self.mm_to_widget(*before)
         self._pan += cursor - after
+        self._user_view = True
         self.update()
 
     def mousePressEvent(self, event):  # noqa: N802
@@ -204,6 +209,7 @@ class ImageView(QWidget):
         if self._panning_from is not None:
             self._pan += event.position() - self._panning_from
             self._panning_from = event.position()
+            self._user_view = True
             self.update()
             return
         x, y = self.widget_to_mm(event.position())

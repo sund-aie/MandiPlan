@@ -53,14 +53,13 @@ def _arch_step(session) -> tuple[bool, str, str]:
     if session.volume is None:
         return False, "a volume", "Load a volume first."
     if session.arch_curve is None:
-        needed = 2 - len(session.arch_seeds)
-        return False, "", f"Place at least {max(needed, 1)} more arch point(s) in the axial view."
-    return (
-        True,
-        "",
-        f"Arch curve {session.arch_curve.length_mm:.1f} mm long, "
-        f"{len(session.arch_seeds)} seed points.",
-    )
+        if getattr(session, "arch_source", "") == "drawn":
+            needed = 2 - len(session.arch_seeds)
+            return False, "", f"Click {max(needed, 1)} more point(s) along the jaw on the axial slice."
+        return False, "", "Laid automatically once the mandible is found, or click it on the axial slice."
+    if getattr(session, "arch_source", "") == "auto":
+        return True, "", f"Automatic, condyle to condyle: {session.arch_curve.length_mm:.1f} mm."
+    return True, "", f"Drawn by hand: {session.arch_curve.length_mm:.1f} mm."
 
 
 def _resection_step(session) -> tuple[bool, str, str]:
@@ -102,12 +101,9 @@ def _plate_step(session) -> tuple[bool, str, str]:
     fit = session.fit
     if fit is not None and fit.problems:
         return False, "", fit.problems[0]
-    return (
-        True,
-        "",
-        f"{session.plate_plan.total_length_mm:.1f} mm path, "
-        f"{len(session.plate_plan.nodes)} screw holes.",
-    )
+    asset = getattr(session, "plate_asset", None)
+    plate = f"{asset.hole_count}-hole plate" if asset is not None else "Plate"
+    return True, "", f"{plate} on a {session.plate_plan.total_length_mm:.1f} mm path."
 
 
 def _export_step(session) -> tuple[bool, str, str]:
@@ -119,11 +115,11 @@ def _export_step(session) -> tuple[bool, str, str]:
 
 
 STEPS = (
-    ("Volume and bone threshold", _volume_step),
-    ("Arch curve and reformat", _arch_step),
-    ("Resection planning", _resection_step),
-    ("Mirror reconstruction", _reconstruction_step),
-    ("Plate path and bends", _plate_step),
+    ("Scan and mandible", _volume_step),
+    ("Arch curve", _arch_step),
+    ("Cuts", _resection_step),
+    ("Reconstruction", _reconstruction_step),
+    ("Plate", _plate_step),
     ("Export", _export_step),
 )
 

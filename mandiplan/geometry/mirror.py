@@ -32,7 +32,9 @@ class MidSagittalPlane:
 
     point: np.ndarray  # a point on the plane, world mm
     normal: np.ndarray  # unit normal, close to the patient's left-right axis
-    symmetry: float  # fraction of bone voxels whose reflection is also bone
+    #: Fraction of bone whose reflection lands on bone, or within
+    #: :data:`SYMMETRY_TOLERANCE_MM` of it.
+    symmetry: float
 
     def __post_init__(self) -> None:
         self.point = np.asarray(self.point, dtype=float).reshape(3)
@@ -83,6 +85,29 @@ def _symmetry_score(points: np.ndarray, volume, threshold: float, plane) -> floa
     return float(np.mean(values >= threshold))
 
 
+#: No jaw is symmetric to the voxel: a mirrored point within this distance of
+#: bone counts as landing on it when the symmetry is reported, mm. A thin
+#: cortex mirrored a millimetre off misses entirely at the voxel.
+SYMMETRY_TOLERANCE_MM = 1.5
+#: Below this reported symmetry the plane is worth checking by eye.
+SYMMETRY_WARNING = 0.8
+
+
+def reported_symmetry(points: np.ndarray, volume, threshold: float, plane,
+                      tolerance_mm: float = SYMMETRY_TOLERANCE_MM) -> float:
+    """Fraction of bone points whose mirror image lands within
+    ``tolerance_mm`` of bone (checked along each axis)."""
+    reflected = plane.reflect(points)
+    fill = float(volume.array.min())
+    hit = volume.sample(reflected, fill=fill) >= threshold
+    for axis in range(3):
+        for sign in (-1.0, 1.0):
+            offset = np.zeros(3)
+            offset[axis] = sign * tolerance_mm
+            hit |= volume.sample(reflected + offset, fill=fill) >= threshold
+    return float(np.mean(hit))
+
+
 #: (points used, lateral half-range mm, lateral step mm, tilt half-range deg, tilt step deg)
 _SEARCH_STAGES = (
     (4000, 20.0, 2.0, 8.0, 2.0),
@@ -131,9 +156,9 @@ def estimate_midsagittal_plane(
             scan(sample, 2, a_half, a_step)
 
     normal = _normal_from_angles(parameters[1], parameters[2])
-    return MidSagittalPlane(
-        centre + normal * parameters[0], normal, evaluate(points, parameters)
-    )
+    plane = MidSagittalPlane(centre + normal * parameters[0], normal, 0.0)
+    plane.symmetry = reported_symmetry(points, volume, threshold, plane)
+    return plane
 
 
 @dataclass

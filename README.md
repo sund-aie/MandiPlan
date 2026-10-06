@@ -300,12 +300,14 @@ as noise, which is a screenshot artifact and not what you see on screen.
 
 ## The workflow
 
-The planning panel is a numbered sequence, and the strip above it says where
-you are: a dot per step, green once it is finished, and a line naming either
-what has been achieved or the next thing to do. Steps that cannot be started
-yet say what they are waiting for.
+The planning panel is a numbered list of six steps, one page each. A step's
+header is ticked once it is done, and its tooltip says what has been achieved
+or what is still missing. The toolbar carries only the tools used in every
+step (navigate, measure, angle, the view directions, undo); each step's own
+tool is the button on its page, and every tool is also in the *Tools* menu
+with its key.
 
-**1 · Load and threshold.** *File → Open DICOM folder*, or *File → Open
+**1 · Scan and mandible.** *File → Open DICOM folder*, or *File → Open
 sample scan* to try everything on the real head CBCT bundled with the
 application. MandiPlan reads the voxel spacing from the header, re-orients the
 volume to patient axes, and shows the matrix, voxel size and field of view in
@@ -324,9 +326,24 @@ Move it by eye; the isosurface follows as you drag. No smoothing is applied,
 because a smoothed surface no longer coincides with the gray values you
 thresholded.
 
-**2 · Arch curve and reformat.** Switch to the *Slices* tab, press *Place arch
-points*, and click 5–10 points along the jaw in the axial view. A cubic spline
-is fitted through them and resampled at uniform **arc length**.
+**2 · Arch curve.** Nothing to draw: once the mandible is separated (below),
+the arch curve is laid along the middle of it **from one condyle to the
+other** — through the body, round each angle and up each ramus, following the
+condylar rather than the coronoid process — and the axial slice moves to the
+body so you can see it. A cubic spline runs through points 12 mm apart on that
+trace and is resampled at uniform **arc length**. Every reformat and every cut
+follows this curve. *Draw my own curve* switches to the *Slices* tab: click
+along the jaw on the axial slice and your first click replaces the automatic
+curve; *Use the automatic curve* brings it back. Existing cuts stay where they
+are on the jaw when the curve is replaced.
+
+The panoramic is what an OPG shows: a vertical sheet standing on the curve's
+footprint, unrolled flat, so the rami rise at both ends instead of being
+stretched along the image. Its x-axis is arc length along that footprint in
+millimetres; the curve itself, the cross-section position and each cut are
+drawn on it, a cut tilted as it is. Click it to move the cross-section there.
+The cross-section is always perpendicular to the curve — the familiar
+buccolingual section on the body, a section across the ramus up a ramus.
 
 The mandible is **separated from the rest of the skull** as soon as the scan
 is open — you do not need to draw anything first. With the teeth in occlusion
@@ -338,7 +355,7 @@ along it (the dark line between bright upper and lower crowns), cuts only the
 tooth contacts along that line, and splits any remaining contact at the jaw
 joints at its thinnest, darkest point. The bone panel reports the separated
 mandible's volume. If a scan defeats the automatic search, draw the arch curve
-and the separation follows it; *Separate again along my arch curve* redoes it
+and the separation follows it; *Separate again along my curve* redoes it
 along your curve at any time, and the checkbox shows all bone again. *Export →
 Mandible (STL)* writes the separated mandible on its own.
 
@@ -351,11 +368,13 @@ distance, and the flattened distance between the points. The x-axis of that
 view is arc length, not a straight line, and the readout says so — across a
 curved mandible the two differ by several millimetres.
 
-**3 · Resection.** *Add cutting plane* drops a plane perpendicular to the arch
-curve; drag its handles in the 3-D view, or set it by numbers in the panel:
-position along the arch curve in millimetres, obliquity (yaw about the superior
-axis), inclination (tilt about the buccolingual direction), and offsets in
-patient axes. Dragging is quick; an osteotomy you have to describe, check or
+**3 · Cuts.** *Add cut* works straight after opening a scan: the first cut is
+placed across the right body of the mandible, perpendicular to the curve, and
+the second 20% of the body further on, closing a segment of about 30 mm —
+the usual starting point to adjust. Drag a plane in the 3-D view to slide it
+along the jaw, or set it by numbers in the panel: position along the jaw in
+millimetres, obliquity (yaw about the superior axis), inclination (tilt about
+the buccolingual direction), and a shift in patient axes. Dragging is quick; an osteotomy you have to describe, check or
 hand over needs numbers. Bone that the current planes would
 remove is tinted red as you move them. Up to two planes, which covers a
 segmental resection. *Execute cut* separates the fragment and reports the
@@ -387,9 +406,11 @@ how far your edits have moved it.
 
 **5 · Plate.** *Draw plate path on the bone* and click along the outer face of
 the jaw — after reconstructing, across the rebuilt segment too, since the plate
-follows the reconstruction. Then choose the plate and its length from the
-library; its pitch, section and the lengths it comes in drive everything
-below. Pick the bending kit you will use.
+follows the reconstruction. Clicks go through a plate already drawn to the
+bone behind it. Choose the plate family; its length follows the path (the
+shortest in the family that spans it) until you pick a length yourself. Its
+pitch, section and the lengths it comes in drive everything below. Pick the
+bending kit you will use.
 
 Clicks are projected onto the bone, the normal under each is fitted over the
 plate's footprint rather than taken from one point of a rough surface, and the

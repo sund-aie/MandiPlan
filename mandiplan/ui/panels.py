@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -26,7 +25,8 @@ from PyQt6.QtWidgets import (
 from ..bending_steps import steps_as_rows
 from ..constants import MAX_RESECTION_PLANES
 from ..geometry import cpr
-from ..geometry.measure import format_deg, format_mm
+from ..geometry.mirror import SYMMETRY_TOLERANCE_MM, SYMMETRY_WARNING
+from ..geometry.measure import format_mm
 from ..geometry.plate import bend_table_rows
 from ..plate_assets import assets_in_family
 from ..plate_assets import families as plate_families
@@ -122,17 +122,17 @@ class VolumePanel(QWidget):
         self.separate = QCheckBox("Separate the mandible from the skull")
         self.separate.setChecked(session.separate_mandible)
         self.separate.setToolTip(
-            "Once the arch curve is drawn, the lower jaw is cut free of the upper "
-            "teeth and the skull so cuts, mirror and exports touch the mandible only"
+            "The lower jaw is found and cut free of the upper teeth and the skull "
+            "when the scan opens, so cuts, mirror and exports touch the mandible only"
         )
         self.surface_info = QLabel("")
         self.surface_info.setWordWrap(True)
         self.mandible_info = QLabel("")
         self.mandible_info.setWordWrap(True)
-        self.separate_again = QPushButton("Separate again along my arch curve")
+        self.separate_again = QPushButton("Separate again along my curve")
         self.separate_again.setToolTip(
-            "Use the arch curve you drew (step 2) instead of the one found "
-            "automatically, if the separation missed part of the mandible"
+            "Use the arch curve you drew (step 2) to find the mandible, if the "
+            "automatic separation missed part of it"
         )
 
         layout = QVBoxLayout(self)
@@ -161,8 +161,11 @@ class VolumePanel(QWidget):
         self.separate.blockSignals(True)
         self.separate.setChecked(session.separate_mandible)
         self.separate.blockSignals(False)
-        self.separate_again.setEnabled(
-            session.separate_mandible and session.volume is not None and session.frames is not None
+        self.separate_again.setVisible(
+            session.separate_mandible
+            and session.volume is not None
+            and session.frames is not None
+            and session.arch_source == "drawn"
         )
         if session.volume is None:
             self.mandible_info.setText("The mandible is separated from the skull when a scan is opened.")
@@ -171,12 +174,8 @@ class VolumePanel(QWidget):
             self.mandible_info.setText("Showing all bone; cuts may reach the skull.")
             set_role(self.mandible_info, "warning")
         elif session.mandible is not None:
-            how = (
-                "Found in the scan automatically."
-                if session.mandible_source == "auto"
-                else "Separated along your arch curve."
-            )
-            self.mandible_info.setText(f"{session.mandible.summary()} {how}")
+            how = "" if session.mandible_source == "auto" else " Separated along your curve."
+            self.mandible_info.setText(f"{session.mandible.summary()}{how}")
             set_role(self.mandible_info, "hint")
         elif session.mandible_problem:
             self.mandible_info.setText(session.mandible_problem)
@@ -204,99 +203,126 @@ class VolumePanel(QWidget):
         if surface is None:
             self.surface_info.setText("")
             return
+        if self.session.mandible is not None:
+            # The mandible line below says how much bone there is.
+            self.surface_info.setText("")
+            return
         self.surface_info.setText(
-            f"Surface: {surface.GetNumberOfPoints():,} points, "
-            f"enclosed volume {format_mm(self.session.surface_volume_mm3, 0)[:-3]}mm³"
+            f"Bone at this threshold: {self.session.surface_volume_mm3 / 1000:.1f} cm³"
         )
 
 
 class ArchPanel(QWidget):
+    """The curve along the mandible that every reformat and cut follows."""
+
     mode_requested = pyqtSignal(object)
+
+    #: Panoramic slab aggregation, as the operator reads it.
+    AGGREGATION_LABELS = {"max": "Brightest bone (sharp outline)", "mean": "Average (like an OPG)"}
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
         self.session = session
 
-        self.place_button = QPushButton("Place arch points in the axial view")
+        self.status = QLabel("")
+        self.status.setWordWrap(True)
+        self.place_button = QPushButton("Draw my own curve")
         self.place_button.setCheckable(True)
+        self.place_button.setToolTip(
+            "Click along the jaw on the axial slice (Slices tab); the first click "
+            "replaces the automatic curve"
+        )
+        self.automatic = QPushButton("Use the automatic curve")
         self.undo_seed = QPushButton("Remove last point")
-        self.clear_seeds = QPushButton("Clear curve")
-        self.count = QLabel("0 seed points")
+        self.clear_seeds = QPushButton("Clear")
 
-        self.step = QDoubleSpinBox()
-        self.step.setRange(0.05, 2.0)
-        self.step.setSingleStep(0.05)
-        self.step.setDecimals(2)
-        self.step.setSuffix(" mm")
-        self.step.setValue(session.cpr.step_mm)
         self.slab = QDoubleSpinBox()
         self.slab.setRange(1.0, 60.0)
         self.slab.setSingleStep(1.0)
         self.slab.setSuffix(" mm")
         self.slab.setValue(session.cpr.slab_mm)
         self.mode_box = QComboBox()
-        self.mode_box.addItems(list(cpr.AGGREGATION_MODES))
-        self.mode_box.setCurrentText(session.cpr.mode)
+        for mode in cpr.AGGREGATION_MODES:
+            self.mode_box.addItem(self.AGGREGATION_LABELS.get(mode, mode), mode)
+        self.mode_box.setCurrentIndex(max(self.mode_box.findData(session.cpr.mode), 0))
         self.width = QDoubleSpinBox()
         self.width.setRange(5.0, 120.0)
         self.width.setSingleStep(5.0)
         self.width.setSuffix(" mm")
         self.width.setValue(session.cpr.cross_width_mm)
-
         form = QFormLayout()
-        form.addRow("Sample step", self.step)
-        form.addRow("Slab thickness", self.slab)
-        form.addRow("Aggregation", self.mode_box)
+        form.addRow("Panoramic depth", self.slab)
+        form.addRow("Panoramic shows", self.mode_box)
         form.addRow("Cross-section width", self.width)
-
-        self.summary = QLabel("No arch curve.")
-        self.summary.setWordWrap(True)
+        settings = QWidget()
+        settings.setLayout(form)
 
         layout = QVBoxLayout(self)
+        layout.addWidget(self.status)
         layout.addWidget(self.place_button)
-        layout.addWidget(
-            _hint(
-                "Draw the curve along the buccal cortex, where the plate will sit. "
-                "A curve through the dental arch gives an arc length that is not the "
-                "plate length."
-            )
-        )
-        row = QHBoxLayout()
+        self.drawn_row = QWidget()
+        row = QHBoxLayout(self.drawn_row)
+        row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(self.undo_seed)
         row.addWidget(self.clear_seeds)
-        layout.addLayout(row)
-        layout.addWidget(self.count)
-        box = QGroupBox("Reformat settings")
-        box.setLayout(form)
-        layout.addWidget(box)
-        layout.addWidget(self.summary)
+        layout.addWidget(self.drawn_row)
+        layout.addWidget(self.automatic)
+        layout.addWidget(_Section("Panoramic view settings", settings))
         layout.addStretch(1)
 
         self.place_button.toggled.connect(
             lambda on: self.mode_requested.emit(Mode.ARCH if on else Mode.NAVIGATE)
         )
+        self.automatic.clicked.connect(session.use_automatic_arch)
         self.undo_seed.clicked.connect(session.remove_last_arch_seed)
         self.clear_seeds.clicked.connect(session.clear_arch)
-        self.step.valueChanged.connect(lambda v: session.set_cpr_settings(step_mm=v))
         self.slab.valueChanged.connect(lambda v: session.set_cpr_settings(slab_mm=v))
-        self.mode_box.currentTextChanged.connect(
-            lambda v: session.set_cpr_settings(mode=v)
+        self.mode_box.currentIndexChanged.connect(
+            lambda _i: session.set_cpr_settings(mode=self.mode_box.currentData())
         )
         self.width.valueChanged.connect(
             lambda v: session.set_cpr_settings(cross_width_mm=v)
         )
         session.arch_changed.connect(self.refresh)
+        session.volume_changed.connect(self.refresh)
+        session.mandible_changed.connect(self.refresh)
+        self.refresh()
 
     def refresh(self) -> None:
         session = self.session
-        self.count.setText(f"{len(session.arch_seeds)} seed points")
-        if session.arch_curve is None:
-            self.summary.setText("No arch curve (place at least 2 points).")
-        else:
-            self.summary.setText(
-                f"Arch curve length: {format_mm(session.arch_curve.length_mm)}\n"
-                "(arc length along the curve, not a straight-line distance)"
+        drawn = session.arch_source == "drawn"
+        curve = session.arch_curve
+        if session.volume is None:
+            text, role = "Open a scan first.", "empty"
+        elif curve is None and drawn:
+            text, role = (
+                f"{len(session.arch_seeds)} point(s) so far: keep clicking along the "
+                "jaw on the axial slice.",
+                "hint",
             )
+        elif curve is None:
+            text, role = (
+                "The curve is laid along the mandible, condyle to condyle, as soon "
+                "as the mandible is found.",
+                "empty",
+            )
+        elif drawn:
+            text, role = (
+                f"Your curve: {len(session.arch_seeds)} points, "
+                f"{format_mm(curve.length_mm)} along the jaw.",
+                "status",
+            )
+        else:
+            text, role = (
+                "Laid automatically along the middle of the mandible, condyle to "
+                f"condyle: {format_mm(curve.length_mm)}. The panoramic and the "
+                "cuts follow it.",
+                "status",
+            )
+        self.status.setText(text)
+        set_role(self.status, role)
+        self.drawn_row.setVisible(drawn)
+        self.automatic.setVisible(session.volume is not None and session.arch_source != "auto")
 
 
 class ResectionPanel(QWidget):
@@ -306,87 +332,97 @@ class ResectionPanel(QWidget):
         super().__init__(parent)
         self.session = session
 
-        self.add_plane = QPushButton("Add cutting plane")
-        self.flip_1 = QPushButton("Flip cut 1")
-        self.flip_2 = QPushButton("Flip cut 2")
-        self.clear = QPushButton("Clear planes")
+        self.add_plane = QPushButton("Add cut")
+        self.add_plane.setProperty("primary", True)
+        self.add_plane.setToolTip(
+            "A cutting plane across the jaw, placed on the right body; drag it "
+            "in the 3-D view or set it below"
+        )
+        self.flip = QPushButton("Flip side")
+        self.flip.setToolTip("Remove the bone on the other side of this cut")
+        self.clear = QPushButton("Remove all cuts")
         self.execute = QPushButton("Execute cut")
+        self.execute.setToolTip("Separate the segment the cuts remove from the jaw")
         self.undo = QPushButton("Undo cut")
         self.plane_box = QComboBox()
         self.position = QDoubleSpinBox()
         self.position.setRange(0.0, 1000.0)
-        self.position.setSuffix(" mm along curve")
+        self.position.setSuffix(" mm")
         self.position.setSingleStep(1.0)
         self.yaw = QDoubleSpinBox()
         self.yaw.setRange(-89.0, 89.0)
-        self.yaw.setSuffix("° yaw")
+        self.yaw.setSuffix("°")
         self.tilt = QDoubleSpinBox()
         self.tilt.setRange(-89.0, 89.0)
-        self.tilt.setSuffix("° tilt")
+        self.tilt.setSuffix("°")
         self.roll = QDoubleSpinBox()
         self.roll.setRange(-180.0, 180.0)
-        self.roll.setSuffix("° roll")
+        self.roll.setSuffix("°")
         self.offsets = {}
-        for key, label in (("x", " mm L/R"), ("y", " mm A/P"), ("z", " mm S/I")):
+        for key, label in (("x", " mm left"), ("y", " mm back"), ("z", " mm up")):
             spin = QDoubleSpinBox()
             spin.setRange(-60.0, 60.0)
             spin.setSingleStep(0.5)
             spin.setSuffix(label)
             self.offsets[key] = spin
 
-        self.landmark_button = QPushButton("Mark tumour margin point")
+        self.landmark_button = QPushButton("Mark a margin point")
         self.landmark_button.setCheckable(True)
-        self.clear_landmarks = QPushButton("Clear margin points")
-        self.readout = QLabel("No cutting planes.")
+        self.landmark_button.setToolTip(
+            "Click the tumour's edge on the bone; the distance from each cut to "
+            "it is reported"
+        )
+        self.clear_landmarks = QPushButton("Clear")
+        self.readout = QLabel("No cuts yet.")
         self.readout.setWordWrap(True)
         self.readout.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
 
-        grid = QGridLayout()
-        grid.addWidget(self.add_plane, 0, 0, 1, 2)
-        grid.addWidget(self.flip_1, 1, 0)
-        grid.addWidget(self.flip_2, 1, 1)
-        grid.addWidget(self.clear, 2, 0)
-        grid.addWidget(self.execute, 2, 1)
-        grid.addWidget(self.undo, 3, 0, 1, 2)
-
         layout = QVBoxLayout(self)
-        layout.addLayout(grid)
+        layout.addWidget(self.readout)
+        row = QHBoxLayout()
+        row.addWidget(self.add_plane)
+        row.addWidget(self.clear)
+        layout.addLayout(row)
         layout.addWidget(
             _hint(
-                f"Up to {MAX_RESECTION_PLANES} planes. Drag the handles in the 3-D "
-                "view; the red bone is what the current planes would remove."
+                f"Up to {MAX_RESECTION_PLANES} cuts. Drag a plane in the 3-D view to "
+                "slide it along the jaw; the bone shown red is what comes out."
             )
         )
+        layout.addWidget(self.execute)
+        layout.addWidget(self.undo)
+
         numbers = QFormLayout()
-        numbers.addRow("Cut", self.plane_box)
-        numbers.addRow("Position", self.position)
+        pick = QHBoxLayout()
+        pick.addWidget(self.plane_box, 1)
+        pick.addWidget(self.flip)
+        numbers.addRow("Cut", pick)
+        numbers.addRow("Along the jaw", self.position)
         numbers.addRow("Obliquity", self.yaw)
         numbers.addRow("Inclination", self.tilt)
         numbers.addRow("Roll", self.roll)
         for key in ("x", "y", "z"):
-            numbers.addRow("Offset" if key == "x" else "", self.offsets[key])
-        numeric_box = QGroupBox("Place the cut by numbers")
-        numeric_box.setLayout(numbers)
-        layout.addWidget(numeric_box)
-        layout.addWidget(
-            _hint(
-                "Position runs along the arch curve; the cut re-angles itself to "
-                "the jaw as it moves. Yaw, tilt and roll are measured against the "
-                "local mandibular frame at the cut — the arch tangent, transported "
-                "superior, and buccolingual — so an obliquity you dial in here is "
-                "kept relative to the anatomy wherever you move the cut to. The "
-                "offsets shift it in patient axes. Dragging in 3-D updates these."
-            )
+            numbers.addRow("Shift" if key == "x" else "", self.offsets[key])
+        adjust = QWidget()
+        adjust.setLayout(numbers)
+        adjust.setToolTip(
+            "Angles are measured against the jaw at the cut, so they stay the "
+            "same relative to the bone wherever the cut is moved"
         )
-        layout.addWidget(self.landmark_button)
-        layout.addWidget(self.clear_landmarks)
-        layout.addWidget(self.readout)
+        self.adjust = _Section("Adjust a cut by numbers", adjust, expanded=True)
+        layout.addWidget(self.adjust)
+
+        margins = QHBoxLayout()
+        margins.addWidget(self.landmark_button, 1)
+        margins.addWidget(self.clear_landmarks)
+        holder = QWidget()
+        holder.setLayout(margins)
+        layout.addWidget(_Section("Tumour margins (optional)", holder))
         layout.addStretch(1)
 
-        self.flip_1.clicked.connect(lambda: self._flip(0))
-        self.flip_2.clicked.connect(lambda: self._flip(1))
+        self.flip.clicked.connect(lambda: self._flip(self._current_plane()))
         self.clear.clicked.connect(session.clear_planes)
         self.execute.clicked.connect(session.execute_cut)
         self.undo.clicked.connect(session.undo_cut)
@@ -403,6 +439,8 @@ class ResectionPanel(QWidget):
             spin.valueChanged.connect(self._apply_rotation)
         session.resection_changed.connect(self.refresh)
         session.arch_changed.connect(self.refresh)
+        session.volume_changed.connect(self.refresh)
+        self.refresh()
 
     def _current_plane(self) -> int:
         return max(self.plane_box.currentIndex(), 0)
@@ -472,6 +510,8 @@ class ResectionPanel(QWidget):
         session = self.session
         enabled = bool(session.planes) and session.frames is not None
         for widget in (
+            self.plane_box,
+            self.flip,
             self.position,
             self.yaw,
             self.tilt,
@@ -479,33 +519,48 @@ class ResectionPanel(QWidget):
             *self.offsets.values(),
         ):
             widget.setEnabled(enabled)
+        self.add_plane.setEnabled(
+            session.volume is not None and len(session.planes) < MAX_RESECTION_PLANES
+        )
+        self.clear.setEnabled(bool(session.planes))
+        self.execute.setVisible(not session.cut_applied)
+        self.execute.setEnabled(bool(session.planes) and session.report is not None)
+        self.undo.setVisible(session.cut_applied)
         if self.plane_box.count() != len(session.planes):
             self._loading = True
             self.plane_box.clear()
             for plane in session.planes:
                 self.plane_box.addItem(plane.label)
+            # The cut just added is the one to adjust.
+            self.plane_box.setCurrentIndex(len(session.planes) - 1)
             self._loading = False
-            self._load_plane_controls()
+        # Always: a drag in the 3-D view moves the cut under these numbers.
+        self._load_plane_controls()
         if not session.planes:
-            self.readout.setText("No cutting planes.")
+            self.readout.setText(
+                "No cuts yet. Add cut places the first one on the right body of "
+                "the mandible; the second closes the segment."
+            )
+            set_role(self.readout, "empty")
             return
+        set_role(self.readout, "status")
         report = session.report
-        lines = [f"Cutting planes: {len(session.planes)}"]
-        lines.append(
-            f"Resected segment (arc length along arch curve): "
-            f"{format_mm(report.arc_length_mm)}"
-        )
-        lines.append(
-            f"Straight-line distance between cuts: {format_mm(report.straight_length_mm)}"
-        )
-        if np.isfinite(report.fragment_volume_mm3):
-            lines.append(f"Resected fragment volume: {report.fragment_volume_mm3:.0f} mm³")
-        if report.margins_mm:
+        lines = []
+        if report is None or not np.isfinite(report.arc_length_mm):
+            lines.append(f"{len(session.planes)} cut(s); add the second to close a segment.")
+        else:
+            lines.append(
+                f"Resected segment (arc length along the jaw): "
+                f"{format_mm(report.arc_length_mm)}, "
+                f"{format_mm(report.straight_length_mm)} straight across."
+            )
+            if np.isfinite(report.fragment_volume_mm3):
+                lines.append(f"Bone removed: {report.fragment_volume_mm3 / 1000:.2f} cm³.")
+            lines.append("Cut executed." if session.cut_applied else "Cut not executed yet.")
+        if report is not None and report.margins_mm:
             lines.append("Margins (positive = inside the resected side):")
             for plane_label, name, distance in report.margins_mm:
                 lines.append(f"  {name} → {plane_label}: {format_mm(distance)}")
-        if not session.cut_applied:
-            lines.append("Cut not executed yet.")
         self.readout.setText("\n".join(lines))
 
 
@@ -521,8 +576,10 @@ class ReconstructionPanel(QWidget):
         self.mirror_button = QPushButton("Reconstruct from the healthy side")
         self.mirror_button.setProperty("primary", True)
         self.mirror_button.setToolTip(
-            "Mirror the healthy side into the defect, register it to both "
-            "stumps and blend it in: one flush surface"
+            "The healthy side is mirrored in the patient's own plane of symmetry, "
+            "registered to each cut stump and blended into it: one flush surface. "
+            "Where the defect crosses the midline there is no healthy counterpart; "
+            "that part follows the pre-operative contour and is shown in sand."
         )
         self.estimate_button = QPushButton("Re-estimate the plane of symmetry")
         self.plane_info = QLabel("")
@@ -533,18 +590,8 @@ class ReconstructionPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.mirror_button)
         layout.addWidget(self.coverage_info)
-        layout.addWidget(self.plane_info)
-        layout.addWidget(self.estimate_button)
         layout.addWidget(
-            _hint(
-                "The healthy side is mirrored in the patient's own plane of "
-                "symmetry, then registered to each cut stump so the mirror meets "
-                "the bone that stays, and blended into it before one surface is "
-                "built. The junction figures below are how far apart mirror and "
-                "stump were before and after that registration. Where the defect "
-                "crosses the midline there is no healthy counterpart; that part "
-                "is filled from the pre-operative contour and shown in sand."
-            )
+            _Section("Plane of symmetry", _boxed(self.plane_info, self.estimate_button))
         )
         # -- optional hand refinement of the computed result ----------------
         self.smooth_junctions = QPushButton("Smooth the junctions")
@@ -571,6 +618,7 @@ class ReconstructionPanel(QWidget):
         self.edit_info.setWordWrap(True)
 
         refine = QFormLayout()
+        refine.setContentsMargins(8, 0, 0, 0)
         refine.addRow(self.smooth_junctions)
         refine.addRow(self.sculpt_button)
         refine.addRow("Brush", self.brush_box)
@@ -581,9 +629,9 @@ class ReconstructionPanel(QWidget):
         edits.addWidget(self.reset_edits)
         refine.addRow(edits)
         refine.addRow(self.edit_info)
-        self.refine_box = QGroupBox("Refine the result (optional)")
+        self.refine_box = QWidget()
         self.refine_box.setLayout(refine)
-        layout.addWidget(self.refine_box)
+        layout.addWidget(_Section("Refine by hand (optional)", self.refine_box, expanded=True))
         layout.addStretch(1)
 
         self.estimate_button.clicked.connect(session.estimate_symmetry_plane)
@@ -604,6 +652,7 @@ class ReconstructionPanel(QWidget):
         self.undo_edit.clicked.connect(session.undo_edit)
         self.reset_edits.clicked.connect(session.reset_edits)
         session.reconstruction_changed.connect(self.refresh)
+        session.resection_changed.connect(self.refresh)
         session.reconstruction_edited.connect(self.refresh_edits)
         self.refresh()
 
@@ -639,19 +688,21 @@ class ReconstructionPanel(QWidget):
         else:
             self.plane_info.setText(
                 f"Plane of symmetry tilted {plane.tilt_deg:.2f}° from the "
-                f"left-right axis; {plane.symmetry:.0%} of bone mirrors onto bone."
+                f"left-right axis; {plane.symmetry:.0%} of the bone mirrors onto bone "
+                f"(within {SYMMETRY_TOLERANCE_MM:g} mm)."
             )
-            set_role(self.plane_info, "warning" if plane.symmetry < 0.75 else "hint")
+            set_role(self.plane_info, "warning" if plane.symmetry < SYMMETRY_WARNING else "hint")
         reconstruction = session.reconstruction
         lines = []
         if session.coverage is not None:
             lines.append(session.coverage.summary())
+        self.mirror_button.setEnabled(bool(session.planes))
         if reconstruction is None:
             lines.append(
-                "Reconstructing replaces the pre-operative bone in the view: ivory "
-                "is retained bone, teal the mirrored segment."
+                "The rebuilt jaw replaces the bone in the 3-D view: ivory is the "
+                "bone that stays, teal the mirrored segment."
                 if session.planes
-                else "Place the cuts, then reconstruct."
+                else "Place the cuts (step 3) first."
             )
             self.coverage_info.setText("\n".join(lines))
             set_role(self.coverage_info, "empty")
@@ -788,19 +839,17 @@ class PlatePanel(QWidget):
         row.addWidget(self.clear_path)
         layout.addLayout(row)
 
-        # 2. Which plate.
+        # 2. Does it fit, in one line; the reasons on demand.
+        layout.addWidget(self.summary)
+        layout.addWidget(self.verdict)
+        layout.addWidget(self.use_length)
+
+        # 3. Which plate. Its length follows the path until one is picked.
         library = QFormLayout()
         library.addRow("Plate", self.family_box)
         library.addRow("Length", self.model_box)
         library.addRow("", self.status_badge)
-        library_box = QGroupBox("Plate")
-        library_box.setLayout(library)
-        layout.addWidget(library_box)
-
-        # 3. Does it fit, in one line; the reasons on demand.
-        layout.addWidget(self.verdict)
-        layout.addWidget(self.use_length)
-        layout.addWidget(self.summary)
+        layout.addLayout(library)
         self.details = _Section(
             "Why: fit, contact and screw holes",
             _boxed(self.fit_info, self.fit_status, self.hole_report),
@@ -809,12 +858,13 @@ class PlatePanel(QWidget):
 
         # 4. Bending.
         bending = QFormLayout()
+        bending.setContentsMargins(8, 0, 0, 0)
         bending.addRow("", self.bend_plate)
         bending.addRow("Standoff", self.clearance)
         bending.addRow("Bending kit", self.kit_box)
-        bending_box = QGroupBox("Bending")
+        bending_box = QWidget()
         bending_box.setLayout(bending)
-        layout.addWidget(bending_box)
+        layout.addWidget(_Section("Bending", bending_box))
         layout.addWidget(
             _Section("Screw-hole options", _boxed(self.show_distortion, self.use_insets))
         )
@@ -852,12 +902,12 @@ class PlatePanel(QWidget):
         self.clear_path.clicked.connect(session.clear_plate_path)
         self.use_length.clicked.connect(session.use_fitting_length)
         session.plate_changed.connect(self.refresh)
-        self._reload_models()
+        self._on_family()
 
     # -- plate library ---------------------------------------------------
 
-    def _reload_models(self) -> None:
-        """Repopulate the model list for the selected family."""
+    def _on_family(self) -> None:
+        # A new family: its length follows the path until one is picked.
         family = self.family_box.currentData()
         self._loading_models = True
         try:
@@ -868,10 +918,9 @@ class PlatePanel(QWidget):
                 )
         finally:
             self._loading_models = False
-        self._on_model()
-
-    def _on_family(self) -> None:
-        self._reload_models()
+        if self.model_box.count():
+            self.session.set_plate_asset(self.model_box.itemData(0), length_chosen=False)
+        self.refresh_library()
 
     def _on_model(self) -> None:
         if getattr(self, "_loading_models", False):
@@ -1066,10 +1115,12 @@ class PlatePanel(QWidget):
             self.verdict.setText("")
             self.use_length.setVisible(False)
         if plan is None:
+            count = len(self.session.plate_points)
             self.summary.setText(
-                f"{len(self.session.plate_points)} path points — "
-                "at least two, spanning one pitch, are needed."
+                "No plate path yet." if count == 0 else
+                f"{count} point so far: click at least one more along the bone."
             )
+            set_role(self.summary, "empty")
             self.table.setSortingEnabled(True)
             return
 
@@ -1090,13 +1141,15 @@ class PlatePanel(QWidget):
         self.table.setSortingEnabled(True)
         self.table.resizeColumnsToContents()
 
-        bends = [b for b in plan.bends if np.isfinite(b.in_plane_deg)]
-        largest = max((abs(b.in_plane_deg) for b in bends), default=float("nan"))
-        self.summary.setText(
-            f"Plate length along the path: {format_mm(plan.total_length_mm)}\n"
-            f"{len(plan.nodes)} screw holes at {format_mm(plan.pitch_mm)} pitch\n"
-            f"Largest in-plane bend: {format_deg(largest)}"
+        asset = self.session.plate_asset
+        plate = (
+            f"{asset.hole_count}-hole plate ({asset.length_mm:.0f} mm)"
+            if asset is not None else "Plate"
         )
+        self.summary.setText(
+            f"{plate} on a {format_mm(plan.total_length_mm)} path along the bone."
+        )
+        set_role(self.summary, "status")
 
 
 def _plain(value: float) -> str:

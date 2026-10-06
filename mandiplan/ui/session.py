@@ -19,6 +19,8 @@ from ..dicom_io import SeriesGeometry, SeriesInfo, load_folder
 from ..reference_cases import SAMPLE_SCAN, load_sample
 from ..geometry import cpr
 from ..geometry.mirror import (
+    SYMMETRY_TOLERANCE_MM,
+    SYMMETRY_WARNING,
     MidSagittalPlane,
     MirrorCoverage,
     estimate_midsagittal_plane,
@@ -29,6 +31,7 @@ from ..geometry.mandible import (
     find_arch,
     frames_for,
     isolate_mandible,
+    mandible_centreline,
     masked_bone_volume,
 )
 from ..geometry.sculpt import SurfaceSculptor, vertex_normals
@@ -95,6 +98,7 @@ class PlateSettings:
 @dataclass
 class _Snapshot:
     arch_seeds: list
+    arch_source: str
     planes: list
     placements: list
     landmarks: list
@@ -136,6 +140,9 @@ class Session(QObject):
     message = pyqtSignal(str)
     #: True while a slow computation runs, so the window can show it is busy.
     busy = pyqtSignal(bool)
+    #: The arch curve was laid automatically; the height of the mandibular
+    #: body, mm, so the axial slice can be shown there.
+    arch_laid = pyqtSignal(float)
 
     #: Radius of bone a plate rests on around each path point, mm: half a
     #: reconstruction plate's width and a little more.
@@ -175,6 +182,9 @@ class Session(QObject):
         self._mandible_timer.timeout.connect(self.ensure_mandible)
 
         self.arch_seeds: list[np.ndarray] = []
+        #: "auto" when the arch curve was laid along the separated mandible,
+        #: "drawn" when the operator clicked it on the axial slice.
+        self.arch_source = ""
         self.arch_curve: ArchCurve | None = None
         self.frames: cpr.ArchFrames | None = None
         self.cpr = CprSettings()
@@ -219,6 +229,9 @@ class Session(QObject):
         #: When an asset is selected the viewport and every export show its
         #: real mesh; there is no proxy geometry left in either path.
         self.plate_asset: PlateAsset | None = None
+        #: The operator picked the plate's length. Until then the shortest
+        #: plate of the family that spans the drawn path is used.
+        self.plate_length_chosen = False
         self.fitted_plate: FittedPlate | None = None
         self.bent_plate: BentPlate | None = None
         self.plate_contact: ClearanceReport | None = None
@@ -259,6 +272,7 @@ class Session(QObject):
         self.info = VolumeInfo(series=series, geometry=geometry, folder=folder)
         self.threshold = estimate_bone_threshold(volume)
         self.arch_seeds.clear()
+        self.arch_source = ""
         self.arch_curve = None
         self.frames = None
         self.panoramic = None
@@ -353,10 +367,11 @@ class Session(QObject):
         if self._auto_arch is not None and (scan, "auto") not in self._separation_failed:
             if self._separate(frames_for(self._auto_arch), "auto"):
                 return
-        if self.frames is not None and (scan, self._arch_key()) not in self._separation_failed:
+        drawn = self.frames is not None and self.arch_source == "drawn"
+        if drawn and (scan, self._arch_key()) not in self._separation_failed:
             self._separate(self.frames, "arch")
             return
-        if self.frames is None and not self.mandible_problem:
+        if not drawn and not self.mandible_problem:
             self.mandible_problem = (
                 "The mandible could not be found in this scan automatically. Draw "
                 "the arch curve (step 2) and it will be separated along it."
@@ -366,7 +381,7 @@ class Session(QObject):
 
     def separate_along_arch(self) -> None:
         """Separate the mandible again, following the arch curve as drawn."""
-        if self.volume is None or self.frames is None:
+        if self.volume is None or self.frames is None or self.arch_source != "drawn":
             self.message.emit("Draw the arch curve first; the separation follows it.")
             return
         self.separate_mandible = True
@@ -405,7 +420,42 @@ class Session(QObject):
                     self._extractor.update(self.threshold, keep_fraction=self.SPECK_FRACTION)
                 )
         self.mandible_changed.emit()
+        if source == "auto" and not self.arch_seeds:
+            self._lay_automatic_arch()
         return True
+
+    def _lay_automatic_arch(self) -> bool:
+        """Lay the arch curve along the separated mandible, condyle to condyle."""
+        if self.mandible is None or self._auto_arch is None or self.mandible_source != "auto":
+            return False
+        try:
+            points = mandible_centreline(self.volume, self.mandible, self._auto_arch)
+        except ValueError:
+            points = np.asarray(self._auto_arch, dtype=float)
+        if len(points) < 2:
+            return False
+        self.arch_seeds = [np.asarray(p, dtype=float) for p in points]
+        self.arch_source = "auto"
+        self._rebuild_arch()
+        self.arch_laid.emit(float(np.median(np.asarray(self._auto_arch)[:, 2])))
+        return self.frames is not None
+
+    def use_automatic_arch(self) -> None:
+        """Replace the arch curve with the one found along the mandible."""
+        if self.volume is None:
+            return
+        if self.mandible is None:
+            self.ensure_mandible()
+        if self.arch_source == "auto" and self.frames is not None:
+            return
+        if self.mandible is None or self.mandible_source != "auto":
+            self.message.emit(
+                "The mandible could not be found in this scan automatically; "
+                "draw the arch curve on the axial slice instead."
+            )
+            return
+        self._push_undo()
+        self._lay_automatic_arch()
 
     def _drop_mandible(self) -> None:
         self._mandible_timer.stop()
@@ -430,6 +480,13 @@ class Session(QObject):
 
     def add_arch_seed(self, point) -> None:
         point = np.asarray(point, dtype=float).reshape(3)
+        if self.arch_source != "drawn":
+            # The first click of a hand-drawn curve replaces the automatic one.
+            self._push_undo()
+            self.arch_seeds = [point]
+            self.arch_source = "drawn"
+            self._rebuild_arch()
+            return
         for existing in self.arch_seeds:
             if np.linalg.norm(existing - point) < self.SEED_MERGE_TOLERANCE_MM:
                 self.message.emit(
@@ -442,7 +499,7 @@ class Session(QObject):
         self._rebuild_arch()
 
     def remove_last_arch_seed(self) -> None:
-        if not self.arch_seeds:
+        if not self.arch_seeds or self.arch_source != "drawn":
             return
         self._push_undo()
         self.arch_seeds.pop()
@@ -451,9 +508,11 @@ class Session(QObject):
     def clear_arch(self) -> None:
         self._push_undo()
         self.arch_seeds.clear()
+        self.arch_source = ""
         self._rebuild_arch()
 
     def _rebuild_arch(self) -> None:
+        new_curve = self.frames is None
         self.arch_curve = None
         self.frames = None
         if len(self.arch_seeds) >= 2:
@@ -469,6 +528,9 @@ class Session(QObject):
         if self.frames is None:
             self.panoramic = None
             self.cross_section = None
+        elif new_curve:
+            # Open the cross-section on the body, not at a condyle.
+            self.cross_section_s = float(np.mean(cpr.body_span(self.frames)))
         self._resolve_all_planes()
         self.arch_changed.emit()
         self.update_reformats()
@@ -477,17 +539,36 @@ class Session(QObject):
     def _resolve_all_planes(self) -> None:
         """Rebuild every cut from its placement against the current frames.
 
-        Editing the arch curve moves the frames underneath the cuts. Because
-        the placements are anatomical rather than world-space, the cuts follow
-        the corrected curve instead of being left behind on the old one.
+        Editing the arch curve moves the frames underneath the cuts. Each cut
+        is re-anchored at the point of the new curve nearest where it was
+        put, and keeps its angles to the jaw there, so it follows the
+        corrected curve instead of being left behind on the old one.
+        Re-anchoring by position rather than by distance along the curve is
+        what keeps a cut on the same part of the jaw when the curve is
+        replaced: the automatic curve starts at a condyle, a drawn one at the
+        front of a ramus. The position is where the cut was put
+        (``anchor_mm``), not wherever the last curve left it, so a curve
+        clicked point by point does not drag the cuts along to its end.
         """
         if self.frames is None:
             return
         for index, placement in enumerate(self.placements):
             if index < len(self.planes):
-                clamped = placement.replace(s_mm=self.frames.clamp(placement.s_mm))
-                self.placements[index] = clamped
-                self.planes[index] = self._resolve(clamped, self.planes[index].label)
+                if placement.anchor_mm is not None:
+                    anchor = np.asarray(placement.anchor_mm, dtype=float)
+                else:
+                    anchor = np.asarray(self.planes[index].origin, dtype=float) - np.asarray(
+                        placement.offset_mm, dtype=float
+                    )
+                at = self.frames.index_of(self.frames.clamp(placement.s_mm))
+                if np.linalg.norm(self.frames.points[at] - anchor) < 1e-6:
+                    # The curve has not moved under this cut.
+                    moved = placement.replace(s_mm=self.frames.clamp(placement.s_mm))
+                else:
+                    nearest = int(np.argmin(np.linalg.norm(self.frames.points - anchor, axis=1)))
+                    moved = placement.replace(s_mm=float(self.frames.s[nearest]))
+                self.placements[index] = moved
+                self.planes[index] = self._resolve(moved, self.planes[index].label)
 
     def set_cpr_settings(self, **kwargs) -> None:
         for key, value in kwargs.items():
@@ -542,24 +623,62 @@ class Session(QObject):
                 f"MandiPlan plans up to {constants.MAX_RESECTION_PLANES} cutting planes."
             )
             return
+        # A cut must only ever remove mandible: separate it first. That also
+        # lays the arch curve the cut is placed along, if there is none yet.
+        self.ensure_mandible()
         if self.frames is None:
             # A cut is a position along the mandible plus angles measured
             # against the local jaw frame, so it has nothing to anchor to
             # until the arch curve exists.
             self.message.emit(
-                "Draw the arch curve first — a cutting plane is placed along "
-                "it and takes its angulation from the jaw at that point."
+                "The mandible could not be found automatically, so there is no "
+                "curve to place the cut on: draw the arch curve on the axial "
+                "slice (step 2) first."
             )
             return
-        # A cut must only ever remove mandible: separate it first.
-        self.ensure_mandible()
         self._push_undo()
         index = len(self.planes) + 1
-        placement = self._placement_for(origin, normal)
+        placement = self._anchored(self._placement_for(origin, normal))
         self.placements.append(placement)
         self.planes.append(self._resolve(placement, label or f"Cut {index}"))
         self.cut_applied = False
         self.update_resection_report()
+
+    #: Where "Add cut" puts each new cut along the mandibular body, as a
+    #: fraction of the body's length from its patient-right end. The first
+    #: two bound a segment of the right body, the usual first plan to adjust.
+    DEFAULT_CUT_FRACTIONS = (0.22, 0.42)
+
+    def add_default_cut(self) -> bool:
+        """Add a cut at a sensible place on the body; False if none could be."""
+        if self.volume is None:
+            self.message.emit("Open a scan first.")
+            return False
+        if len(self.planes) >= constants.MAX_RESECTION_PLANES:
+            self.message.emit(
+                f"MandiPlan plans up to {constants.MAX_RESECTION_PLANES} cutting "
+                "planes. Move the existing ones, or remove one first."
+            )
+            return False
+        self.ensure_mandible()
+        if self.frames is None:
+            self.add_plane(np.zeros(3), np.array([1.0, 0.0, 0.0]))  # explains why not
+            return False
+        start, end = cpr.body_span(self.frames)
+        fraction = self.DEFAULT_CUT_FRACTIONS[len(self.planes) % len(self.DEFAULT_CUT_FRACTIONS)]
+        s_mm = start + fraction * (end - start)
+        if self.placements:
+            # Never on top of a cut already placed.
+            taken = [p.s_mm for p in self.placements]
+            while min(abs(s_mm - t) for t in taken) < 10.0 and s_mm + 15.0 < end:
+                s_mm += 15.0
+        tangent, _, _ = self.frames.frame_at(s_mm)
+        index = self.frames.index_of(s_mm)
+        # The second cut faces the other way, so the two bound the segment.
+        normal = -tangent if self.planes else tangent
+        before = len(self.planes)
+        self.add_plane(self.frames.points[index], normal)
+        return len(self.planes) > before
 
     def _placement_for(self, origin, normal) -> PlanePlacement:
         """The placement whose resolved plane best matches a world point.
@@ -586,12 +705,18 @@ class Session(QObject):
         """Replace a cut's placement and rebuild its plane from it."""
         if self.frames is None or index >= len(self.placements):
             return
+        placement = self._anchored(placement)
         self.placements[index] = placement
         self.planes[index] = self._resolve(placement, self.planes[index].label)
         self.cut_applied = False
         self.fragment_surface = None
         self.retained_surface = None
         self.update_resection_report()
+
+    def _anchored(self, placement: PlanePlacement) -> PlanePlacement:
+        """The placement, remembering the point of the curve it is put at."""
+        point = self.frames.point_at(self.frames.clamp(placement.s_mm))
+        return placement.replace(anchor_mm=tuple(float(v) for v in point))
 
     def placement(self, index: int) -> PlanePlacement:
         return self.placements[index]
@@ -741,10 +866,11 @@ class Session(QObject):
             return
         self.ensure_mandible()
         self.symmetry_plane = estimate_midsagittal_plane(self.bone_volume, self.threshold)
-        if self.symmetry_plane.symmetry < 0.75:
+        if self.symmetry_plane.symmetry < SYMMETRY_WARNING:
             self.message.emit(
-                f"The best symmetry plane only maps {self.symmetry_plane.symmetry:.0%} "
-                "of the bone onto bone. Check it before mirroring."
+                f"Only {self.symmetry_plane.symmetry:.0%} of the bone mirrors onto bone "
+                f"across the best plane of symmetry (within {SYMMETRY_TOLERANCE_MM:g} mm). "
+                "Check the plane in the 3-D view before relying on the mirror."
             )
         self.update_reconstruction()
 
@@ -990,8 +1116,13 @@ class Session(QObject):
             setattr(self.plate, key, value)
         self.update_plate_plan()
 
-    def set_plate_asset(self, asset_id: str | None) -> None:
-        """Choose which plate model is being planned, by catalogue id."""
+    def set_plate_asset(self, asset_id: str | None, length_chosen: bool = True) -> None:
+        """Choose which plate model is being planned, by catalogue id.
+
+        ``length_chosen`` False picks only the family: the length then
+        follows the drawn path.
+        """
+        self.plate_length_chosen = bool(length_chosen)
         self.plate_asset = None if asset_id is None else asset_by_id(asset_id)
         if self.plate_asset is not None:
             self._adopt_asset(self.plate_asset)
@@ -1183,7 +1314,7 @@ class Session(QObject):
     def note_export(self, what: str) -> None:
         if what not in self.exported:
             self.exported.append(what)
-        self.plate_changed.emit()  # the workflow bar reads the list
+        self.plate_changed.emit()  # the export step reads the list
 
     def bending_guide(self):
         """The clip-on guide that stops each bend of the selected plate at its
@@ -1272,7 +1403,24 @@ class Session(QObject):
                 )
         self.update_plate_fit()
         self._update_fit()
+        self._size_plate_to_path()
         self.plate_changed.emit()
+
+    def _size_plate_to_path(self) -> None:
+        """Use the shortest plate of the family that spans the path, unless
+        the operator chose a length."""
+        fit, asset = self.fit, self.plate_asset
+        if self.plate_length_chosen or fit is None or fit.option is None or asset is None:
+            return
+        if fit.option.holes == asset.hole_count:
+            return
+        for candidate in assets_in_family(asset.family):
+            if candidate.hole_count == fit.option.holes:
+                self.plate_asset = candidate
+                self._adopt_asset(candidate)
+                self.update_plate_fit()
+                self._update_fit()
+                return
 
     # -- undo --------------------------------------------------------------
 
@@ -1280,6 +1428,7 @@ class Session(QObject):
         self._undo.append(
             _Snapshot(
                 arch_seeds=copy.deepcopy(self.arch_seeds),
+                arch_source=self.arch_source,
                 planes=copy.deepcopy(self.planes),
                 placements=copy.deepcopy(self.placements),
                 landmarks=copy.deepcopy(self.landmarks),
@@ -1300,6 +1449,7 @@ class Session(QObject):
             return
         state = self._undo.pop()
         self.arch_seeds = state.arch_seeds
+        self.arch_source = state.arch_source
         self.planes = state.planes
         self.placements = state.placements
         self.landmarks = state.landmarks

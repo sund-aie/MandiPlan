@@ -145,15 +145,17 @@ def test_resection_preview_cut_and_readout(window, phantom_folder):
     assert not session.cut_applied
 
 
-def test_the_workflow_bar_tracks_the_toolbox_and_the_plan(window):
-    window.toolbox.setCurrentIndex(1)
-    assert "Step 2 of 6" in window.workflow_bar.heading.text()
-    # The bar and the panels are two views of the same position.
-    window.workflow_bar.step_selected.emit(3)
-    assert window.toolbox.currentIndex() == 3
-    assert "Step 4 of 6" in window.workflow_bar.heading.text()
-    window.toolbox.setCurrentIndex(0)
-    assert "Done — Volume loaded" in window.workflow_bar.detail.text()
+def test_the_step_headers_carry_each_steps_state(window):
+    """One list of steps: the page headers, ticked when done, with no second
+    step bar repeating them."""
+    toolbox = window.toolbox
+    assert toolbox.count() == 6
+    assert toolbox.itemText(0).startswith("1 · Scan and mandible")
+    assert "\u2713" in toolbox.itemText(0)
+    assert "\u2713" in toolbox.itemText(1)
+    assert "Drawn by hand" in toolbox.itemToolTip(1)
+    assert "\u2713" not in toolbox.itemText(5)
+    assert not hasattr(window, "workflow_bar")
 
 
 def test_placing_a_cut_by_numbers_from_the_panel(window):
@@ -447,6 +449,11 @@ def test_choosing_a_plate_drives_the_pitch_and_the_fit(window, tmp_path):
     assert fit.option.length_mm >= session.plate_plan.total_length_mm
     assert "-hole" in panel.fit_info.text()
     assert panel.verdict.text()
+    # A new family's length follows the path: the shortest that spans it,
+    # and the summary names the plate actually used, not the path's spacing.
+    assert not session.plate_length_chosen
+    assert asset.hole_count == fit.option.holes
+    assert f"{asset.hole_count}-hole plate" in panel.summary.text()
 
     assert session.steps
     assert panel.steps_table.rowCount() == len(session.steps)
@@ -673,4 +680,5 @@ def test_the_mandible_is_separated_on_opening_and_can_be_exported(window):
     window.export_panel.refresh()
     assert window.export_panel.buttons["mandible"].isEnabled()
     text = window.volume_panel.mandible_info.text()
-    assert "automatically" in text or "arch curve" in text
+    assert "cm³ of bone" in text
+    assert ("along your curve" in text) == (session.mandible_source == "arch")

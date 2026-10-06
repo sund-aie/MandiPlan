@@ -61,6 +61,10 @@ class PlanePlacement:
         being resected; with two cuts the second one faces back down the
         curve, so it carries ``flipped=True``. Held here rather than as a sign
         on the normal so it survives translation.
+    ``anchor_mm``
+        The point of the curve the cut was put at, in world mm. Arc length
+        means nothing on a different curve, so when the curve is replaced
+        the cut is found again at the new curve's point nearest this one.
     """
 
     s_mm: float = 0.0
@@ -69,6 +73,7 @@ class PlanePlacement:
     roll_deg: float = 0.0
     offset_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
     flipped: bool = False
+    anchor_mm: tuple[float, float, float] | None = None
 
     def replace(self, **changes) -> "PlanePlacement":
         """A copy with some fields changed."""

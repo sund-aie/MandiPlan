@@ -26,7 +26,7 @@ vtkmodules.qt.QVTKRWIBase = os.environ.get(
     "QOpenGLWidget" if sys.platform == "darwin" else "QWidget",
 )
 
-from PyQt6.QtCore import Qt, pyqtSignal  # noqa: E402
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal  # noqa: E402
 from PyQt6.QtWidgets import QVBoxLayout, QWidget  # noqa: E402
 from vtkmodules.qt.QVTKRenderWindowInteractor import (  # noqa: E402
     QVTKRenderWindowInteractor,
@@ -46,6 +46,8 @@ ARCH_COLOUR = (0.278, 0.600, 0.502)      # muted green: the planning curve
 MARK_COLOUR = (0.902, 0.678, 0.200)      # amber, active editing state only
 GRAFT_COLOUR = (0.600, 0.792, 0.776)     # pale teal: the mirrored segment
 NO_DONOR_COLOUR = (0.839, 0.706, 0.478)  # muted sand: no mirror donor there
+#: Half the side of the box a cut plane is drawn in, mm: a jaw's height.
+PLANE_HALF_SIZE_MM = 24.0
 
 
 class _VtkWidget(QVTKRenderWindowInteractor):
@@ -559,15 +561,18 @@ class View3D(QWidget):
                 widget = self._plane_widgets.pop()
                 widget.Off()
                 widget.SetInteractor(None)
-            bounds = (
-                self.session.surface.GetBounds()
-                if self.session.surface is not None
-                else (-50, 50, -50, 50, -50, 50)
-            )
             for index, plane in enumerate(self.session.planes):
+                # The plane is drawn where it crosses a box round its origin,
+                # so it covers the jaw there and not the whole scan.
+                box = [
+                    float(c) + sign * PLANE_HALF_SIZE_MM
+                    for c in plane.origin
+                    for sign in (-1.0, 1.0)
+                ]
                 if index >= len(self._plane_widgets):
-                    self._plane_widgets.append(self._make_plane_widget(index, bounds))
+                    self._plane_widgets.append(self._make_plane_widget(index, box))
                 rep = self._plane_widgets[index].GetRepresentation()
+                rep.PlaceWidget(box)
                 rep.SetOrigin(*(float(v) for v in plane.origin))
                 rep.SetNormal(*(float(v) for v in plane.normal))
                 # Over a finished reconstruction the planes are reference
@@ -597,10 +602,20 @@ class View3D(QWidget):
             "InteractionEvent", lambda obj, evt, i=index: self._on_plane_moved(i)
         )
         widget.AddObserver(
-            "EndInteractionEvent", lambda obj, evt, i=index: self._on_plane_moved(i)
+            "EndInteractionEvent", lambda obj, evt, i=index: self._on_plane_released(i)
         )
         widget.On()
         return widget
+
+    def _on_plane_released(self, index: int) -> None:
+        self._on_plane_moved(index)
+        # Re-centre the drawn plane on where the cut now is, once the drag
+        # is over (not during it: the widget is still holding the plane).
+        QTimer.singleShot(0, self._resync_planes)
+
+    def _resync_planes(self) -> None:
+        self._sync_plane_widgets()
+        self.render()
 
     def _on_plane_moved(self, index: int) -> None:
         if self._syncing or index >= len(self._plane_widgets):
@@ -621,12 +636,21 @@ class View3D(QWidget):
         if self.mode in (Mode.NAVIGATE, Mode.SCULPT):
             return
         x, y = self.interactor.GetEventPosition()
-        if not self.picker.Pick(x, y, 0, self.renderer):
-            return
-        actor = self.picker.GetActor()
         # The reconstruction replaces the bone in the view once it exists, and
         # the plate is planned on it: clicks on it count as clicks on bone.
-        if actor not in (self.bone_actor, self.fragment_actor, self.graft_actor):
+        # Only the surfaces a click can be about are picked from, so a click
+        # on bone behind the plate reaches the bone, and a measurement can
+        # start or end on the plate itself.
+        targets = [self.bone_actor, self.fragment_actor, self.graft_actor]
+        if self.mode in (Mode.MEASURE, Mode.ANGLE):
+            targets.append(self.plate_actor)
+        self.picker.InitializePickList()
+        for actor in targets:
+            self.picker.AddPickList(actor)
+        self.picker.PickFromListOn()
+        if not self.picker.Pick(x, y, 0, self.renderer):
+            return
+        if self.picker.GetActor() not in targets:
             return
         point = np.array(self.picker.GetPickPosition(), dtype=float)
         if self.mode in (Mode.MEASURE, Mode.ANGLE):

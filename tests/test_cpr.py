@@ -120,3 +120,51 @@ def test_frames_are_orthonormal(arch_frames):
     assert np.allclose(dots, 0.0, atol=1e-9)
     assert np.allclose(np.linalg.norm(arch_frames.normals, axis=1), 1.0)
     assert np.allclose(arch_frames.normals[:, 2], 0.0, atol=1e-9)
+
+
+def test_a_flat_curve_unrolls_onto_its_own_arc_length(arch_frames):
+    x = cpr.sheet_x(arch_frames)
+    assert np.allclose(x, arch_frames.s, atol=1e-6)
+    s = 0.4 * arch_frames.length_mm
+    point = cpr.sheet_point(arch_frames, s, 3.0)
+    assert point[0] == pytest.approx(s, abs=arch_frames.step_mm)
+    assert cpr.s_on_sheet(arch_frames, point[0], 3.0) == pytest.approx(s, abs=arch_frames.step_mm)
+    # A straight cut across the body stands upright in the panoramic.
+    i = arch_frames.index_of(s)
+    line = cpr.sheet_line(arch_frames, s, arch_frames.points[i], arch_frames.tangents[i], 10.0)
+    assert line[0, 0] == pytest.approx(line[1, 0], abs=1e-6)
+    assert abs(line[1, 1] - line[0, 1]) == pytest.approx(20.0)
+
+
+def _climbing_frames(spec):
+    """The phantom's arch with both ends carried 40 mm up, like rami."""
+    points = np.asarray(spec.centre_line(9, extend_deg=10.0), dtype=float).copy()
+    ends = np.array([points[0], points[-1]])
+    rise = []
+    for end, inward in ((ends[0], points[1] - points[0]), (ends[1], points[-2] - points[-1])):
+        back = -inward / np.linalg.norm(inward)
+        rise.append([end + back * 3.0 + [0.0, 0.0, h] for h in (12.0, 26.0, 40.0)])
+    stacked = np.vstack([np.array(rise[0])[::-1], points, np.array(rise[1])])
+    return cpr.build_frames(ArchCurve(stacked), step_mm=0.2)
+
+
+def test_a_curve_up_the_rami_keeps_the_body_frame_upright(spec):
+    frames = _climbing_frames(spec)
+    middle = frames.index_of(frames.length_mm / 2.0)
+    assert np.allclose(frames.ups[middle], [0.0, 0.0, 1.0], atol=1e-6)
+    start, end = cpr.body_span(frames)
+    assert 0.0 < start < end < frames.length_mm
+    # The rami rise in the panoramic instead of stretching it sideways.
+    assert cpr.sheet_x(frames)[-1] < frames.length_mm - 60.0
+
+
+def test_the_cross_section_up_a_ramus_is_across_it(phantom, spec):
+    frames = _climbing_frames(spec)
+    s = 3.0
+    cs = cpr.build_cross_section(phantom, frames, s, width_mm=20.0)
+    tangent, _, _ = frames.frame_at(s)
+    corner = cpr.cross_section_world_point(frames, s, 5.0, cs.y0 + 7.0)
+    centre = frames.points[frames.index_of(s)]
+    # Every point of the section lies in the plane perpendicular to the curve.
+    assert abs(np.dot(corner - centre, tangent)) < 1e-6
+    assert abs(tangent[2]) > 0.5  # the curve is climbing here

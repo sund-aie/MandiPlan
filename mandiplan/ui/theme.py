@@ -398,6 +398,12 @@ def _qss_semantic(t: dict[str, str]) -> str:
         font-family: {MONO_STACK};
         background: transparent;
     }}
+    QLabel[role="status"] {{
+        color: {t['text_primary']};
+        font-size: {FONT_BASE};
+        padding: 2px 0 4px 0;
+        background: transparent;
+    }}
     QLabel[role="hint"], QLabel[role="empty"] {{
         color: {t['text_secondary']};
         font-size: {FONT_SM};

@@ -339,6 +339,94 @@ def find_arch(volume, threshold: float, count: int = 11) -> np.ndarray | None:
     return np.array(points) if len(points) >= 3 else None
 
 
+#: Spacing of the points laid along the automatic arch curve. The curve is a
+#: spline through them; closer points would follow every bump of the trace.
+CENTRELINE_SPACING_MM = 12.0
+
+
+def mandible_centreline(volume, isolation: "MandibleIsolation", body_points: np.ndarray,
+                        step_mm: float = 4.0,
+                        spacing_mm: float = CENTRELINE_SPACING_MM) -> np.ndarray:
+    """Points along the middle of the mandible, from one condyle to the other.
+
+    The body part is ``body_points`` (from :func:`find_arch`). Each ramus is
+    traced upwards from a little above the bite, where nothing but ramus
+    stands beside the teeth, as the centre of the mandible's section on that
+    side every ``step_mm``; where the ramus forks into coronoid and condylar
+    processes the trace follows the back one, which ends at the condyle. A
+    spline through the whole set joins the body to each ramus round the angle.
+    Returned right condyle first (patient right is -x), as points
+    ``spacing_mm`` apart along the trace.
+    """
+    import SimpleITK as sitk
+
+    spacing, origin, mask = volume.spacing, volume.origin, isolation.mask
+    body = np.asarray(body_points, dtype=float)
+    body = body[np.argsort(body[:, 0])]
+    centre_x = float(np.mean(body[:, 0]))
+    bite = isolation.bite
+    bite_level = (
+        float(np.median(bite.heights_mm[bite.has_teeth]))
+        if bite is not None
+        else float(body[0, 2]) + 20.0
+    )
+    k_step = max(int(round(step_mm / spacing[2])), 1)
+    k_start = max(int(np.ceil((bite_level + 6.0 - origin[2]) / spacing[2])), 0)
+    xs = origin[0] + np.arange(mask.shape[2]) * spacing[0]
+    pixel_area = float(spacing[0] * spacing[1])
+    rami = []
+    for side in (-1.0, 1.0):
+        columns = ((xs - centre_x) * side > 15.0)[None, :]
+        trail, previous = [], None
+        for k in range(k_start, mask.shape[0], k_step):
+            section = mask[k] & columns
+            if not section.any():
+                if trail:
+                    break
+                continue
+            labels = sitk.GetArrayFromImage(
+                sitk.ConnectedComponent(sitk.GetImageFromArray(section.astype(np.uint8)), True)
+            )
+            found = []
+            for label in range(1, int(labels.max()) + 1):
+                rows, cols = np.nonzero(labels == label)
+                if len(rows) * pixel_area < 4.0:
+                    continue
+                found.append(
+                    np.array([origin[0] + cols.mean() * spacing[0], origin[1] + rows.mean() * spacing[1]])
+                )
+            if previous is not None:
+                found = [c for c in found if np.linalg.norm(c - previous) < 15.0]
+            if not found:
+                if trail:
+                    break
+                continue
+            best = max(found, key=lambda c: c[1])  # the back process: the condyle
+            previous = best
+            trail.append([best[0], best[1], origin[2] + k * spacing[2]])
+        trail = np.array(trail, dtype=float).reshape(-1, 3)
+        if len(trail) >= 3:
+            smooth = trail.copy()
+            smooth[1:-1, :2] = (trail[:-2, :2] + trail[1:-1, :2] + trail[2:, :2]) / 3.0
+            trail = smooth
+        rami.append(trail)
+    right, left = rami
+    return even_points(np.vstack([right[::-1], body, left]), spacing_mm)
+
+
+def even_points(points: np.ndarray, spacing_mm: float) -> np.ndarray:
+    """Points evenly spaced along a polyline, both ends kept."""
+    points = np.asarray(points, dtype=float)
+    step = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    keep = np.concatenate([[True], step > 1e-9])
+    points, s = points[keep], np.concatenate([[0.0], np.cumsum(step[step > 1e-9])])
+    if len(points) < 2:
+        return points
+    count = max(int(round(s[-1] / spacing_mm)), 2)
+    wanted = np.linspace(0.0, s[-1], count + 1)
+    return np.column_stack([np.interp(wanted, s, points[:, k]) for k in range(3)])
+
+
 def frames_for(points: np.ndarray, step_mm: float = 0.25):
     """Arch frames through ``points``, for :func:`isolate_mandible`."""
     from . import cpr

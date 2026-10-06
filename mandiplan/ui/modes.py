@@ -6,7 +6,7 @@ from enum import Enum
 
 
 class Mode(Enum):
-    # In the order of the workflow: the toolbar lists them this way.
+    # In the order of the workflow: the Tools menu lists them this way.
     NAVIGATE = "Navigate"
     ARCH = "Arch curve"
     LANDMARK = "Margin point"
@@ -24,8 +24,8 @@ class Mode(Enum):
                 "Click three points; the angle is measured at the second one."
             ),
             Mode.ARCH: (
-                "Click 5–10 points in the axial view along the buccal cortex, "
-                "where the plate will sit — not through the dental arch."
+                "Click points along the jaw on the axial slice (Slices tab); the "
+                "first click replaces the automatic curve."
             ),
             Mode.PLATE: "Click along the bone in the 3-D view to draw the plate path.",
             Mode.LANDMARK: "Click on the bone to mark a tumour margin point.",

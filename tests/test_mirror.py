@@ -7,7 +7,12 @@ import pytest
 
 from helpers import rel_error
 from make_phantom import PhantomSpec, make_phantom
-from mandiplan.geometry.mirror import estimate_midsagittal_plane, mirror_coverage
+from mandiplan.geometry.mirror import (
+    _symmetry_score,
+    estimate_midsagittal_plane,
+    mirror_coverage,
+    reported_symmetry,
+)
 from mandiplan.geometry.resection import CutPlane
 from mandiplan.render.surface import (
     clip_closed,
@@ -102,3 +107,16 @@ def test_reflection_is_its_own_inverse(plane):
     assert np.allclose(plane.reflect(plane.reflect(points)), points, atol=1e-9)
     on_plane = plane.reflect(points) * 0.5 + points * 0.5
     assert np.allclose(plane.signed_distance(on_plane), 0.0, atol=1e-9)
+
+
+def test_the_reported_symmetry_forgives_a_millimetre(phantom, spec, plane):
+    """A jaw mirrored a millimetre off still lands on its own thin cortex:
+    the figure shown to the surgeon allows for that; the search does not."""
+    from mandiplan.geometry.mirror import _bone_points
+
+    points = _bone_points(phantom, spec.half_max_value)[::10]
+    shifted = type(plane)(plane.point + plane.normal * 1.0, plane.normal, 0.0)
+    strict = _symmetry_score(points, phantom, spec.half_max_value, shifted)
+    forgiving = reported_symmetry(points, phantom, spec.half_max_value, shifted)
+    assert forgiving > strict
+    assert forgiving > 0.95

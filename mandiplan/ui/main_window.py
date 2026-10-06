@@ -12,11 +12,13 @@ from PyQt6.QtWidgets import (
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
+    QScrollArea,
     QSizePolicy,
     QSlider,
     QSplitter,
@@ -36,6 +38,7 @@ from ..exporting import (
     write_surface_stl,
     write_bending_guide,
 )
+from ..geometry import cpr
 from ..geometry.cpr import cross_section_world_point
 from ..geometry.measure import angle_deg, distance_mm, format_mm
 from .image_view import ImageView, Overlay
@@ -50,15 +53,17 @@ from .panels import (
 )
 from .icons import icon
 from .session import Session
-from .theme import card, set_role
+from .theme import set_role
 from .view3d import View3D
-from .workflow_bar import WorkflowBar
+from ..workflow import workflow_status
 
 SEED_COLOUR = QColor(90, 220, 150)
 CURVE_COLOUR = QColor(60, 190, 130)
 MEASURE_COLOUR = QColor(255, 225, 80)
 CUT_COLOUR = QColor(230, 90, 90)
 CURSOR_COLOUR = QColor(120, 170, 255)
+#: Half the length of a cut's line on the panoramic, mm: a body's height.
+CUT_LINE_HALF_MM = 25.0
 
 AXIS_LABELS = {
     "axial": ("x — patient left (mm)", "y — posterior (mm)"),
@@ -172,32 +177,45 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
 
     def _build_docks(self) -> None:
+        # The steps, in order, one page each. The page headers are the only
+        # navigation and carry each step's tick; there is no second step bar.
         self.toolbox = QToolBox()
         self.volume_panel = VolumePanel(self.session)
         self.arch_panel = ArchPanel(self.session)
         self.resection_panel = ResectionPanel(self.session)
         self.reconstruction_panel = ReconstructionPanel(self.session)
         self.plate_panel = PlatePanel(self.session)
-        self.toolbox.addItem(self.volume_panel, "1 · Volume and bone threshold")
-        self.toolbox.addItem(self.arch_panel, "2 · Arch curve and reformat")
-        self.toolbox.addItem(self.resection_panel, "3 · Resection planning")
-        self.toolbox.addItem(self.reconstruction_panel, "4 · Mirror reconstruction")
-        self.toolbox.addItem(self.plate_panel, "5 · Plate path and bends")
         self.export_panel = ExportPanel(self.session)
-        self.toolbox.addItem(self.export_panel, "6 · Export")
+        for panel in (
+            self.volume_panel,
+            self.arch_panel,
+            self.resection_panel,
+            self.reconstruction_panel,
+            self.plate_panel,
+            self.export_panel,
+        ):
+            # Scrolled, so a long page never widens the dock under the view.
+            page = QScrollArea()
+            page.setWidget(panel)
+            page.setWidgetResizable(True)
+            page.setFrameShape(QFrame.Shape.NoFrame)
+            page.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self.toolbox.addItem(page, "")
         self.export_panel.export_requested.connect(self.export_item)
-
-        self.workflow_bar = WorkflowBar(self.session)
-        planning = QWidget()
-        planning_layout = QVBoxLayout(planning)
-        planning_layout.setContentsMargins(0, 0, 0, 0)
-        planning_layout.addWidget(self.workflow_bar)
-        planning_layout.addWidget(self.toolbox, 1)
-
-        card(self.workflow_bar)
+        self._refresh_step_titles()
+        for signal in (
+            self.session.volume_changed,
+            self.session.surface_changed,
+            self.session.arch_changed,
+            self.session.resection_changed,
+            self.session.reconstruction_changed,
+            self.session.plate_changed,
+            self.session.mandible_changed,
+        ):
+            signal.connect(self._refresh_step_titles)
 
         self.planning_dock = QDockWidget("Planning", self)
-        self.planning_dock.setWidget(planning)
+        self.planning_dock.setWidget(self.toolbox)
         self.planning_dock.setAllowedAreas(
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
@@ -211,14 +229,20 @@ class MainWindow(QMainWindow):
         self.planning_dock.setMaximumWidth(560)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.planning_dock)
 
-        self.toolbox.currentChanged.connect(self.workflow_bar.set_page)
-        self.workflow_bar.step_selected.connect(self.toolbox.setCurrentIndex)
         self.volume_panel.load_requested.connect(self.open_dicom_folder)
         for panel in (
             self.arch_panel, self.resection_panel, self.plate_panel, self.reconstruction_panel
         ):
             panel.mode_requested.connect(self.set_mode)
         self.plate_panel.overlays_changed.connect(self.view3d.set_plate_overlays)
+
+    def _refresh_step_titles(self) -> None:
+        """Number, name and a tick for each finished step; the step's state
+        in full as its tooltip."""
+        for status in workflow_status(self.session):
+            mark = "  \u2713" if status.done else ""
+            self.toolbox.setItemText(status.index, f"{status.index + 1} · {status.title}{mark}")
+            self.toolbox.setItemToolTip(status.index, status.summary)
 
     def _build_actions(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
@@ -286,10 +310,14 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(wordmark)
         toolbar.addSeparator()
 
-        # -- workflow tools, mutually exclusive ----------------------------
+        # -- tools, mutually exclusive -------------------------------------
+        # Every tool is in the Tools menu with its key. The toolbar carries
+        # only the ones used in every step; a step's own tool is the button
+        # in its panel, so it is not offered twice.
         self.mode_actions: dict[Mode, QAction] = {}
         group = QActionGroup(self)
         group.setExclusive(True)
+        tools_menu = self.menuBar().addMenu("&Tools")
         mode_icons = {
             Mode.NAVIGATE: ("navigate", "1"),
             Mode.ARCH: ("arch", "2"),
@@ -307,15 +335,17 @@ class MainWindow(QMainWindow):
             action.setToolTip(f"{mode.value} ({key}) — {mode.hint}")
             action.triggered.connect(lambda _c, m=mode: self.set_mode(m))
             group.addAction(action)
-            toolbar.addAction(action)
+            tools_menu.addAction(action)
+            if mode in (Mode.NAVIGATE, Mode.MEASURE, Mode.ANGLE):
+                toolbar.addAction(action)
             self.mode_actions[mode] = action
 
-        toolbar.addSeparator()
+        tools_menu.addSeparator()
         add_plane = QAction(icon("resection"), "Add cut", self)
         add_plane.setShortcut("Ctrl+Shift+A")
         add_plane.setToolTip("Add a resection cutting plane (Ctrl+Shift+A)")
         add_plane.triggered.connect(self.add_cut_plane)
-        toolbar.addAction(add_plane)
+        tools_menu.addAction(add_plane)
         self.resection_panel.add_plane.clicked.connect(self.add_cut_plane)
 
         # -- right-hand group: history, view, help, panel -------------------
@@ -323,6 +353,7 @@ class MainWindow(QMainWindow):
         spacer.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
+        spacer.setStyleSheet("background: transparent;")
         toolbar.addWidget(spacer)
 
         for label, direction, key in (
@@ -384,6 +415,7 @@ class MainWindow(QMainWindow):
         session.volume_changed.connect(self.refresh_slices)
         session.volume_changed.connect(self._reset_slice_sliders)
         session.arch_changed.connect(self.refresh_slices)
+        session.arch_laid.connect(self._show_axial_level)
         session.reformat_changed.connect(self.refresh_reformats)
         session.resection_changed.connect(self.refresh_reformats)
         session.message.connect(self.show_message)
@@ -421,6 +453,11 @@ class MainWindow(QMainWindow):
                 button.setChecked(mode == owner)
                 button.blockSignals(False)
             self.hint_label.setText(f"{mode.value}: {mode.hint}")
+            # Each tool works in one view: show it.
+            if mode == Mode.ARCH:
+                self.tabs.setCurrentIndex(1)
+            elif mode in (Mode.PLATE, Mode.LANDMARK, Mode.SCULPT):
+                self.tabs.setCurrentIndex(0)
         finally:
             self._setting_mode = False
 
@@ -456,11 +493,12 @@ class MainWindow(QMainWindow):
             self,
             f"{APP_NAME} — quick guide",
             "1  Scan: File › Open DICOM folder (or Open sample scan). Set the bone "
-            "threshold with the slider until the bone looks right.\n"
-            "2  Arch: click 5–10 points along the outer face of the mandible in the "
-            "axial view. The mandible is then separated from the skull by itself.\n"
-            "3  Resection: Add cut twice, drag each cut along the jaw, check the "
-            "red segment.\n"
+            "threshold with the slider until the bone looks right. The mandible is "
+            "separated from the skull by itself.\n"
+            "2  Arch curve: laid along the mandible, condyle to condyle, by itself. "
+            "Draw your own on the axial slice only if it is wrong.\n"
+            "3  Cuts: Add cut twice, drag each cut along the jaw, check the red "
+            "segment, Execute cut.\n"
             "4  Reconstruction: Reconstruct from the healthy side. Optionally smooth "
             "the junctions or brush on the jaw (key 7).\n"
             "5  Plate: draw the plate path on the jaw, pick the plate, read the "
@@ -515,6 +553,15 @@ class MainWindow(QMainWindow):
             slider.blockSignals(False)
         self.refresh_slices()
 
+    def _show_axial_level(self, z_mm: float) -> None:
+        """Move the axial slice to a height, mm (the mandibular body's)."""
+        volume = self.session.volume
+        if volume is None:
+            return
+        index = int(round((z_mm - float(volume.origin[2])) / float(volume.spacing[2])))
+        slider = self.slice_sliders["axial"]
+        slider.setValue(int(np.clip(index, slider.minimum(), slider.maximum())))
+
     def _slice_world_coord(self, name: str) -> float:
         volume = self.session.volume
         axis = {"axial": 2, "coronal": 1, "sagittal": 0}[name]
@@ -556,7 +603,8 @@ class MainWindow(QMainWindow):
         session = self.session
         axial = self.slice_views["axial"]
         overlays: list[Overlay] = []
-        if session.arch_seeds:
+        # The automatic curve's points were not clicked; only drawn ones show.
+        if session.arch_seeds and session.arch_source == "drawn":
             overlays.append(
                 Overlay(
                     points=np.vstack(session.arch_seeds)[:, :2],
@@ -603,30 +651,42 @@ class MainWindow(QMainWindow):
         self.s_slider.blockSignals(False)
         self.s_spin.blockSignals(False)
 
+        frames = session.frames
         overlays = self._measure_overlays("panoramic")
-        top = session.panoramic.y0 + session.panoramic.height_mm
+        # The curve itself, where it runs through the jaw.
         overlays.append(
             Overlay(
-                points=np.array(
-                    [[session.cross_section_s, session.panoramic.y0],
-                     [session.cross_section_s, top]]
+                points=np.column_stack([cpr.sheet_x(frames), frames.points[:, 2]]),
+                colour=CURVE_COLOUR,
+                kind="line",
+                width=1.0,
+            )
+        )
+        # The cross-section shown on the right, and each cut, where they
+        # cross the panoramic: upright on the body, level up a ramus.
+        index = frames.index_of(session.cross_section_s)
+        overlays.append(
+            Overlay(
+                points=cpr.sheet_line(
+                    frames, session.cross_section_s, frames.points[index],
+                    frames.tangents[index], 0.5 * session.cpr.cross_width_mm,
                 ),
                 colour=CURSOR_COLOUR,
                 kind="line",
                 width=1.5,
             )
         )
-        report = session.report
-        if report is not None and np.isfinite(report.arc_length_mm):
-            for s in (report.entry_s_mm, report.exit_s_mm):
-                overlays.append(
-                    Overlay(
-                        points=np.array([[s, session.panoramic.y0], [s, top]]),
-                        colour=CUT_COLOUR,
-                        kind="line",
-                        width=2.0,
-                    )
+        for placement, plane in zip(session.placements, session.planes):
+            overlays.append(
+                Overlay(
+                    points=cpr.sheet_line(
+                        frames, placement.s_mm, plane.origin, plane.normal, CUT_LINE_HALF_MM
+                    ),
+                    colour=CUT_COLOUR,
+                    kind="line",
+                    width=2.0,
                 )
+            )
         self.panoramic_view.overlays = overlays
         self.panoramic_view.update()
         self.cross_view.overlays = self._measure_overlays("cross")
@@ -673,8 +733,8 @@ class MainWindow(QMainWindow):
                     session.frames, session.cross_section_s, x_mm, y_mm
                 )
             )
-        elif name == "panoramic":
-            self._set_cross_section(x_mm)
+        elif name == "panoramic" and session.frames is not None:
+            self._set_cross_section(cpr.s_on_sheet(session.frames, x_mm, y_mm))
 
     def _record_measure_point(self, name: str, x_mm: float, y_mm: float) -> None:
         wanted = 3 if self.mode == Mode.ANGLE else 2
@@ -748,29 +808,12 @@ class MainWindow(QMainWindow):
     # -- resection ---------------------------------------------------------
 
     def add_cut_plane(self) -> None:
-        session = self.session
-        if session.surface is None:
-            self.show_message("Load a volume first.")
-            return
-        bounds = session.surface.GetBounds()
-        centre = np.array(
-            [
-                0.5 * (bounds[0] + bounds[1]),
-                0.5 * (bounds[2] + bounds[3]),
-                0.5 * (bounds[4] + bounds[5]),
-            ]
-        )
-        normal = np.array([1.0, 0.0, 0.0])
-        origin = centre
-        if session.frames is not None:
-            length = session.frames.length_mm
-            fraction = 0.35 if not session.planes else 0.65
-            index = session.frames.index_of(length * fraction)
-            origin = session.frames.points[index].copy()
-            normal = session.frames.tangents[index].copy()
-            if session.planes:
-                normal = -normal
-        session.add_plane(origin, normal)
+        if self.session.add_default_cut():
+            plane = self.session.planes[-1]
+            self.show_message(
+                f"{plane.label} added. Drag it along the jaw in the 3-D view, or set "
+                "its position and angles in the panel."
+            )
         self.view3d.render()
 
     def _on_plane_translated(self, index: int, origin) -> None:

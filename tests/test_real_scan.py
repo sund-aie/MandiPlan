@@ -239,3 +239,63 @@ def test_opening_the_sample_separates_the_mandible_by_itself(qt_app, tmp_path):
     assert reader.GetOutput().GetNumberOfPoints() == session.surface.GetNumberOfPoints() or (
         reader.GetOutput().GetNumberOfCells() == session.surface.GetNumberOfCells()
     )
+
+
+def test_the_arch_curve_is_laid_condyle_to_condyle_and_cuts_need_nothing_drawn(qt_app):
+    """Open the sample and press Add cut twice: the reported failure was that
+    no plane appeared until an arch curve had been drawn by hand."""
+    from mandiplan.geometry import cpr
+    from mandiplan.ui.session import Session
+
+    session = Session()
+    laid = []
+    session.arch_laid.connect(laid.append)
+    session.load_sample_scan()
+    assert session.frames is None
+    assert session.add_default_cut()
+    assert session.add_default_cut()
+    assert session.arch_source == "auto"
+    assert len(session.planes) == 2
+
+    frames = session.frames
+    body_z = laid[0]
+    # The curve climbs both rami to the condyles and runs through bone.
+    assert frames.points[0, 2] > body_z + 50.0 and frames.points[-1, 2] > body_z + 50.0
+    assert frames.points[0, 0] < 0.0 < frames.points[-1, 0]  # right condyle first
+    kk, jj, ii = np.nonzero(session.mandible.mask)
+    bone = session.volume.origin + np.column_stack([ii, jj, kk]) * session.volume.spacing
+    for s in np.linspace(0.0, frames.length_mm, 25):
+        point = frames.point_at(float(s))
+        assert np.min(np.linalg.norm(bone[::5] - point, axis=1)) < 5.0, s
+
+    # Both cuts on the body, bounding a segment of the size of a typical
+    # lateral resection.
+    start, end = cpr.body_span(frames)
+    assert all(start < p.s_mm < end for p in session.placements)
+    assert 15.0 < session.report.arc_length_mm < 50.0
+    # The panoramic is an OPG: the rami stand up in it rather than being
+    # smeared along it, so it is far narrower than the curve is long.
+    assert session.panoramic.width_mm < 0.8 * frames.length_mm
+    # The cross-section opens on the body, not at a condyle.
+    assert start < session.cross_section_s < end
+
+    # Clicking a curve of one's own replaces the automatic one, and the cuts
+    # stay on the same part of the jaw although the new curve starts
+    # somewhere else entirely. Undo brings the automatic curve back.
+    length = frames.length_mm
+    before = [plane.origin.copy() for plane in session.planes]
+    session.add_arch_seed(frames.point_at(start))
+    assert session.arch_source == "drawn" and session.frames is None
+    for s in np.linspace(start, end, 6)[1:]:
+        session.add_arch_seed(frames.point_at(float(s)))
+    assert session.frames.length_mm < 0.8 * length
+    # Within the few millimetres a spline through six clicks strays from the
+    # automatic curve; by arc length alone they would land 60 mm away.
+    for plane, origin in zip(session.planes, before):
+        assert np.linalg.norm(plane.origin - origin) < 5.0
+    for _ in range(6):
+        session.undo()
+    assert session.arch_source == "auto"
+    assert session.frames.length_mm == pytest.approx(length)
+    for plane, origin in zip(session.planes, before):
+        assert np.linalg.norm(plane.origin - origin) < 0.5
