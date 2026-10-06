@@ -129,6 +129,11 @@ class VolumePanel(QWidget):
         self.surface_info.setWordWrap(True)
         self.mandible_info = QLabel("")
         self.mandible_info.setWordWrap(True)
+        self.separate_again = QPushButton("Separate again along my arch curve")
+        self.separate_again.setToolTip(
+            "Use the arch curve you drew (step 2) instead of the one found "
+            "automatically, if the separation missed part of the mandible"
+        )
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.load_button)
@@ -137,32 +142,47 @@ class VolumePanel(QWidget):
         layout.addWidget(self.surface_info)
         layout.addWidget(self.separate)
         layout.addWidget(self.mandible_info)
+        layout.addWidget(self.separate_again)
         layout.addStretch(1)
 
         self.load_button.clicked.connect(self.load_requested)
         self.threshold_panel.threshold_changed.connect(session.set_threshold)
         self.separate.toggled.connect(session.set_separate_mandible)
+        self.separate_again.clicked.connect(session.separate_along_arch)
         session.volume_changed.connect(self.refresh_volume)
         session.surface_changed.connect(self.refresh_surface)
         session.mandible_changed.connect(self.refresh_mandible)
+        session.volume_changed.connect(self.refresh_mandible)
         session.arch_changed.connect(self.refresh_mandible)
         self.refresh_mandible()
 
     def refresh_mandible(self) -> None:
         session = self.session
-        if not session.separate_mandible:
+        self.separate.blockSignals(True)
+        self.separate.setChecked(session.separate_mandible)
+        self.separate.blockSignals(False)
+        self.separate_again.setEnabled(
+            session.separate_mandible and session.volume is not None and session.frames is not None
+        )
+        if session.volume is None:
+            self.mandible_info.setText("The mandible is separated from the skull when a scan is opened.")
+            set_role(self.mandible_info, "empty")
+        elif not session.separate_mandible:
             self.mandible_info.setText("Showing all bone; cuts may reach the skull.")
             set_role(self.mandible_info, "warning")
         elif session.mandible is not None:
-            self.mandible_info.setText(session.mandible.summary())
-            set_role(self.mandible_info, "hint")
-        elif session.frames is None:
-            self.mandible_info.setText(
-                "The mandible is separated automatically once the arch curve is drawn."
+            how = (
+                "Found in the scan automatically."
+                if session.mandible_source == "auto"
+                else "Separated along your arch curve."
             )
-            set_role(self.mandible_info, "empty")
+            self.mandible_info.setText(f"{session.mandible.summary()} {how}")
+            set_role(self.mandible_info, "hint")
+        elif session.mandible_problem:
+            self.mandible_info.setText(session.mandible_problem)
+            set_role(self.mandible_info, "warning")
         else:
-            self.mandible_info.setText("Separating the mandible…")
+            self.mandible_info.setText("Separating the mandible from the skull…")
             set_role(self.mandible_info, "hint")
 
     def refresh_volume(self) -> None:
@@ -1088,6 +1108,7 @@ class ExportPanel(QWidget):
 
     #: (key, button text, what it is for)
     ITEMS = (
+        ("mandible", "Mandible (STL)", "The patient's mandible on its own, separated from the skull."),
         ("jaw", "Reconstructed jaw (STL)", "The mandible as rebuilt, to print as a model."),
         ("segment", "Mirrored segment only (STL)", "Just the part that fills the defect."),
         ("fragment", "Resected segment (STL)", "The bone the cuts remove."),
@@ -1124,6 +1145,7 @@ class ExportPanel(QWidget):
             session.resection_changed,
             session.plate_changed,
             session.volume_changed,
+            session.mandible_changed,
         ):
             signal.connect(self.refresh)
         self.refresh()
@@ -1131,6 +1153,7 @@ class ExportPanel(QWidget):
     def refresh(self) -> None:
         session = self.session
         ready = {
+            "mandible": session.mandible is not None and session.surface is not None,
             "jaw": session.reconstruction is not None,
             "segment": session.reconstruction is not None,
             "fragment": bool(session.planes) and session.surface is not None,

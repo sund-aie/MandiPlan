@@ -104,6 +104,7 @@ class WorkflowBar(QWidget):
             session.resection_changed,
             session.reconstruction_changed,
             session.plate_changed,
+            session.mandible_changed,
         ):
             signal.connect(self.refresh)
         self.refresh()

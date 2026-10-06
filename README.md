@@ -328,27 +328,19 @@ thresholded.
 points*, and click 5–10 points along the jaw in the axial view. A cubic spline
 is fitted through them and resampled at uniform **arc length**.
 
-Once the curve is drawn the mandible is **separated from the rest of the
-skull** by itself. With the teeth in occlusion a real scan is one connected
-mass of bone — mandible, maxilla and skull — and a cutting plane, being
-infinite, would take a slice of all three. MandiPlan finds the bite along the
-arch (the dark line between bright upper and lower crowns), cuts only the tooth
-contacts along it, and splits any remaining contact at the jaw joints at its
-thinnest, darkest point. The bone panel reports the separated mandible's
-volume; the checkbox there shows all bone again if you need it.
-
-Draw the curve along the buccal cortex, where the plate will actually sit — not
-through the dental arch. Arc length is the right quantity for a plate, but only
-if the curve follows the path the plate will take.
-
-The *Panoramic (CPR)* tab then shows the jaw flattened along that curve. Its
-x-axis is arc length in millimetres and its y-axis is superior–inferior
-position in millimetres, so the view is 1:1 and measurement in it is direct.
-Each column aggregates a slab (10 mm by default) across the buccolingual
-direction, either as maximum intensity (default, crisper cortical outline) or
-as a mean ray-sum that looks like an OPG. Below it is a buccolingual
-cross-section at any point along the curve; ← and → step it along, Shift for
-5 mm steps.
+The mandible is **separated from the rest of the skull** as soon as the scan
+is open — you do not need to draw anything first. With the teeth in occlusion
+a real scan is one connected mass of bone — mandible, maxilla and skull — and a
+cutting plane, being infinite, would take a slice of all three. MandiPlan finds
+the mandible itself (the lowest wide U of bone in the axial sections, open
+towards the back, which the hyoid below it is too small to be), finds the bite
+along it (the dark line between bright upper and lower crowns), cuts only the
+tooth contacts along that line, and splits any remaining contact at the jaw
+joints at its thinnest, darkest point. The bone panel reports the separated
+mandible's volume. If a scan defeats the automatic search, draw the arch curve
+and the separation follows it; *Separate again along my arch curve* redoes it
+along your curve at any time, and the checkbox shows all bone again. *Export →
+Mandible (STL)* writes the separated mandible on its own.
 
 **Measuring, at any step.** Choose *Measure* and click two points, or *Angle* and click
 three — the angle is reported at the middle point, which is how you record a

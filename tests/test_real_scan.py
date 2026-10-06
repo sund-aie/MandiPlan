@@ -14,7 +14,12 @@ import pytest
 import vtk
 
 from mandiplan.geometry import cpr
-from mandiplan.geometry.mandible import isolate_mandible, masked_bone_volume
+from mandiplan.geometry.mandible import (
+    find_arch,
+    frames_for,
+    isolate_mandible,
+    masked_bone_volume,
+)
 from mandiplan.geometry.mirror import estimate_midsagittal_plane
 from mandiplan.geometry.plate_profile import point_in_polygon
 from mandiplan.geometry.resection import CutPlane
@@ -153,8 +158,7 @@ def test_the_session_separates_the_sample_mandible_and_cuts_only_it(qt_app):
     _, _, _, arch_points = load_sample()
     for point in arch_points:
         session.add_arch_seed(point)
-    # Separation waits for the clicks to stop; a cut does not wait for it.
-    assert session.mandible is None
+    # Separation runs on a timer after loading; a cut does not wait for it.
     for fraction, sign in ((0.22, 1.0), (0.40, -1.0)):
         i = session.frames.index_of(fraction * session.frames.length_mm)
         session.add_plane(session.frames.points[i], sign * session.frames.tangents[i])
@@ -167,3 +171,63 @@ def test_the_session_separates_the_sample_mandible_and_cuts_only_it(qt_app):
     session.set_separate_mandible(False)
     assert session.mandible is None
     assert session.surface_volume_mm3 == pytest.approx(whole, rel=1e-6)
+
+
+def test_the_mandible_is_found_without_an_arch_curve(scan, isolation):
+    """Opening a scan is enough: the arch is found in the bone itself."""
+    volume, threshold, frames = scan
+    points = find_arch(volume, threshold)
+    assert points is not None and len(points) >= 8
+    # Through the mandibular body: every point is within a few mm of bone
+    # the hand-drawn separation calls mandible.
+    kk, jj, ii = np.nonzero(isolation.mask)
+    mandible = volume.origin + np.column_stack([ii, jj, kk]) * volume.spacing
+    for point in points:
+        assert np.min(np.linalg.norm(mandible[::7] - point, axis=1)) < 4.0
+    automatic = isolate_mandible(volume, threshold, frames_for(points))
+    dice = 2 * (automatic.mask & isolation.mask).sum() / (automatic.mask.sum() + isolation.mask.sum())
+    assert automatic.separated
+    assert dice > 0.9
+
+
+def test_a_scan_with_no_mandible_in_it_says_so():
+    from mandiplan.geometry.volume import Volume
+
+    rng = np.random.default_rng(0)
+    blob = Volume(rng.normal(0.0, 10.0, (40, 60, 60)).astype(np.float32), np.ones(3))
+    blob.array[10:30, 20:40, 20:40] = 1000.0  # a cube of "bone", no arch
+    assert find_arch(blob, 500.0) is None
+
+
+def test_opening_the_sample_separates_the_mandible_by_itself(qt_app, tmp_path):
+    """No arch curve drawn: the mandible is still cut free of the skull."""
+    import time
+
+    import vtk
+
+    from mandiplan.constants import ATTRIBUTION
+    from mandiplan.exporting import read_stl_attribution, write_surface_stl
+    from mandiplan.ui.session import Session
+
+    session = Session()
+    session.load_sample_scan()
+    whole = session.surface_volume_mm3
+    assert session.frames is None
+    # It runs by itself shortly after loading; wait for it as the window would.
+    deadline = time.monotonic() + 20.0
+    while session.mandible is None and time.monotonic() < deadline:
+        qt_app.processEvents()
+    assert session.mandible is not None and session.mandible.separated
+    assert session.mandible_source == "auto"
+    assert session.surface_volume_mm3 < 0.6 * whole
+    assert 35_000 < session.mandible.volume_mm3 < 75_000
+
+    # The mandible on its own, as a printable file.
+    path = write_surface_stl(tmp_path / "mandible.stl", session.surface)
+    assert ATTRIBUTION[:40] in read_stl_attribution(path)
+    reader = vtk.vtkSTLReader()
+    reader.SetFileName(str(path))
+    reader.Update()
+    assert reader.GetOutput().GetNumberOfPoints() == session.surface.GetNumberOfPoints() or (
+        reader.GetOutput().GetNumberOfCells() == session.surface.GetNumberOfCells()
+    )

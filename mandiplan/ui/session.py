@@ -24,7 +24,13 @@ from ..geometry.mirror import (
     estimate_midsagittal_plane,
     mirror_coverage,
 )
-from ..geometry.mandible import MandibleIsolation, isolate_mandible, masked_bone_volume
+from ..geometry.mandible import (
+    MandibleIsolation,
+    find_arch,
+    frames_for,
+    isolate_mandible,
+    masked_bone_volume,
+)
 from ..geometry.sculpt import SurfaceSculptor, vertex_normals
 from ..geometry.mesh_io import MeshLoadError
 from ..geometry.plate import PlatePlan, compute_plate_plan, fair_plate_path
@@ -153,7 +159,14 @@ class Session(QObject):
         #: Separate the mandible from the skull once the arch curve exists.
         self.separate_mandible = True
         self.mandible: MandibleIsolation | None = None
-        self._mandible_key = None
+        #: "auto" when the mandible was found in the scan by itself, "arch"
+        #: when it was separated along the arch curve as drawn.
+        self.mandible_source = ""
+        #: Why the mandible could not be separated, when it could not.
+        self.mandible_problem = ""
+        self._auto_arch: np.ndarray | None = None
+        self._auto_arch_scan = None
+        self._separation_failed: set = set()
         #: The scan with the non-mandible bone removed; ``None`` when nothing
         #: had to be removed. See :attr:`bone_volume`.
         self._bone_volume: Volume | None = None
@@ -265,6 +278,8 @@ class Session(QObject):
         self.coverage = None
         self._clear_reconstruction()
         self._drop_mandible()
+        self._separation_failed.clear()
+        self._auto_arch_scan = None
         self._undo.clear()
         self.volume_changed.emit()
         for warning in geometry.warnings:
@@ -316,56 +331,87 @@ class Session(QObject):
             self.rebuild_surface()
 
     def _schedule_mandible(self) -> None:
-        if self.separate_mandible and self.frames is not None:
+        if self.separate_mandible and self.volume is not None and self.mandible is None:
             self._mandible_timer.start(self.MANDIBLE_DELAY_MS)
-
-    def _mandible_inputs(self):
-        seeds = tuple(tuple(np.round(seed, 4)) for seed in self.arch_seeds)
-        return (id(self.volume), round(float(self.threshold), 6), seeds)
 
     def ensure_mandible(self) -> None:
         """Separate the mandible from the rest of the skull, if it is not yet.
 
-        Runs by itself shortly after the arch curve or the threshold changes,
+        Runs by itself shortly after a scan is opened or the threshold moves,
         and before any step that needs the mandible alone (cuts, the mirror,
-        the plate). See ``geometry/mandible.py`` for how.
+        the plate). The mandible is found in the scan automatically; if it
+        cannot be, the arch curve the operator draws is used instead. See
+        ``geometry/mandible.py`` for how.
         """
         self._mandible_timer.stop()
-        if self.volume is None or self.frames is None or not self.separate_mandible:
+        if self.volume is None or not self.separate_mandible or self.mandible is not None:
             return
-        key = self._mandible_inputs()
-        if key == self._mandible_key:
+        scan = (id(self.volume), round(float(self.threshold), 6))
+        if self._auto_arch_scan != scan:
+            self._auto_arch_scan = scan
+            self._auto_arch = find_arch(self.volume, self.threshold)
+        if self._auto_arch is not None and (scan, "auto") not in self._separation_failed:
+            if self._separate(frames_for(self._auto_arch), "auto"):
+                return
+        if self.frames is not None and (scan, self._arch_key()) not in self._separation_failed:
+            self._separate(self.frames, "arch")
             return
+        if self.frames is None and not self.mandible_problem:
+            self.mandible_problem = (
+                "The mandible could not be found in this scan automatically. Draw "
+                "the arch curve (step 2) and it will be separated along it."
+            )
+            self.message.emit(self.mandible_problem)
+            self.mandible_changed.emit()
+
+    def separate_along_arch(self) -> None:
+        """Separate the mandible again, following the arch curve as drawn."""
+        if self.volume is None or self.frames is None:
+            self.message.emit("Draw the arch curve first; the separation follows it.")
+            return
+        self.separate_mandible = True
+        self._separate(self.frames, "arch")
+
+    def _arch_key(self):
+        return ("arch", tuple(tuple(np.round(seed, 4)) for seed in self.arch_seeds))
+
+    def _separate(self, frames, source: str) -> bool:
+        """Run the separation along ``frames``; False if it could not be done."""
+        scan = (id(self.volume), round(float(self.threshold), 6))
         self.busy.emit(True)
         try:
-            isolation = isolate_mandible(self.volume, self.threshold, self.frames)
+            isolation = isolate_mandible(self.volume, self.threshold, frames)
         except ValueError as error:
+            self._separation_failed.add((scan, "auto" if source == "auto" else self._arch_key()))
+            self.mandible_problem = str(error)
             self.message.emit(str(error))
-            return
+            self.mandible_changed.emit()
+            return False
         finally:
             self.busy.emit(False)
         had_mask = self._bone_volume is not None
         self.mandible = isolation
-        self._mandible_key = key
+        self.mandible_source = source
+        self.mandible_problem = ""
         if isolation.separated:
             self._bone_volume = masked_bone_volume(self.volume, isolation)
             surface = SurfaceExtractor(self._bone_volume).update(self.threshold)
             self._set_surface(surface)
+            self.message.emit(isolation.summary())
         else:
             self._bone_volume = None
             if had_mask:
                 self._set_surface(
                     self._extractor.update(self.threshold, keep_fraction=self.SPECK_FRACTION)
                 )
-        if isolation.separated:
-            self.message.emit(isolation.summary())
         self.mandible_changed.emit()
+        return True
 
     def _drop_mandible(self) -> None:
         self._mandible_timer.stop()
-        changed = self.mandible is not None
+        changed = self.mandible is not None or bool(self.mandible_problem)
         self.mandible = None
-        self._mandible_key = None
+        self.mandible_problem = ""
         self._bone_volume = None
         if changed:
             self.mandible_changed.emit()

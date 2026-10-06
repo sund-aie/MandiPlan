@@ -37,11 +37,15 @@ def _volume_step(session) -> tuple[bool, str, str]:
     if points == 0:
         return False, "", "No bone at this threshold — move the slider."
     spacing = session.volume.spacing
+    mandible = getattr(session, "mandible", None)
+    separated = (
+        f" Mandible {mandible.volume_mm3 / 1000:.1f} cm³, separated." if mandible is not None else ""
+    )
     return (
         True,
         "",
         f"Volume loaded at {spacing[0]:.2f} × {spacing[1]:.2f} × {spacing[2]:.2f} mm, "
-        f"threshold {session.threshold:.0f}.",
+        f"threshold {session.threshold:.0f}.{separated}",
     )
 
 

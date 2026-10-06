@@ -8,8 +8,13 @@ plane is infinite, so a resection would take a slice of maxilla and skull
 with it; the mirror would copy the maxilla into the defect; the exported
 "jaw" would be the whole head.
 
-The separation uses the arch curve the operator has already drawn, and
-three steps, each only when the one before has not finished the job:
+The separation follows an arch curve through the mandibular body. It does
+not wait for the operator to draw one: :func:`find_arch` finds the mandible
+in the scan by itself — the lowest wide U of bone, open towards the back,
+that holds its shape for a centimetre upwards, which is the mandibular body
+and not the smaller, thinner hyoid below it — and lays the curve through it.
+An arch the operator draws can be used instead. Then three steps, each only
+when the one before has not finished the job:
 
 1. **Already free?** The bone connected to the arch curve is checked for
    anything that can only be skull: bone far above the bite, or palate
@@ -228,6 +233,106 @@ def _label_at(labels: np.ndarray, indices: np.ndarray, radius: np.ndarray) -> in
     if not found:
         return 0
     return int(np.bincount(found).argmax())
+
+
+#: The mandible's cross-section is at least this wide, mm; the hyoid is not.
+MIN_ARCH_WIDTH_MM = 50.0
+#: ... and keeps its U shape for at least this far up from its lower border.
+MIN_BODY_HEIGHT_MM = 10.0
+
+
+def _arch_section(section: np.ndarray, pixel_mm: np.ndarray, min_width_mm: float):
+    """The widest U-shaped piece of bone in an axial section, open to the back.
+
+    Returns a boolean mask of that piece, or None. Patient axes are LPS, so
+    the back of the head is +y: a mandibular section has bone across the
+    front at the midline and an arm on either side running back.
+    """
+    import SimpleITK as sitk
+
+    labels = sitk.GetArrayFromImage(
+        sitk.ConnectedComponent(sitk.GetImageFromArray(section.astype(np.uint8)), True)
+    )
+    sizes = np.bincount(labels.ravel())
+    best, best_width = None, 0.0
+    for label in np.flatnonzero(sizes[1:] * float(np.prod(pixel_mm)) >= 60.0) + 1:
+        rows, cols = np.nonzero(labels == label)
+        x, y = cols * pixel_mm[0], rows * pixel_mm[1]
+        width, depth = float(np.ptp(x)), float(np.ptp(y))
+        if width < min_width_mm or depth < 15.0:
+            continue
+        centre = 0.5 * (x.min() + x.max())
+        midline = np.abs(x - centre) < 4.0
+        if not midline.any() or y[midline].max() - y.min() > 0.45 * depth:
+            continue  # solid across the middle: not an arch
+        back = y > y.min() + 0.6 * depth
+        if not ((x[back] < centre - 10.0).any() and (x[back] > centre + 10.0).any()):
+            continue  # no arm on one side
+        if width > best_width:
+            best, best_width = labels == label, width
+    return best
+
+
+def find_arch(volume, threshold: float, count: int = 11) -> np.ndarray | None:
+    """Arch curve points through the mandibular body, found from the scan alone.
+
+    Axial sections are searched from the bottom of the scan up for the
+    mandible's U (see :func:`_arch_section`); the curve is laid through the
+    middle of the bone ten millimetres above the lowest level where the U
+    holds for a centimetre. Returns ``(count, 3)`` world points, or None when
+    no mandible-shaped bone is found.
+    """
+    spacing = volume.spacing
+    stride = np.maximum(np.round(1.0 / spacing[:2]).astype(int), 1)
+    coarse_pixel = spacing[:2] * stride
+    z_step = max(int(round(2.0 / spacing[2])), 1)
+    array = volume.array
+    levels = [
+        k
+        for k in range(0, int(array.shape[0] * 0.7), z_step)
+        if _arch_section(
+            array[k, :: stride[1], :: stride[0]] >= threshold, coarse_pixel, MIN_ARCH_WIDTH_MM
+        )
+        is not None
+    ]
+    if not levels:
+        return None
+    present = set(levels)
+    span = max(int(round(MIN_BODY_HEIGHT_MM / (z_step * spacing[2]))), 1)
+    start = next(
+        (
+            k
+            for k in levels
+            if sum((k + i * z_step) in present for i in range(span + 1)) >= 0.8 * (span + 1)
+        ),
+        None,
+    )
+    if start is None:
+        return None
+    level = min(levels, key=lambda k: abs(k - (start + MIN_BODY_HEIGHT_MM / spacing[2])))
+    section = _arch_section(array[level] >= threshold, spacing[:2], MIN_ARCH_WIDTH_MM)
+    if section is None:
+        return None
+    rows, cols = np.nonzero(section)
+    # Bin the bone by angle about a point just behind the arch: the mean of
+    # each bin is a point on the middle of the body.
+    centre_col, centre_row = cols.mean(), rows.max() + 5.0 / spacing[1]
+    angle = np.arctan2(rows - centre_row, cols - centre_col)
+    edges = np.linspace(angle.min(), angle.max(), count + 1)
+    points = []
+    for low, high in zip(edges[:-1], edges[1:]):
+        inside = (angle >= low) & (angle < high)
+        if inside.sum() > 5:
+            points.append(volume.index_to_world([cols[inside].mean(), rows[inside].mean(), level]))
+    return np.array(points) if len(points) >= 3 else None
+
+
+def frames_for(points: np.ndarray, step_mm: float = 0.25):
+    """Arch frames through ``points``, for :func:`isolate_mandible`."""
+    from . import cpr
+    from .spline import ArchCurve
+
+    return cpr.build_frames(ArchCurve(points), step_mm)
 
 
 def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:

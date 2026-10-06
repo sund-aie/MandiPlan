@@ -663,3 +663,14 @@ def test_the_viewport_draws_the_fitted_plate(window, phantom_folder):
     bounds = np.array(drawn.GetBounds()).reshape(3, 2)
     assert np.allclose(bounds[:, 0], placed.points.min(axis=0), atol=1e-4)
     assert np.allclose(bounds[:, 1], placed.points.max(axis=0), atol=1e-4)
+
+
+def test_the_mandible_is_separated_on_opening_and_can_be_exported(window):
+    session = window.session
+    session.ensure_mandible()
+    assert session.mandible is not None
+    assert session.mandible_source in ("auto", "arch")
+    window.export_panel.refresh()
+    assert window.export_panel.buttons["mandible"].isEnabled()
+    text = window.volume_panel.mandible_info.text()
+    assert "automatically" in text or "arch curve" in text

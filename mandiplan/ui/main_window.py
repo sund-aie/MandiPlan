@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
             ("Export bent plate (STL)…", self.export_plate_stl),
             ("Export bending guide (STL + table)…", self.export_bending_guide),
             ("Export bench steps (CSV)…", self.export_steps_csv),
+            ("Export mandible (STL)…", self.export_mandible_stl),
             ("Export reconstructed jaw (STL)…", self.export_graft_stl),
             ("Export mirrored segment only (STL)…", self.export_mirrored_segment_stl),
             ("Export resection summary (CSV)…", self.export_resection_csv),
@@ -805,6 +806,7 @@ class MainWindow(QMainWindow):
 
     def export_item(self, key: str) -> None:
         {
+            "mandible": self.export_mandible_stl,
             "jaw": self.export_graft_stl,
             "segment": self.export_mirrored_segment_stl,
             "fragment": self.export_fragment_stl,
@@ -867,6 +869,19 @@ class MainWindow(QMainWindow):
             )
             self.session.note_export("bench steps")
             self.show_message(f"Bench steps written to {path}")
+
+    def export_mandible_stl(self) -> None:
+        """The patient's mandible alone, as separated from the skull."""
+        session = self.session
+        session.ensure_mandible()
+        if session.mandible is None or session.surface is None:
+            self.show_message(session.mandible_problem or "Open a scan first.")
+            return
+        path = self._save_path("Export mandible", "STL files (*.stl)", "mandible.stl")
+        if path:
+            write_surface_stl(path, session.surface)
+            self.session.note_export("mandible")
+            self.show_message(f"Mandible written to {path}")
 
     def export_graft_stl(self) -> None:
         """Export the reconstructed mandible: retained bone and mirror, flush."""
