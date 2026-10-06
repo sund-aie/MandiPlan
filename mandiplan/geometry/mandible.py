@@ -42,6 +42,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .plate_profile import point_in_polygon
+
 #: Half-width of the dental band across the arch, mm.
 BAND_MM = 10.0
 #: How far the bite is searched above the arch curve, mm.
@@ -55,8 +57,14 @@ MIN_GAP_DEPTH = 0.06
 #: The rami continue behind the last station of the arch curve by about
 #: this much, mm.
 RAMUS_EXTENSION_MM = 35.0
-#: Bone this far above the highest bite is skull, never mandible, mm.
-SKULL_ABOVE_BITE_MM = 45.0
+#: Bone this far above the bite plane is skull, never mandible, mm. The
+#: condyles sit some 25-40 mm above the occlusal plane; measuring from the
+#: plane, not from world height, keeps a head tipped chin-down from putting
+#: its condyles above the line.
+SKULL_ABOVE_BITE_MM = 55.0
+#: Only this middle share of the arch has nothing but upper teeth and palate
+#: above the bite; towards the ends the rami rise beside the teeth.
+UPPER_ARCH_SHARE = 0.6
 
 
 @dataclass
@@ -82,6 +90,9 @@ class MandibleIsolation:
     bite: Bite | None
     steps: list[str] = field(default_factory=list)
     volume_mm3: float = 0.0
+    #: How high each ramus reaches above the bite plane, mm: (right, left).
+    ramus_heights_mm: tuple[float, float] = (float("nan"), float("nan"))
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def separated(self) -> bool:
@@ -93,10 +104,11 @@ class MandibleIsolation:
                 f"The mandible is {self.volume_mm3 / 1000:.1f} cm³ of bone and is not "
                 "attached to any other bone in the scan."
             )
-        return (
+        text = (
             f"Mandible separated from the rest of the skull {' and '.join(self.steps)} "
             f"({self.volume_mm3 / 1000:.1f} cm³ of bone)."
         )
+        return " ".join([text, *self.warnings])
 
 
 def _stations(frames, step_mm: float = 0.5):
@@ -351,14 +363,15 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     across /= np.maximum(np.linalg.norm(across, axis=1, keepdims=True), 1e-9)
     bite = bite_along(volume, extended, across, step_mm=step)
     ref = _reference_heights(bite, extended).astype(np.float32)
-    skull_level = float(np.max(ref[n_head : n_head + len(points)])) + SKULL_ABOVE_BITE_MM
+    plane = _bite_plane(bite, extended, ref)
 
     # Work inside a box around the arch: the whole mandible, and just enough
     # skull above it to recognise.
     lo = points.min(axis=0) - np.array([55.0, 55.0, 0.0])
     hi = points.max(axis=0) + np.array([55.0, 55.0, 0.0])
+    corners = np.array([[x, y] for x in (lo[0], hi[0]) for y in (lo[1], hi[1])])
     lo[2] = origin[2]
-    hi[2] = skull_level + 8.0
+    hi[2] = float(np.max(plane(corners[:, 0], corners[:, 1]))) + SKULL_ABOVE_BITE_MM + 8.0
     i0 = np.maximum(np.floor((lo - origin) / spacing).astype(int), 0)
     i1 = np.minimum(np.ceil((hi - origin) / spacing).astype(int) + 1, volume.size_xyz)
     box = (slice(i0[2], i1[2]), slice(i0[1], i1[1]), slice(i0[0], i1[0]))
@@ -392,17 +405,51 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
         nearest = np.repeat(np.repeat(nearest, fine, axis=0), fine, axis=1)[:rows, :cols]
         distance = np.repeat(np.repeat(distance, fine, axis=0), fine, axis=1)[:rows, :cols]
     height_above = zs[:, None, None] - ref[nearest][None, :, :]
-    arch_interior = _interior_stations(len(extended), n_head, len(points), step)
+    X, Y = np.meshgrid(xs, ys)
+    above_plane = zs[:, None, None] - plane(X, Y).astype(np.float32)[None, :, :]
+    arch_interior = _interior_stations(len(extended), n_head, len(points))
+
+    # The palate and the palatal side of the upper jaw: inside the arch's
+    # outline, above the bite. Nothing of the mandible stands there: the
+    # coronoids rise outside the line of the arch, the rami behind its ends,
+    # and only the inner edge of a ramus comes within 5 mm of the line.
+    outline = points[:: max(len(points) // 60, 1), :2]
+    columns = np.column_stack([X.ravel(), Y.ravel()])
+    inside_arch = point_in_polygon(columns, outline).reshape(X.shape)
+    palatal = (inside_arch & (distance > 5.0))[None] & (above_plane > 5.0) & (above_plane < 40.0)
+
+    # Upper teeth: crowns and fillings are the brightest things in the scan,
+    # brighter than any cortex. Where one stands above the bite along the
+    # arch it is an upper tooth, even where a filling's streaks hid the gap
+    # from the bite search and it was not cut free. Only along the arch
+    # itself: its straight continuation runs up the rami.
+    upper_teeth = np.zeros_like(crop)
+    filled_teeth = np.zeros(len(extended), dtype=bool)
+    if bite.found:
+        on_arch = np.zeros(len(extended), dtype=bool)
+        on_arch[n_head : n_head + len(points)] = True
+        band = ((distance < 8.0) & on_arch[nearest])[None]
+        gray = volume.array[box]
+        near_bite = band & (np.abs(above_plane) < 10.0) & crop
+        if near_bite.any():
+            enamel = float(np.percentile(gray[near_bite], 97.0))
+            bright = gray >= enamel
+            upper_teeth = band & (above_plane > 2.0) & (above_plane < 14.0) & bright
+            # Stations with crowns at the bite but no gap found between them:
+            # fillings, whose streaks fill the gap the bite search looks for.
+            crowns = (band & (np.abs(above_plane) < 4.0) & bright).any(axis=0)
+            filled_teeth[np.unique(nearest[crowns])] = True
+            filled_teeth &= on_arch & ~bite.has_teeth
 
     def skull_markers(mask: np.ndarray) -> np.ndarray:
-        high = zs[:, None, None] > skull_level
+        high = above_plane > SKULL_ABOVE_BITE_MM
         upper_arch = (
             (distance < 8.0)[None]
             & arch_interior[nearest][None]
             & (height_above > 3.0)
             & (height_above < 12.0)
         )
-        return mask & (high | (upper_arch & bite.found))
+        return mask & (high | ((upper_arch | palatal | upper_teeth) & bite.found))
 
     steps: list[str] = []
     mandible = connected
@@ -418,6 +465,13 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
                     & teeth[nearest][None]
                     & (np.abs(gap) < BITE_CUT_MM)
                 )
+            # Where fillings hid the gap, cut along the bite plane instead.
+            cut |= (
+                crop
+                & (distance < BAND_MM + 2.0)[None]
+                & filled_teeth[nearest][None]
+                & (np.abs(above_plane) < BITE_CUT_MM)
+            )
             steps.append("at the bite")
         freed = crop & ~cut
         labels = _components(freed)
@@ -441,13 +495,42 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     mask = np.zeros(full_shape, dtype=bool)
     mask[box] = mandible
     other = bone & ~mask
+    heights, warnings = _ramus_check(mandible, above_plane, X, points)
     return MandibleIsolation(
         mask=mask,
         other_bone=other,
         bite=bite if bite.found else None,
         steps=steps,
         volume_mm3=float(mask.sum() * np.prod(spacing)),
+        ramus_heights_mm=heights,
+        warnings=warnings,
     )
+
+
+#: The two rami reach to within this of the same height on any jaw that is
+#: whole; a bigger difference means one was cut short.
+RAMUS_MISMATCH_MM = 15.0
+
+
+def _ramus_check(mandible: np.ndarray, above_plane: np.ndarray, X: np.ndarray, points: np.ndarray):
+    """How high each ramus reaches above the bite plane, and a warning if one
+    falls well short of the other: the mandible should run condyle to condyle."""
+    centre = float(np.mean(points[:, 0]))
+    half = 0.25 * float(np.ptp(points[:, 0]))
+    heights = []
+    for side in (X < centre - half, X > centre + half):  # patient right (-x), left (+x)
+        region = mandible & side[None]
+        heights.append(float(above_plane[region].max()) if region.any() else float("nan"))
+    right, left = heights
+    warnings = []
+    if np.isfinite(right) and np.isfinite(left) and abs(right - left) > RAMUS_MISMATCH_MM:
+        short = "right" if right < left else "left"
+        warnings.append(
+            f"The patient's {short} ramus reaches {abs(right - left):.0f} mm lower than the "
+            "other and may have been cut short: check it, or draw the arch curve along the "
+            "whole jaw and use Separate again along my arch curve."
+        )
+    return (right, left), warnings
 
 
 def _pool(mask: np.ndarray, factor: int) -> np.ndarray:
@@ -533,12 +616,36 @@ def _reference_heights(bite: Bite, points: np.ndarray) -> np.ndarray:
     return np.interp(stations, stations[known], bite.heights_mm[known])
 
 
-def _interior_stations(total: int, n_head: int, n_arch: int, step_mm: float) -> np.ndarray:
-    """Arch stations away from both ends, where no ramus rises beside the teeth."""
-    margin = int(round(10.0 / step_mm))
+def _interior_stations(total: int, n_head: int, n_arch: int) -> np.ndarray:
+    """The middle of the arch, where only upper teeth stand above the bite.
+
+    Towards the ends the rami rise beside the last molars; a skull marker
+    there would hand a ramus to the skull. So only the middle
+    ``UPPER_ARCH_SHARE`` of the arch is used.
+    """
+    margin = int(round(n_arch * (1.0 - UPPER_ARCH_SHARE) / 2.0))
     interior = np.zeros(total, dtype=bool)
     interior[n_head + margin : n_head + n_arch - margin] = True
     return interior
+
+
+def _bite_plane(bite: Bite, stations: np.ndarray, heights: np.ndarray):
+    """The occlusal plane as a height function ``z(x, y)``.
+
+    Fitted to the bite where there are teeth; with too few, the mean height
+    of the reference line. A head scanned tilted tilts this plane with it.
+    """
+    if bite.found and int(bite.has_teeth.sum()) >= 10:
+        teeth = bite.station_points[bite.has_teeth]
+        z = bite.heights_mm[bite.has_teeth]
+        design = np.column_stack([teeth[:, 0], teeth[:, 1], np.ones(len(teeth))])
+        (a, b, c), *_ = np.linalg.lstsq(design, z, rcond=None)
+        # A plausible tilt only: a fit pulled steep by a few stray stations
+        # would put the skull markers on the condyles of one side.
+        if np.hypot(a, b) < 0.6:
+            return lambda x, y: a * np.asarray(x) + b * np.asarray(y) + c
+    level = float(np.mean(heights))
+    return lambda x, y: np.full(np.broadcast(np.asarray(x), np.asarray(y)).shape, level)
 
 
 def masked_bone_volume(volume, isolation: MandibleIsolation):

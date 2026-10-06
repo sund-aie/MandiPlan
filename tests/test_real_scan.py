@@ -77,11 +77,15 @@ def test_the_mandible_is_separated_from_the_maxilla_and_skull(scan, isolation):
     # Nothing of the skull: no mandible voxel above the condyles (this head
     # is tipped chin-down, so they sit high above the bite) ...
     assert world[:, 2].max() < top_of_bite + 55.0
-    # ... but both rami and condyles: the mandible rises well above the bite
-    # on each side, behind the teeth.
+    # ... but the whole jaw, condyle to condyle: both rami rise far above the
+    # bite (the condyles sit 25-40 mm above it), to within a few mm of each
+    # other. One ramus handed to the skull is the failure this catches.
     midline_x = float(np.mean(frames.points[:, 0]))
-    for side in (world[:, 0] < midline_x, world[:, 0] > midline_x):
-        assert world[side, 2].max() > top_of_bite + 12.0
+    tops = [world[side, 2].max() for side in (world[:, 0] < midline_x, world[:, 0] > midline_x)]
+    assert min(tops) > top_of_bite + 30.0
+    assert abs(tops[0] - tops[1]) < 10.0
+    right, left = isolation.ramus_heights_mm
+    assert min(right, left) > 30.0 and not isolation.warnings
 
 
 def test_the_maxilla_is_not_in_the_mandible(scan, isolation):
@@ -188,6 +192,10 @@ def test_the_mandible_is_found_without_an_arch_curve(scan, isolation):
     dice = 2 * (automatic.mask & isolation.mask).sum() / (automatic.mask.sum() + isolation.mask.sum())
     assert automatic.separated
     assert dice > 0.9
+    # Condyle to condyle from the automatic arch too.
+    right, left = automatic.ramus_heights_mm
+    assert min(right, left) > 30.0 and abs(right - left) < 10.0
+    assert not automatic.warnings
 
 
 def test_a_scan_with_no_mandible_in_it_says_so():
