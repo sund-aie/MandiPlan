@@ -682,3 +682,47 @@ def test_the_mandible_is_separated_on_opening_and_can_be_exported(window):
     text = window.volume_panel.mandible_info.text()
     assert "cm³ of bone" in text
     assert ("along your curve" in text) == (session.mandible_source == "arch")
+
+
+def test_dragging_the_view_never_adds_plate_points(window):
+    """Reported: after drawing the plate path, going to Export and dragging
+    the model to look at it added path points and moved the plate."""
+    session, view = window.session, window.view3d
+    iren = view.interactor
+    window.toolbox.setCurrentIndex(4)
+    window.set_mode(Mode.PLATE)
+    view.reset_camera()
+    renderer = view.renderer
+    point = session.frames.point_at(session.frames.length_mm / 2.0)
+    renderer.SetWorldPoint(*point, 1.0)
+    renderer.WorldToDisplay()
+    x, y, _ = (int(round(v)) for v in renderer.GetDisplayPoint())
+
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    # Real mouse events on the widget, as a hand makes them: VTK counts y up.
+    ratio = iren.devicePixelRatioF()
+    at = QPoint(int(x / ratio), int(iren.height() - 1 - y / ratio))
+    left = Qt.MouseButton.LeftButton
+
+    def press_drag_release(d):
+        QTest.mousePress(iren, left, Qt.KeyboardModifier.NoModifier, at)
+        if d:
+            QTest.mouseMove(iren, at + QPoint(d // 2, d // 2))
+            QTest.mouseMove(iren, at + QPoint(d, d))
+        QTest.mouseRelease(iren, left, Qt.KeyboardModifier.NoModifier, at + QPoint(d, d))
+
+    before = len(session.plate_points)
+    press_drag_release(40)  # a drag turns the view
+    assert len(session.plate_points) == before
+    view.reset_camera()
+    press_drag_release(0)  # a click still draws
+    assert len(session.plate_points) == before + 1
+    session.remove_last_plate_point()
+
+    # Moving on to Export puts the plate tool down.
+    window.toolbox.setCurrentIndex(5)
+    assert window.mode == Mode.NAVIGATE
+    press_drag_release(0)
+    assert len(session.plate_points) == before

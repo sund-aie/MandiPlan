@@ -67,6 +67,16 @@ class _VtkWidget(QVTKRenderWindowInteractor):
             return super(QVTKRenderWindowInteractor, self).paintEngine()
         return None
 
+    #: Called after a left-button release has been passed to VTK. Watched
+    #: here, not by a VTK observer: once a press starts a rotation the
+    #: interactor style holds the focus, and observers never see the release.
+    left_released = None
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and self.left_released is not None:
+            self.left_released()
+
 
 def _hide_widget_handles(rep: vtk.vtkImplicitPlaneRepresentation) -> None:
     """Render the plane's origin sphere and normal arrow invisible.
@@ -126,7 +136,11 @@ class View3D(QWidget):
 
         self.picker = vtk.vtkCellPicker()
         self.picker.SetTolerance(0.005)
-        self.interactor.AddObserver("LeftButtonPressEvent", self._on_left_button, 1.0)
+        # A pick happens on release, and only for a click: a press that turns
+        # into a drag is rotating the view and must not drop a point.
+        self._press_at: tuple[int, int] | None = None
+        self.interactor.AddObserver("LeftButtonPressEvent", self._on_left_press, 1.0)
+        self.interactor.left_released = self._on_left_release
 
         # Refining the jaw needs the left button for the brush. A style of its
         # own takes left press/drag/release (an observer on a style replaces
@@ -152,6 +166,9 @@ class View3D(QWidget):
         self.interactor.Initialize()
 
     def shutdown(self) -> None:
+        # Nothing may draw after this: the render window is finalised below,
+        # and a redraw queued by the last interaction would crash into it.
+        self._shut_down = True
         for widget in self._plane_widgets:
             widget.Off()
         self._plane_widgets.clear()
@@ -527,7 +544,11 @@ class View3D(QWidget):
         self.measure_mapper.SetInputData(empty_polydata())
         self.render()
 
+    _shut_down = False
+
     def render(self) -> None:
+        if self._shut_down:
+            return
         self.interactor.GetRenderWindow().Render()
 
     def reset_camera(self) -> None:
@@ -614,6 +635,8 @@ class View3D(QWidget):
         QTimer.singleShot(0, self._resync_planes)
 
     def _resync_planes(self) -> None:
+        if self._shut_down:
+            return
         self._sync_plane_widgets()
         self.render()
 
@@ -632,10 +655,26 @@ class View3D(QWidget):
 
     # -- picking -----------------------------------------------------------
 
-    def _on_left_button(self, obj, event) -> None:
-        if self.mode in (Mode.NAVIGATE, Mode.SCULPT):
+    #: How far the mouse may move between press and release and still be a
+    #: click rather than a drag, in pixels.
+    CLICK_TOLERANCE_PX = 4
+
+    def _on_left_press(self, obj, event) -> None:
+        self._press_at = tuple(self.interactor.GetEventPosition())
+
+    def _on_left_release(self) -> None:
+        start, self._press_at = self._press_at, None
+        if start is None:
             return
         x, y = self.interactor.GetEventPosition()
+        if max(abs(x - start[0]), abs(y - start[1])) > self.CLICK_TOLERANCE_PX:
+            return
+        self._on_left_button(start)
+
+    def _on_left_button(self, position) -> None:
+        if self.mode in (Mode.NAVIGATE, Mode.SCULPT):
+            return
+        x, y = position
         # The reconstruction replaces the bone in the view once it exists, and
         # the plate is planned on it: clicks on it count as clicks on bone.
         # Only the surfaces a click can be about are picked from, so a click

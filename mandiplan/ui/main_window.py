@@ -229,6 +229,7 @@ class MainWindow(QMainWindow):
         self.planning_dock.setMaximumWidth(560)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.planning_dock)
 
+        self.toolbox.currentChanged.connect(self._leave_step_tool)
         self.volume_panel.load_requested.connect(self.open_dicom_folder)
         for panel in (
             self.arch_panel, self.resection_panel, self.plate_panel, self.reconstruction_panel
@@ -460,6 +461,16 @@ class MainWindow(QMainWindow):
                 self.tabs.setCurrentIndex(0)
         finally:
             self._setting_mode = False
+
+    #: The step each step-specific tool belongs to.
+    STEP_OF_MODE = {Mode.ARCH: 1, Mode.LANDMARK: 2, Mode.SCULPT: 3, Mode.PLATE: 4}
+
+    def _leave_step_tool(self, page: int) -> None:
+        """Moving to another step puts its predecessor's tool down, so a
+        click or drag there no longer adds plate points or curve points."""
+        step = self.STEP_OF_MODE.get(self.mode)
+        if step is not None and step != page:
+            self.set_mode(Mode.NAVIGATE)
 
     def set_busy(self, busy: bool) -> None:
         """A wait cursor, and a repaint, around the few slow steps."""

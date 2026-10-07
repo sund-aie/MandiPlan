@@ -407,7 +407,7 @@ how far your edits have moved it.
 **5 · Plate.** *Draw plate path on the bone* and click along the outer face of
 the jaw — after reconstructing, across the rebuilt segment too, since the plate
 follows the reconstruction. Clicks go through a plate already drawn to the
-bone behind it. Choose the plate family; its length follows the path (the
+bone behind it. Only a click adds a point: a press that turns into a drag turns the view, and moving on to another step puts the plate tool down, so looking the plan over in *Export* never changes it. Choose the plate family; its length follows the path (the
 shortest in the family that spans it) until you pick a length yourself. Its
 pitch, section and the lengths it comes in drive everything below. Pick the
 bending kit you will use.
