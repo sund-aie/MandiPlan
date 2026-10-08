@@ -56,6 +56,7 @@ from ..geometry.resection import (
     CutPlane,
     PlanePlacement,
     ResectionReport,
+    bound_resection,
     build_report,
     plane_from_placement,
 )
@@ -121,7 +122,9 @@ class VolumeInfo:
             f"Slices: {self.series.n_files or int(volume.size_xyz[2])}",
             f"Matrix: {nx} × {ny} × {nz} voxels",
             f"Voxel size: {sx:.3f} × {sy:.3f} × {sz:.3f} mm",
-            f"Field of view: {volume.extent_mm[0]:.1f} × {volume.extent_mm[1]:.1f}"
+            # A CT is cut down to a box round the jaws (see dicom_io).
+            ("Jaw box: " if getattr(self.geometry, "jaw_box", False) else "Field of view: ")
+            + f"{volume.extent_mm[0]:.1f} × {volume.extent_mm[1]:.1f}"
             f" × {volume.extent_mm[2]:.1f} mm",
         ]
 
@@ -270,7 +273,7 @@ class Session(QObject):
         self.volume = volume
         self._extractor = SurfaceExtractor(volume)
         self.info = VolumeInfo(series=series, geometry=geometry, folder=folder)
-        self.threshold = estimate_bone_threshold(volume)
+        self.threshold = estimate_bone_threshold(volume, thin_bone=geometry.jaw_box)
         self.arch_seeds.clear()
         self.arch_source = ""
         self.arch_curve = None
@@ -299,6 +302,13 @@ class Session(QObject):
         for warning in geometry.warnings:
             self.message.emit(warning)
         self.rebuild_surface()
+
+    def automatic_threshold(self) -> float:
+        """The seeded bone threshold for the open scan (see ``threshold``)."""
+        if self.volume is None:
+            return self.threshold
+        jaw_box = bool(self.info is not None and getattr(self.info.geometry, "jaw_box", False))
+        return estimate_bone_threshold(self.volume, thin_bone=jaw_box)
 
     def set_threshold(self, value: float) -> None:
         if self.volume is None:
@@ -828,6 +838,9 @@ class Session(QObject):
         self.update_resection_report()
 
     def update_resection_report(self) -> None:
+        # Every change to the cuts comes through here: bound them along the
+        # jaw before anything measures, previews, cuts or mirrors with them.
+        bound_resection(self.frames, self.planes)
         if self.planes:
             self.report = build_report(self.frames, self.planes, self.landmarks)
         else:

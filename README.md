@@ -317,6 +317,22 @@ than loaded distorted. A scan too large to plan on in memory (a 0.25 mm head
 scan is 300 million voxels) is averaged over whole blocks of voxels into a
 coarser working grid, and the load says so; world coordinates stay exact.
 
+**A medical CT, up to the whole body,** opens the same way. A CT that shows
+more than a head (longer than 260 mm), or has voxels coarser than 1 mm (thick
+slices), is cut down to its jaws on loading: the skull vault is found as the
+region of soft tissue that bone encloses for several centimetres in the axial
+slices (the brain — the ribs never close a ring and the pelvis only for a few
+slices), the mandible's U is searched for in the band below it (where the
+shoulders cannot be mistaken for it), and a box round the jaws is kept at the
+scan's full resolution. That box is then resampled with cubic interpolation
+to cubic voxels of the pixel size (0.5–0.75 mm), because marching cubes on
+3 mm slices draws the bone in 3 mm terraces and on cubic voxels draws it as
+smooth as a CBCT's. The load says what it kept and at what voxel size, and
+the bone panel's field of view becomes *Jaw box*. A head lying turned in the
+scanner is found too. Distances stay in millimetres from the DICOM spacing.
+A CBCT is never cut down, even one whose files call it "CT": it shows only
+the jaws and its voxels are fine and cubic.
+
 CBCT gray values are not Hounsfield units — they depend on the scanner, the
 field of view and the exposure — so there is no fixed bone threshold. The
 slider is seeded from the scan's own histogram: a real head scan holds air,
@@ -324,7 +340,11 @@ soft tissue and bone, and the seed is the split between the last two (a
 two-class split draws the skin), over a range that ignores metal fillings.
 Move it by eye; the isosurface follows as you drag. No smoothing is applied,
 because a smoothed surface no longer coincides with the gray values you
-thresholded.
+thresholded. A CT's gray values are Hounsfield units, but in thick slices the
+thin bone of a ramus or a condylar neck averages with the soft tissue either
+side and reads low, so for a CT the seed is halfway from the soft-tissue peak
+to that split (around 230 HU on the scans tried). *Reset to the automatic
+estimate* puts the slider back on the seed.
 
 **2 · Arch curve.** Nothing to draw: once the mandible is separated (below),
 the arch curve is laid along the middle of it **from one condyle to the
@@ -353,7 +373,15 @@ the mandible itself (the lowest wide U of bone in the axial sections, open
 towards the back, which the hyoid below it is too small to be), finds the bite
 along it (the dark line between bright upper and lower crowns), cuts only the
 tooth contacts along that line, and splits any remaining contact at the jaw
-joints at its thinnest, darkest point. The bone panel reports the separated
+joints at its thinnest, darkest point. On a thick-slice CT the joint space is
+often blurred away and a ramus's thin middle is thinner and darker than any
+joint, so the split is told where the joints are: each ramus is found rising
+from the body behind the last tooth and seeds the mandible up to below its
+notch, its condylar and coronoid processes are followed up slice by slice
+until they end or run into the skull base, and the bone lining the brain and
+the spine seed the skull. Only the few millimetres round each joint are left
+to decide. The same holds for a jaw without teeth, or a mouth held open,
+whose condyles stand higher above the bite than a closed bite puts them. The bone panel reports the separated
 mandible's volume. If a scan defeats the automatic search, draw the arch curve
 and the separation follows it; *Separate again along my curve* redoes it
 along your curve at any time, and the checkbox shows all bone again. *Export →
@@ -377,7 +405,10 @@ millimetres, obliquity (yaw about the superior axis), inclination (tilt about
 the buccolingual direction), and a shift in patient axes. Dragging is quick; an osteotomy you have to describe, check or
 hand over needs numbers. Bone that the current planes would
 remove is tinted red as you move them. Up to two planes, which covers a
-segmental resection. *Execute cut* separates the fragment and reports the
+segmental resection. Two planes enclose a wedge that runs on for ever, and
+with the curve running condyle to condyle a far ramus can lie in it, so the
+resection is bounded along the jaw: only bone whose nearest point on the curve
+lies between the cuts is resected, measured, cut away or rebuilt. *Execute cut* separates the fragment and reports the
 resected segment as both arc length along the curve and straight-line distance
 between the cuts, plus the fragment volume. *Mark tumour margin point* places
 landmarks, and the readout gives the signed distance from each cut plane to
@@ -392,7 +423,11 @@ separately, the two corrections are blended smoothly across the defect, and
 the mirror is blended into the retained bone over 3 mm before a single surface
 is built. The result is one closed piece that replaces the bone in the view —
 ivory where it is the patient's own bone, pale teal where it is mirrored. The
-panel reports each junction's mismatch before and after registration.
+panel reports each junction's mismatch before and after registration. A
+mirror needs a nudge at a junction, not a turn: if the fit wants to turn it
+more than 10° (a smooth, toothless body is nearly a tube and lets it spin),
+the best shift alone is taken, and the correction is reported as how far it
+moves the mirror at the junction.
 
 Where the defect crosses the midline there is no healthy counterpart to
 mirror; that part is filled from the pre-operative contour, coloured sand, and

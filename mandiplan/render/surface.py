@@ -133,19 +133,66 @@ def clip_closed(
     if not planes:
         return polydata
 
+    collection = vtk.vtkPlaneCollection()
+    for plane in planes:
+        collection.AddItem(_vtk_plane(plane, invert=False))
+    wedge = _clip_with_collection(polydata, collection)
+    # The planes' wedge may hold a far part of the jaw as well as the
+    # segment; only what lies along the cuts' stretch is resected.
+    reach = planes[0].reach
+    near, far = _split_by_reach(wedge, reach) if reach is not None else (wedge, None)
     if keep_resected:
-        collection = vtk.vtkPlaneCollection()
-        for plane in planes:
-            collection.AddItem(_vtk_plane(plane, invert=False))
-        return _clip_with_collection(polydata, collection)
+        return near
 
     pieces = vtk.vtkAppendPolyData()
     for plane in planes:
         collection = vtk.vtkPlaneCollection()
         collection.AddItem(_vtk_plane(plane, invert=True))
         pieces.AddInputData(_clip_with_collection(polydata, collection))
+    if far is not None and far.GetNumberOfPoints():
+        pieces.AddInputData(far)
     pieces.Update()
     return pieces.GetOutput()
+
+
+def _split_by_reach(polydata: vtk.vtkPolyData, reach):
+    """The connected pieces of ``polydata`` along the resection's stretch of
+    jaw, and the rest."""
+    if polydata.GetNumberOfPoints() == 0:
+        return polydata, None
+    connectivity = vtk.vtkPolyDataConnectivityFilter()
+    connectivity.SetInputData(polydata)
+    connectivity.SetExtractionModeToAllRegions()
+    connectivity.ColorRegionsOn()
+    connectivity.Update()
+    labelled = connectivity.GetOutput()
+    regions = vtk_to_numpy(labelled.GetPointData().GetArray("RegionId"))
+    points = vtk_to_numpy(labelled.GetPoints().GetData())
+    inside = reach.contains(points)
+    keep = [r for r in np.unique(regions) if inside[regions == r].mean() >= 0.5]
+    if len(keep) == len(np.unique(regions)):
+        return polydata, None
+    return _regions(labelled, keep), _regions(labelled, [r for r in np.unique(regions) if r not in keep])
+
+
+def _regions(labelled: vtk.vtkPolyData, regions) -> vtk.vtkPolyData:
+    """The cells of ``labelled`` whose points belong to ``regions``."""
+    out = vtk.vtkAppendPolyData()
+    for region in regions:
+        threshold = vtk.vtkThreshold()
+        threshold.SetInputData(labelled)
+        threshold.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "RegionId")
+        threshold.SetLowerThreshold(float(region) - 0.5)
+        threshold.SetUpperThreshold(float(region) + 0.5)
+        threshold.SetThresholdFunction(vtk.vtkThreshold.THRESHOLD_BETWEEN)
+        surface = vtk.vtkDataSetSurfaceFilter()
+        surface.SetInputConnection(threshold.GetOutputPort())
+        surface.Update()
+        out.AddInputData(surface.GetOutput())
+    if not regions:
+        return vtk.vtkPolyData()
+    out.Update()
+    return out.GetOutput()
 
 
 def _clip_with_collection(

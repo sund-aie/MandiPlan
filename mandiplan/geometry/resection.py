@@ -4,6 +4,13 @@ A :class:`CutPlane` normal points **into the fragment that will be removed**.
 With one plane the resected side is everything on the positive side of that
 plane; with two planes the resected fragment is the intersection of the two
 positive half-spaces, i.e. the bone between them.
+
+Planes are infinite, and two of them enclose a wedge that runs on for ever.
+Across the body of a jaw that is harmless, but the arch curve runs from
+condyle to condyle and a far ramus or condyle can lie inside the same wedge.
+So the resection is also bounded along the jaw (:class:`SegmentReach`): a
+point is resected only if the nearest point of the arch curve to it lies in
+the stretch between the cuts.
 """
 
 from __future__ import annotations
@@ -16,11 +23,44 @@ import numpy as np
 SUPERIOR = np.array([0.0, 0.0, 1.0])
 
 
+#: How far beyond the stretch of curve between the cuts the resection may
+#: still reach along the jaw, mm: enough for a steeply oblique cut.
+SEGMENT_MARGIN_MM = 25.0
+
+
+@dataclass
+class SegmentReach:
+    """The stretch of the arch curve a resection takes out.
+
+    ``stations`` are points of the whole curve about a millimetre apart, at
+    arc positions ``s``; a point belongs to the resection's stretch when the
+    station nearest it lies between ``lo`` and ``hi``.
+    """
+
+    stations: np.ndarray
+    s: np.ndarray
+    lo: float
+    hi: float
+
+    def contains(self, points) -> np.ndarray:
+        pts = np.asarray(points, dtype=float).reshape(-1, 3)
+        nearest = np.empty(len(pts), dtype=float)
+        chunk = max(1, 2_000_000 // max(len(self.stations), 1))
+        for start in range(0, len(pts), chunk):
+            part = pts[start : start + chunk]
+            d2 = ((part[:, None, :] - self.stations[None, :, :]) ** 2).sum(axis=2)
+            nearest[start : start + chunk] = self.s[np.argmin(d2, axis=1)]
+        return (nearest >= self.lo) & (nearest <= self.hi)
+
+
 @dataclass
 class CutPlane:
     origin: np.ndarray
     normal: np.ndarray  # unit, pointing into the resected fragment
     label: str = ""
+    #: The stretch of jaw the cuts this plane belongs to take out; shared by
+    #: the planes of one resection. None: unbounded (see the module notes).
+    reach: SegmentReach | None = None
 
     def __post_init__(self) -> None:
         self.origin = np.asarray(self.origin, dtype=float).reshape(3)
@@ -190,7 +230,46 @@ def resected_mask(planes: list[CutPlane], points) -> np.ndarray:
     mask = np.ones(len(pts), dtype=bool)
     for plane in planes:
         mask &= plane.signed_distance(pts) >= 0
+    reach = planes[0].reach
+    if reach is not None and mask.any():
+        mask[mask] = reach.contains(pts[mask])
     return mask
+
+
+def bound_resection(frames, planes: list[CutPlane]) -> None:
+    """Give ``planes`` the stretch of the arch curve they take out.
+
+    The stations of the curve inside every plane form runs; the one the cuts
+    stand at (between them, or beside a single cut) is the resection's, and
+    every other run is a far part of the jaw that merely lies in the same
+    wedge. Sets ``reach`` on each plane, or None when there is no curve.
+    """
+    for plane in planes:
+        plane.reach = None
+    if frames is None or not planes:
+        return
+    stride = max(int(round(1.0 / frames.step_mm)), 1)
+    stations = np.asarray(frames.points[::stride], dtype=float)
+    s = np.asarray(frames.s[::stride], dtype=float)
+    inside = np.ones(len(stations), dtype=bool)
+    for plane in planes:
+        inside &= plane.signed_distance(stations) >= 0
+    if not inside.any():
+        return
+    edges = np.flatnonzero(np.diff(np.concatenate([[0], inside.astype(int), [0]])))
+    runs = [(s[a], s[b - 1]) for a, b in zip(edges[::2], edges[1::2])]
+    cuts = [float(s[np.argmin(np.linalg.norm(stations - p.origin, axis=1))]) for p in planes]
+    lo_cut, hi_cut = min(cuts) - 2.0, max(cuts) + 2.0
+
+    def score(run):
+        overlap = min(run[1], hi_cut) - max(run[0], lo_cut)
+        gap = max(run[0] - hi_cut, lo_cut - run[1], 0.0)
+        return (overlap if overlap > 0 else -gap)
+
+    lo, hi = max(runs, key=score)
+    reach = SegmentReach(stations, s, lo - SEGMENT_MARGIN_MM, hi + SEGMENT_MARGIN_MM)
+    for plane in planes:
+        plane.reach = reach
 
 
 def curve_crossings(frames, plane: CutPlane) -> list[float]:

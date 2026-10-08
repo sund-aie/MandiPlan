@@ -13,6 +13,13 @@ population of its own, and when there is one the upper split of a three-class
 Otsu is used. Metal restorations and brackets reach many times the brightest
 bone and would compress every tissue into a few bins, so the histogram range
 stops at the 99.9th percentile.
+
+A medical CT of the jaws is usually reconstructed in slices a few
+millimetres thick. The thin bone of a ramus, a condylar neck or a coronoid is
+averaged with the soft tissue either side and reads well below the dense
+skull that sets the three-class split, which then breaks those up. For such
+a scan (``thin_bone=True``) the seed is halfway from the soft-tissue peak to
+that split instead. It is only a seed: the slider moves it.
 """
 
 from __future__ import annotations
@@ -103,8 +110,11 @@ def _sample(array: np.ndarray, limit: int = 4_000_000) -> np.ndarray:
     return np.asarray(array[::stride, ::stride, ::stride], dtype=np.float32).ravel()
 
 
-def estimate_bone_threshold(volume, bins: int = 256) -> float:
-    """Seed value for the bone isosurface threshold, in native gray values."""
+def estimate_bone_threshold(volume, bins: int = 256, thin_bone: bool = False) -> float:
+    """Seed value for the bone isosurface threshold, in native gray values.
+
+    ``thin_bone`` lowers it for a thick-slice CT (see the module docstring).
+    """
     values = _sample(volume.array)
     lo, hi = (float(v) for v in np.percentile(values, [0.5, 99.9]))
     if hi <= lo:
@@ -114,5 +124,10 @@ def estimate_bone_threshold(volume, bins: int = 256) -> float:
     counts, edges = np.histogram(values, bins=bins, range=(lo, hi))
     t1, t2 = otsu_three_class(counts, edges)
     if _has_middle_population(counts, edges, t1, t2):
+        if thin_bone:
+            centres = 0.5 * (edges[:-1] + edges[1:])
+            tissue = (centres > t1) & (centres < t2)
+            peak = float(centres[tissue][np.argmax(counts[tissue])])
+            return 0.5 * (peak + t2)
         return t2
     return otsu_threshold(counts, edges)

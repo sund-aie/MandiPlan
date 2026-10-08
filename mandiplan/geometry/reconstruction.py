@@ -168,6 +168,20 @@ class Registration:
     rms_before_mm: float
     rms_after_mm: float
     points_used: int
+    #: The middle of the stump band, where the correction is measured.
+    centre: np.ndarray | None = None
+
+    @property
+    def moved_mm(self) -> float:
+        """How far the correction moves the mirror at the junction, mm.
+
+        Not the transform's translation, which is about the world origin and
+        on a CT, whose origin may be far from the jaw, says little.
+        """
+        if self.centre is None:
+            return self.transform.shift_mm
+        c = np.asarray(self.centre, dtype=float).reshape(1, 3)
+        return float(np.linalg.norm(self.transform.apply(c) - c))
 
 
 def icp(
@@ -177,11 +191,13 @@ def icp(
     keep_fraction: float = 0.8,
     max_points: int = 1200,
     seed: int = 0,
+    rotate: bool = True,
 ) -> Registration:
     """Rigid iterative closest point, trimmed: ``source`` onto ``target``.
 
     The worst-matching fifth of pairs are ignored at each step, so a band that
     overlaps the target only partly still registers on the part it shares.
+    ``rotate=False`` finds the best shift alone.
     """
     source = np.asarray(source, dtype=float).reshape(-1, 3)
     target = np.asarray(target, dtype=float).reshape(-1, 3)
@@ -207,7 +223,11 @@ def icp(
         keep = d <= np.quantile(d, keep_fraction)
         if keep.sum() < 3:
             break
-        rotation, translation = kabsch(moved[keep], target[idx[keep]])
+        if rotate:
+            rotation, translation = kabsch(moved[keep], target[idx[keep]])
+        else:
+            rotation = np.eye(3)
+            translation = (target[idx[keep]] - moved[keep]).mean(axis=0)
         step = RigidTransform(rotation, translation)
         moved = step.apply(moved)
         total = step.compose(total)
@@ -215,10 +235,15 @@ def icp(
         if abs(previous - error) < 1e-4:
             break
         previous = error
-    return Registration(total, before, trimmed_rms(moved), len(source))
+    return Registration(total, before, trimmed_rms(moved), len(source), target.mean(axis=0))
 
 
 # -- the resected region and the blend ---------------------------------------
+
+
+#: The depth given to a point in the planes' wedge but beyond the stretch of
+#: jaw they take out, mm: well outside any blend band.
+FAR_OUTSIDE_MM = 50.0
 
 
 def plane_depths(planes, points) -> np.ndarray:
@@ -228,7 +253,16 @@ def plane_depths(planes, points) -> np.ndarray:
     removes.
     """
     pts = np.asarray(points, dtype=float).reshape(-1, 3)
-    return np.column_stack([plane.signed_distance(pts) for plane in planes])
+    depths = np.column_stack([plane.signed_distance(pts) for plane in planes])
+    reach = planes[0].reach if planes else None
+    if reach is not None:
+        # Beyond the stretch of jaw the cuts take out, nothing is resected,
+        # however deep into the wedge of the planes it lies.
+        candidates = np.flatnonzero(depths.min(axis=1) > -FAR_OUTSIDE_MM)
+        if len(candidates):
+            far = candidates[~reach.contains(pts[candidates])]
+            depths[far] = np.minimum(depths[far], -FAR_OUTSIDE_MM)
+    return depths
 
 
 def depth_into_resection(planes, points) -> np.ndarray:
@@ -260,7 +294,7 @@ class ReconstructionReport:
             lines.append(
                 f"Junction {i}: mirror-to-stump mismatch {reg.rms_before_mm:.2f} mm "
                 f"before registration, {reg.rms_after_mm:.2f} mm after "
-                f"({reg.transform.shift_mm:.2f} mm, {reg.transform.angle_deg:.1f}° correction)."
+                f"(moved {reg.moved_mm:.2f} mm and turned {reg.transform.angle_deg:.1f}°)."
             )
         if self.donorless_voxels:
             lines.append(

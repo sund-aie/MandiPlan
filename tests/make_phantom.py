@@ -291,3 +291,75 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
+
+
+# --------------------------------------------------------------------------
+# A CT of the whole body, to test finding the jaws in one.
+# --------------------------------------------------------------------------
+
+#: Hounsfield-like values of the body CT.
+CT_AIR, CT_SOFT, CT_BONE = -1000.0, 40.0, 1200.0
+
+
+def make_body_ct(
+    spec: PhantomSpec = PhantomSpec(),
+    spacing: tuple[float, float, float] = (1.2, 1.2, 4.0),
+    foot_mm: float = -600.0,
+) -> Volume:
+    """A head-to-pelvis CT in thick slices, with the phantom mandible in it.
+
+    Soft tissue in the shape of a head, neck and torso; a skull vault round
+    a brain above the mandible; a spine down the back; ribs, which never
+    close a ring in an axial slice; and a pelvic ring, which does, for a few
+    centimetres. The mandible is ``spec``'s, at ``spec.centre_z``.
+    """
+    sx, sy, sz = spacing
+    x = np.arange(-110.0, 110.0 + 1e-6, sx)
+    y = np.arange(-110.0, 110.0 + 1e-6, sy)
+    z = np.arange(foot_mm, spec.centre_z + 200.0 + 1e-6, sz)
+    X, Y = np.meshgrid(x, y)
+    array = np.full((len(z), len(y), len(x)), CT_AIR, dtype=np.float32)
+    head_centre = np.array([spec.centre_xy[0], spec.centre_xy[1] + 25.0, spec.centre_z + 90.0])
+    for k, zk in enumerate(z):
+        section = array[k]
+        dz = zk - head_centre[2]
+        if zk > spec.centre_z - 40.0:  # head
+            r = 1.0 - (dz / 115.0) ** 2
+            if r > 0:
+                inside = ((X - head_centre[0]) / (75.0 * np.sqrt(r))) ** 2 + (
+                    (Y - head_centre[1]) / (95.0 * np.sqrt(r))
+                ) ** 2 <= 1.0
+                section[inside] = CT_SOFT
+                if dz > -30.0:  # the vault: a bone shell round the brain
+                    rb = 1.0 - (dz / 105.0) ** 2
+                    if rb > 0:
+                        e = ((X - head_centre[0]) / (66.0 * np.sqrt(rb))) ** 2 + (
+                            (Y - head_centre[1]) / (86.0 * np.sqrt(rb))
+                        ) ** 2
+                        section[(e <= 1.0) & (e > 0.82)] = CT_BONE
+        if spec.centre_z - 120.0 < zk <= spec.centre_z - 20.0:  # neck
+            section[((X / 45.0) ** 2 + ((Y - 30.0) / 45.0) ** 2) <= 1.0] = CT_SOFT
+        if zk <= spec.centre_z - 120.0:  # torso
+            section[((X / 105.0) ** 2 + ((Y - 10.0) / 85.0) ** 2) <= 1.0] = CT_SOFT
+            if zk > foot_mm + 120.0 and int((zk - foot_mm) // 25.0) % 2 == 0:
+                # a rib on each side: an arc, open at the front and the back
+                e = (X / 95.0) ** 2 + ((Y - 10.0) / 75.0) ** 2
+                rib = (e <= 1.0) & (e > 0.85) & (np.abs(X) > 25.0) & (Y > -40.0)
+                section[rib] = CT_BONE
+            if foot_mm + 20.0 < zk < foot_mm + 60.0:
+                # the pelvic ring, closed for a few centimetres
+                e = (X / 80.0) ** 2 + ((Y - 10.0) / 60.0) ** 2
+                section[(e <= 1.0) & (e > 0.8)] = CT_BONE
+        if zk <= spec.centre_z - 10.0:  # the spine
+            vertebra = ((X / 14.0) ** 2 + ((Y - 55.0) / 12.0) ** 2) <= 1.0
+            section[vertebra] = CT_BONE
+    # The mandible, in the soft tissue.
+    zz = z[:, None, None]
+    sdf = signed_distance_field(spec, X[None], Y[None], zz)
+    frac = np.clip(0.5 - sdf / (2.0 * max(spacing)), 0.0, 1.0)
+    jaw = frac > 0.0
+    array[jaw] = np.maximum(array[jaw], CT_SOFT + (CT_BONE - CT_SOFT) * frac[jaw])
+    rng = np.random.default_rng(spec.seed)
+    array += rng.normal(0.0, 15.0, size=array.shape).astype(np.float32)
+    return Volume(array=array, spacing=np.asarray(spacing, dtype=float),
+                  origin=np.array([x[0], y[0], z[0]]))

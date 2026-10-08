@@ -45,6 +45,10 @@ def _surface_points(polydata: vtk.vtkPolyData, limit: int = 60000) -> np.ndarray
     return points
 
 
+#: The mirror is turned at most this much to meet a stump, deg.
+MAX_JUNCTION_TURN_DEG = 10.0
+
+
 def register_junctions(surface, planes, symmetry, near_mm=1.0, far_mm=12.0):
     """One rigid correction per cut, bringing the mirror onto that stump."""
     points = _surface_points(surface)
@@ -53,7 +57,13 @@ def register_junctions(surface, planes, symmetry, near_mm=1.0, far_mm=12.0):
     donors = stump_bands(planes, reflected, near_mm, far_mm)
     registrations = []
     for i in range(len(planes)):
-        registrations.append(icp(reflected[donors[i]], points[stumps[i]]))
+        registration = icp(reflected[donors[i]], points[stumps[i]])
+        if registration.transform.angle_deg > MAX_JUNCTION_TURN_DEG:
+            # A mirror needs a nudge, not a turn. A band round a smooth, toothless
+            # body is nearly a tube and lets the fit spin about it; take the
+            # best shift instead.
+            registration = icp(reflected[donors[i]], points[stumps[i]], rotate=False)
+        registrations.append(registration)
     return registrations
 
 

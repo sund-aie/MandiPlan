@@ -65,6 +65,28 @@ SKULL_ABOVE_BITE_MM = 55.0
 #: Only this middle share of the arch has nothing but upper teeth and palate
 #: above the bite; towards the ends the rami rise beside the teeth.
 UPPER_ARCH_SHARE = 0.6
+#: Each ramus seeds the mandible up to this far above the bite plane, mm,
+#: and its processes are followed up from there (see ``_processes``). Low
+#: enough to stay below the condyles of a jaw without teeth, whose bite
+#: plane is only an estimate and whose condyles may stand 20 mm above it.
+RAMUS_SEED_MM = 16.0
+#: ... where the ramus is measured, above the bite and below the notch, mm.
+RAMUS_SAMPLE_MM = (2.0, 16.0)
+#: Half-thickness of the ramus plate seeded, and of the corridor above it
+#: kept free of skull markers, mm. The corridor is wider: a condyle is some
+#: 20 mm across from pole to pole.
+RAMUS_SEED_HALF_MM = 5.0
+RAMUS_CORRIDOR_HALF_MM = 13.0
+#: Bone this close to the brain is the braincase, mm: the floor of the
+#: cranial fossae, which over each joint is all that separates the condyle's
+#: socket from the brain.
+BRAINCASE_LINING_MM = 2.5
+#: A slice's enclosed soft tissue is brain when there is this much of it, cm².
+MIN_BRAIN_SECTION_CM2 = 15.0
+#: The corridor is kept free of skull markers up to this far above the bite
+#: plane, mm. A mouth held open, or a jaw without teeth, puts the condyles
+#: higher above the bite than ``SKULL_ABOVE_BITE_MM``.
+CONDYLE_CLEAR_MM = 80.0
 
 
 @dataclass
@@ -253,12 +275,23 @@ MIN_ARCH_WIDTH_MM = 50.0
 MIN_BODY_HEIGHT_MM = 10.0
 
 
-def _arch_section(section: np.ndarray, pixel_mm: np.ndarray, min_width_mm: float):
+#: A head may lie turned in the scanner; if no U is found straight ahead,
+#: it is looked for at these angles, nearest first, deg.
+ARCH_TURNS_DEG = (-12.0, 12.0, -24.0, 24.0, -36.0, 36.0, -48.0, 48.0)
+#: A head turned by less than this is treated as straight, deg: the arch's
+#: own asymmetry turns its axes by a few degrees on any jaw.
+STRAIGHT_DEG = 15.0
+
+
+def _arch_section(section: np.ndarray, pixel_mm: np.ndarray, min_width_mm: float,
+                  max_width_mm: float = np.inf, turns=(0.0,)):
     """The widest U-shaped piece of bone in an axial section, open to the back.
 
-    Returns a boolean mask of that piece, or None. Patient axes are LPS, so
-    the back of the head is +y: a mandibular section has bone across the
-    front at the midline and an arm on either side running back.
+    Returns ``(mask, turn_deg)`` for that piece, or None. Patient axes are
+    LPS, so the back of the head is +y: a mandibular section has bone across
+    the front at the midline and an arm on either side running back. A head
+    turned in the scanner turns the U with it, so each piece is also tried
+    turned back by each of ``turns``, deg.
     """
     import SimpleITK as sitk
 
@@ -269,31 +302,52 @@ def _arch_section(section: np.ndarray, pixel_mm: np.ndarray, min_width_mm: float
     best, best_width = None, 0.0
     for label in np.flatnonzero(sizes[1:] * float(np.prod(pixel_mm)) >= 60.0) + 1:
         rows, cols = np.nonzero(labels == label)
-        x, y = cols * pixel_mm[0], rows * pixel_mm[1]
-        width, depth = float(np.ptp(x)), float(np.ptp(y))
-        if width < min_width_mm or depth < 15.0:
-            continue
-        centre = 0.5 * (x.min() + x.max())
-        midline = np.abs(x - centre) < 4.0
-        if not midline.any() or y[midline].max() - y.min() > 0.45 * depth:
-            continue  # solid across the middle: not an arch
-        back = y > y.min() + 0.6 * depth
-        if not ((x[back] < centre - 10.0).any() and (x[back] > centre + 10.0).any()):
-            continue  # no arm on one side
-        if width > best_width:
-            best, best_width = labels == label, width
+        x0, y0 = cols * pixel_mm[0], rows * pixel_mm[1]
+        for turn in turns:
+            angle = np.radians(turn)
+            cx, cy = x0.mean(), y0.mean()
+            x = cx + (x0 - cx) * np.cos(angle) - (y0 - cy) * np.sin(angle)
+            y = cy + (x0 - cx) * np.sin(angle) + (y0 - cy) * np.cos(angle)
+            if _is_arch(x, y, min_width_mm, max_width_mm):
+                width = float(np.ptp(x))
+                if width > best_width:
+                    best, best_width = (labels == label, turn), width
+                break
     return best
 
 
-def find_arch(volume, threshold: float, count: int = 11) -> np.ndarray | None:
+def _is_arch(x: np.ndarray, y: np.ndarray, min_width_mm: float, max_width_mm: float) -> bool:
+    """Whether points (mm, +y to the back) make a U open to the back."""
+    width, depth = float(np.ptp(x)), float(np.ptp(y))
+    if width < min_width_mm or width > max_width_mm or depth < 15.0:
+        return False
+    centre = 0.5 * (x.min() + x.max())
+    midline = np.abs(x - centre) < 4.0
+    if not midline.any() or y[midline].max() - y.min() > 0.45 * depth:
+        return False  # solid across the middle: not an arch
+    back = y > y.min() + 0.6 * depth
+    return bool((x[back] < centre - 10.0).any() and (x[back] > centre + 10.0).any())
+
+
+def find_arch(volume, threshold: float, count: int = 11, max_width_mm: float = np.inf,
+              search_fraction: float = 0.7, turns=None) -> np.ndarray | None:
     """Arch curve points through the mandibular body, found from the scan alone.
 
     Axial sections are searched from the bottom of the scan up for the
     mandible's U (see :func:`_arch_section`); the curve is laid through the
     middle of the bone ten millimetres above the lowest level where the U
     holds for a centimetre. Returns ``(count, 3)`` world points, or None when
-    no mandible-shaped bone is found.
+    no mandible-shaped bone is found. Only the lower ``search_fraction`` of
+    the scan is searched, and only Us at most ``max_width_mm`` wide count:
+    in a CT that reaches the shoulders, the shoulder girdle is a U too.
+    Straight ahead is tried first, then a head turned by ``ARCH_TURNS_DEG``.
     """
+    if turns is None:
+        found = find_arch(volume, threshold, count, max_width_mm, search_fraction, (0.0,))
+        if found is not None:
+            return found
+        return find_arch(volume, threshold, count, max_width_mm, search_fraction,
+                         (0.0, *ARCH_TURNS_DEG))
     spacing = volume.spacing
     stride = np.maximum(np.round(1.0 / spacing[:2]).astype(int), 1)
     coarse_pixel = spacing[:2] * stride
@@ -301,9 +355,10 @@ def find_arch(volume, threshold: float, count: int = 11) -> np.ndarray | None:
     array = volume.array
     levels = [
         k
-        for k in range(0, int(array.shape[0] * 0.7), z_step)
+        for k in range(0, max(int(array.shape[0] * search_fraction), 1), z_step)
         if _arch_section(
-            array[k, :: stride[1], :: stride[0]] >= threshold, coarse_pixel, MIN_ARCH_WIDTH_MM
+            array[k, :: stride[1], :: stride[0]] >= threshold, coarse_pixel, MIN_ARCH_WIDTH_MM,
+            max_width_mm, turns,
         )
         is not None
     ]
@@ -322,14 +377,20 @@ def find_arch(volume, threshold: float, count: int = 11) -> np.ndarray | None:
     if start is None:
         return None
     level = min(levels, key=lambda k: abs(k - (start + MIN_BODY_HEIGHT_MM / spacing[2])))
-    section = _arch_section(array[level] >= threshold, spacing[:2], MIN_ARCH_WIDTH_MM)
-    if section is None:
+    found = _arch_section(array[level] >= threshold, spacing[:2], MIN_ARCH_WIDTH_MM, max_width_mm, turns)
+    if found is None:
         return None
+    section, turn = found
     rows, cols = np.nonzero(section)
     # Bin the bone by angle about a point just behind the arch: the mean of
-    # each bin is a point on the middle of the body.
-    centre_col, centre_row = cols.mean(), rows.max() + 5.0 / spacing[1]
-    angle = np.arctan2(rows - centre_row, cols - centre_col)
+    # each bin is a point on the middle of the body. "Behind" is in the
+    # frame the U was recognised in, for a head lying turned.
+    t = np.radians(turn)
+    x, y = cols * spacing[0], rows * spacing[1]
+    cx, cy = x.mean(), y.mean()
+    u = (x - cx) * np.cos(t) - (y - cy) * np.sin(t)
+    v = (x - cx) * np.sin(t) + (y - cy) * np.cos(t)
+    angle = np.arctan2(v - (v.max() + 5.0), u)
     edges = np.linspace(angle.min(), angle.max(), count + 1)
     points = []
     for low, high in zip(edges[:-1], edges[1:]):
@@ -362,8 +423,10 @@ def mandible_centreline(volume, isolation: "MandibleIsolation", body_points: np.
 
     spacing, origin, mask = volume.spacing, volume.origin, isolation.mask
     body = np.asarray(body_points, dtype=float)
-    body = body[np.argsort(body[:, 0])]
-    centre_x = float(np.mean(body[:, 0]))
+    front, back, lateral = arch_axes(body)
+    if float((body[0, :2] - body[-1, :2]) @ lateral) > 0:
+        body = body[::-1]  # patient right first
+    centre = float(np.mean(body[:, :2] @ lateral))
     bite = isolation.bite
     bite_level = (
         float(np.median(bite.heights_mm[bite.has_teeth]))
@@ -373,10 +436,12 @@ def mandible_centreline(volume, isolation: "MandibleIsolation", body_points: np.
     k_step = max(int(round(step_mm / spacing[2])), 1)
     k_start = max(int(np.ceil((bite_level + 6.0 - origin[2]) / spacing[2])), 0)
     xs = origin[0] + np.arange(mask.shape[2]) * spacing[0]
+    ys = origin[1] + np.arange(mask.shape[1]) * spacing[1]
+    across = xs[None, :] * lateral[0] + ys[:, None] * lateral[1]
     pixel_area = float(spacing[0] * spacing[1])
     rami = []
     for side in (-1.0, 1.0):
-        columns = ((xs - centre_x) * side > 15.0)[None, :]
+        columns = (across - centre) * side > 15.0
         trail, previous = [], None
         for k in range(k_start, mask.shape[0], k_step):
             section = mask[k] & columns
@@ -401,7 +466,7 @@ def mandible_centreline(volume, isolation: "MandibleIsolation", body_points: np.
                 if trail:
                     break
                 continue
-            best = max(found, key=lambda c: c[1])  # the back process: the condyle
+            best = max(found, key=lambda c: float(c @ back))  # the back process: the condyle
             previous = best
             trail.append([best[0], best[1], origin[2] + k * spacing[2]])
         trail = np.array(trail, dtype=float).reshape(-1, 3)
@@ -425,6 +490,31 @@ def even_points(points: np.ndarray, spacing_mm: float) -> np.ndarray:
     count = max(int(round(s[-1] / spacing_mm)), 2)
     wanted = np.linspace(0.0, s[-1], count + 1)
     return np.column_stack([np.interp(wanted, s, points[:, k]) for k in range(3)])
+
+
+def arch_axes(points: np.ndarray):
+    """``(front, back, lateral)`` of an arch in plan, as 2-D vectors.
+
+    ``front`` is the point of the arch farthest from the line through its
+    ends (the chin, on any U); ``back`` is square to that line, pointing
+    from the front towards it, and ``lateral`` to the patient's left. For a
+    head lying straight these are +y and +x; for one lying turned in the
+    scanner they turn with it.
+    """
+    xy = np.asarray(points, dtype=float)[:, :2]
+    between = 0.5 * (xy[0] + xy[-1])
+    chord = xy[-1] - xy[0]
+    length = float(np.linalg.norm(chord))
+    if length < 1e-6:
+        return xy[0], np.array([0.0, 1.0]), np.array([1.0, 0.0])
+    square = np.array([-chord[1], chord[0]]) / length
+    depth = (xy - between) @ square
+    front = xy[int(np.argmax(np.abs(depth)))]
+    back = square if float((between - front) @ square) > 0 else -square
+    if back[1] > np.cos(np.radians(STRAIGHT_DEG)):
+        back = np.array([0.0, 1.0])
+    lateral = np.array([back[1], -back[0]])
+    return front, back, lateral
 
 
 def frames_for(points: np.ndarray, step_mm: float = 0.25):
@@ -459,7 +549,7 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     hi = points.max(axis=0) + np.array([55.0, 55.0, 0.0])
     corners = np.array([[x, y] for x in (lo[0], hi[0]) for y in (lo[1], hi[1])])
     lo[2] = origin[2]
-    hi[2] = float(np.max(plane(corners[:, 0], corners[:, 1]))) + SKULL_ABOVE_BITE_MM + 8.0
+    hi[2] = float(np.max(plane(corners[:, 0], corners[:, 1]))) + CONDYLE_CLEAR_MM + 8.0
     i0 = np.maximum(np.floor((lo - origin) / spacing).astype(int), 0)
     i1 = np.minimum(np.ceil((hi - origin) / spacing).astype(int) + 1, volume.size_xyz)
     box = (slice(i0[2], i1[2]), slice(i0[1], i1[1]), slice(i0[0], i1[0]))
@@ -529,8 +619,14 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
             filled_teeth[np.unique(nearest[crowns])] = True
             filled_teeth &= on_arch & ~bite.has_teeth
 
-    def skull_markers(mask: np.ndarray) -> np.ndarray:
+    braincase = _braincase(volume.array[box], crop, spacing) & (above_plane > RAMUS_SEED_MM)
+
+    def skull_markers(mask: np.ndarray, clear=None) -> np.ndarray:
+        """The skull's markers; ``clear`` (columns) is kept free of the
+        far-above-the-bite ones below the condyles' greatest height."""
         high = above_plane > SKULL_ABOVE_BITE_MM
+        if clear is not None:
+            high = high & ~(clear[None] & (above_plane < CONDYLE_CLEAR_MM))
         upper_arch = (
             (distance < 8.0)[None]
             & arch_interior[nearest][None]
@@ -566,9 +662,34 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
         target = _label_at(labels, station_index, radius)
         mandible = labels == target if target else connected
         del labels
-        skull = skull_markers(mandible)
+        # Each ramus is mandible up to below its notch, and the corridor it
+        # rises in is no place for a skull marker below the condyles' height.
+        # Without this the watershed is left a whole ramus to decide, and on a
+        # thick-slice CT, where the joint space is blurred away, the thin
+        # middle of the ramus is where it cuts.
+        plate, corridor = _ramus_corridors(mandible, X, Y, above_plane, points, spacing)
+        # Never inside the arch: that is upper teeth and palate above the bite.
+        ramus = mandible & (plate & ~inside_arch)[None] & (above_plane > -2.0) & (
+            above_plane < RAMUS_SEED_MM
+        )
+        processes, joint_roofs = _processes(mandible, ramus & (above_plane > RAMUS_SEED_MM - 4.0), spacing)
+        skull = skull_markers(mandible, clear=corridor)
+        # The braincase is skull even in the corridor: over each joint it is
+        # the fossa roof, the skull's side of the joint.
+        skull |= mandible & braincase
+        # So is the spine, which joins the skull behind the jaws and would
+        # otherwise be anyone's.
+        _, back_dir, lateral = arch_axes(points)
+        across = X * lateral[0] + Y * lateral[1]
+        behind = X * back_dir[0] + Y * back_dir[1]
+        spine = (np.abs(across - float(np.mean(points[:, :2] @ lateral))) < SPINE_HALF_WIDTH_MM) & (
+            behind > float((points[:, :2] @ back_dir).max()) + SPINE_BEHIND_ARCH_MM
+        )
+        skull |= mandible & spine[None]
+        skull |= joint_roofs
         if skull.any():
             seeds = mandible & (distance < 15.0)[None] & (height_above < -2.0)
+            seeds |= ramus | processes
             markers = seeds.astype(np.uint8) + 2 * (skull & ~seeds).astype(np.uint8)
             split = _split_at_narrowest(
                 mandible, markers, volume.array[box], threshold, spacing
@@ -583,7 +704,7 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     mask = np.zeros(full_shape, dtype=bool)
     mask[box] = mandible
     other = bone & ~mask
-    heights, warnings = _ramus_check(mandible, above_plane, X, points)
+    heights, warnings = _ramus_check(mandible, above_plane, X, Y, points)
     return MandibleIsolation(
         mask=mask,
         other_bone=other,
@@ -595,18 +716,225 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     )
 
 
+def _braincase(gray: np.ndarray, bone: np.ndarray, spacing) -> np.ndarray:
+    """Bone lining the cranial cavity, where the scan reaches it.
+
+    In each axial slice through the cranium bone closes off a large region
+    of soft tissue: the brain. The bone within ``BRAINCASE_LINING_MM`` of it
+    is skull whatever its height, which matters over the joints, where the
+    condyles may rise above any fixed height and the fossa roof between
+    them and the brain is the skull's only bone there.
+    """
+    import SimpleITK as sitk
+
+    values = gray[::2, ::4, ::4].ravel()
+    lo, hi = (float(v) for v in np.percentile(values, [0.5, 99.5]))
+    if hi <= lo:
+        return np.zeros_like(bone)
+    from .threshold import otsu_threshold
+
+    counts, edges = np.histogram(np.clip(values, lo, hi), 128, (lo, hi))
+    air = otsu_threshold(counts, edges)
+    pixel_cm2 = float(spacing[0] * spacing[1]) / 100.0
+    brain = np.zeros_like(bone)
+    for k in range(bone.shape[0]):
+        section = bone[k]
+        if not section.any():
+            continue
+        # The box round the jaws stops short of the back of the skull: close
+        # it there, or the cranium is a ring cut open at the back.
+        closed = section.copy()
+        closed[-1, :] = True
+        filled = sitk.GetArrayFromImage(
+            sitk.BinaryFillhole(sitk.GetImageFromArray(closed.astype(np.uint8)))
+        ) > 0
+        enclosed = filled & ~section & (gray[k] > air)
+        if enclosed.sum() * pixel_cm2 < MIN_BRAIN_SECTION_CM2:
+            continue
+        labels = sitk.GetArrayFromImage(
+            sitk.ConnectedComponent(sitk.GetImageFromArray(enclosed.astype(np.uint8)))
+        )
+        sizes = np.bincount(labels.ravel())
+        sizes[0] = 0
+        if sizes.max() * pixel_cm2 >= MIN_BRAIN_SECTION_CM2:
+            brain[k] = labels == int(sizes.argmax())
+    if not brain.any():
+        return brain
+    image = sitk.GetImageFromArray(brain.astype(np.uint8))
+    image.SetSpacing([float(v) for v in spacing])
+    distance = sitk.GetArrayFromImage(
+        sitk.SignedMaurerDistanceMap(image, insideIsPositive=False, squaredDistance=False,
+                                     useImageSpacing=True)
+    )
+    return bone & (distance <= BRAINCASE_LINING_MM)
+
+
+def _ramus_corridors(mandible, X, Y, above_plane, points, spacing):
+    """Each ramus's plate, and the corridor above it, as column masks.
+
+    A ramus is a thin, near-vertical plate rising behind the last molars.
+    Just above the bite, below the notch, nothing else of the mandible
+    stands there, so the plate is fitted (a line through its bone in plan)
+    from the bone at that height on either side, behind the arch's end.
+    Returns ``(plate, corridor)``: the columns within the plate's half
+    thickness of that line, and within the wider corridor half-width.
+    """
+    _, back_dir, lateral = arch_axes(points)
+    sideways = X * lateral[0] + Y * lateral[1]
+    behind = X * back_dir[0] + Y * back_dir[1]
+    on_arch = points[:, :2] @ lateral
+    centre = float(np.mean(on_arch))
+    half = 0.25 * float(np.ptp(on_arch))
+    sample = (above_plane > RAMUS_SAMPLE_MM[0]) & (above_plane < RAMUS_SAMPLE_MM[1]) & mandible
+    plate = np.zeros(X.shape, dtype=bool)
+    corridor = np.zeros(X.shape, dtype=bool)
+    ends = points[[int(np.argmin(on_arch)), int(np.argmax(on_arch))]]
+    voxel_mm3 = float(np.prod(spacing))
+    for side, end in zip((-1.0, 1.0), ends):
+        columns = ((sideways - centre) * side > half) & (behind > float(end[:2] @ back_dir) - 5.0)
+        # The ramus rises from the body just behind the last tooth: in the
+        # bone up to the slab's top on this side, it is the piece nearest the
+        # arch's end that reaches both down below the bite and up into the
+        # slab. An upper molar or the tuberosity stands in the slab too, but
+        # the bite cut parted it from everything below; the spine reaches
+        # below the bite too, but far behind.
+        labels = _components(mandible & columns[None] & (above_plane < RAMUS_SAMPLE_MM[1]))
+        low = np.unique(labels[(above_plane < -3.0) & (labels > 0)])
+        count = int(labels.max()) + 1
+        labels = np.where(sample, labels, 0)
+        in_slab = np.bincount(labels.ravel(), minlength=count)
+        best, best_near = 0, 15.0
+        for label in low:
+            if in_slab[label] * voxel_mm3 < 200.0:
+                continue
+            _, r, c = np.nonzero(labels == label)
+            near = float(np.min(np.hypot(X[r, c] - end[0], Y[r, c] - end[1])))
+            if near < best_near:
+                best, best_near = label, near
+        if not best:
+            continue  # no ramus to speak of at this height on this side
+        _, rows, cols = np.nonzero(labels == best)
+        xy = np.column_stack([X[rows, cols], Y[rows, cols]])
+        middle = xy.mean(axis=0)
+        _, _, axes = np.linalg.svd(xy - middle, full_matrices=False)
+        along, across = axes[0], axes[1]
+        offset = (np.column_stack([X.ravel(), Y.ravel()]) - middle)
+        t = (offset @ along).reshape(X.shape)
+        d = np.abs(offset @ across).reshape(X.shape)
+        if float(along @ back_dir) < 0:  # point it backwards: the condyle is at the back
+            along, t = -along, -t
+        span = (xy - middle) @ along
+        within = (t > span.min() - 10.0) & (t < span.max() + 10.0) & columns
+        plate |= within & (d < RAMUS_SEED_HALF_MM)
+        # Only the back of the ramus rises to a condyle; the coronoid in front
+        # stops under the zygomatic arch, which stays the skull's.
+        back = t > 0.5 * (span.min() + span.max())
+        corridor |= within & back & (d < RAMUS_CORRIDOR_HALF_MM)
+    return plate, corridor
+
+
+#: An axial section of a condylar or coronoid process is at most a few cm²;
+#: one of the skull base, which a process traced upwards runs into where
+#: the joint space is lost, is many times that.
+PROCESS_MAX_CM2 = 6.0
+#: Mandible seeds stop this far below where a process meets the skull, and
+#: skull markers start this far above it, mm; the watershed decides between.
+PROCESS_MARGIN_MM = 3.0
+#: Skull markers are put this far up above the meeting, mm.
+PROCESS_ROOF_MM = 12.0
+
+
+def _processes(mandible, start, spacing):
+    """The condylar and coronoid processes, followed up from the ramus seeds.
+
+    ``start`` is the top of the ramus seeds. Slice by slice upwards, the
+    pieces of bone (in the axial section) touching what was traced below are
+    the processes. A process that ends in a joint space simply stops being
+    found. One that has lost its joint space to thick slices, or rests on
+    its eminence with the mouth open, runs into a piece far too big to be a
+    process: the skull base. It is taken to end there; the bone just above
+    its tip is the skull's, the bone just below the mandible's, and the few
+    millimetres between are left to the watershed. Returns ``(seeds, roofs)``.
+    """
+    import SimpleITK as sitk
+
+    seeds = np.zeros_like(mandible)
+    roofs = np.zeros_like(mandible)
+    levels = np.flatnonzero(start.any(axis=(1, 2)))
+    if not len(levels):
+        return seeds, roofs
+    pixel_cm2 = float(spacing[0] * spacing[1]) / 100.0
+    margin = max(int(round(PROCESS_MARGIN_MM / spacing[2])), 1)
+    roof = max(int(round(PROCESS_ROOF_MM / spacing[2])), 1)
+    reach = max(int(round(3.0 / min(spacing[0], spacing[1]))), 1)
+    k = int(levels.max())
+    current = start[k]
+    traced = []
+    meetings = []
+    while k + 1 < mandible.shape[0] and current.any():
+        k += 1
+        labels = sitk.GetArrayFromImage(
+            sitk.ConnectedComponent(sitk.GetImageFromArray(mandible[k].astype(np.uint8)), True)
+        )
+        touching = np.unique(labels[current & (labels > 0)])
+        sizes = np.bincount(labels.ravel(), minlength=int(labels.max()) + 1)
+        following = np.zeros_like(current)
+        for label in touching:
+            piece = labels == label
+            if sizes[label] * pixel_cm2 > PROCESS_MAX_CM2:
+                meetings.append((k, current & _grow2d(piece, reach)))
+            else:
+                following |= piece
+        if following.any():
+            traced.append((k, following))
+        current = following
+    for level, section in traced:
+        seeds[level] |= section
+    for level, tip in meetings:
+        tip = _grow2d(tip, reach)
+        for below in range(max(level - margin, 0), level):
+            seeds[below] &= ~tip
+        for above in range(level + margin, min(level + roof, mandible.shape[0])):
+            roofs[above] |= mandible[above] & tip
+    if traced:  # a process that simply stops keeps clear of its joint too
+        top = traced[-1][0]
+        seeds[max(top - margin + 1, 0) : top + 1] = False
+    return seeds, roofs
+
+
+def _grow2d(mask: np.ndarray, radius: int) -> np.ndarray:
+    """A 2-D mask grown by ``radius`` pixels (a square)."""
+    out = mask.copy()
+    for axis in (0, 1):
+        grown = out.copy()
+        for shift in range(1, radius + 1):
+            grown |= np.roll(out, shift, axis=axis) | np.roll(out, -shift, axis=axis)
+        out = grown
+    return out
+
+
+#: The cervical spine stands within this of the midline, mm, behind the
+#: arch; nothing of the mandible does.
+SPINE_HALF_WIDTH_MM = 25.0
+SPINE_BEHIND_ARCH_MM = 15.0
+
+
 #: The two rami reach to within this of the same height on any jaw that is
 #: whole; a bigger difference means one was cut short.
 RAMUS_MISMATCH_MM = 15.0
 
 
-def _ramus_check(mandible: np.ndarray, above_plane: np.ndarray, X: np.ndarray, points: np.ndarray):
+def _ramus_check(mandible: np.ndarray, above_plane: np.ndarray, X: np.ndarray, Y: np.ndarray,
+                 points: np.ndarray):
     """How high each ramus reaches above the bite plane, and a warning if one
     falls well short of the other: the mandible should run condyle to condyle."""
-    centre = float(np.mean(points[:, 0]))
-    half = 0.25 * float(np.ptp(points[:, 0]))
+    _, _, lateral = arch_axes(points)
+    across = X * lateral[0] + np.broadcast_to(Y, X.shape) * lateral[1]
+    on_arch = points[:, :2] @ lateral
+    centre = float(np.mean(on_arch))
+    half = 0.25 * float(np.ptp(on_arch))
     heights = []
-    for side in (X < centre - half, X > centre + half):  # patient right (-x), left (+x)
+    for side in (across < centre - half, across > centre + half):  # patient right, left
         region = mandible & side[None]
         heights.append(float(above_plane[region].max()) if region.any() else float("nan"))
     right, left = heights

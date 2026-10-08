@@ -15,6 +15,14 @@ coarser working grid. A full-head CBCT at 0.25 mm is 300 million voxels, some
 8 GB once contoured, and would take the application down on most machines.
 Block averaging keeps every world coordinate exact; only the voxel size
 changes, and it is reported with the load.
+
+A medical CT is handled differently, because it may show the whole body and
+is usually reconstructed in slices several times thicker than its pixels.
+The jaws are found in it first (``geometry/head_region.py``) and only a box
+round them is kept, at full resolution. That box is then resampled to cubic
+voxels with cubic interpolation: marching cubes on 3 mm slices draws a bone
+surface in 3 mm terraces, and on cubic voxels it draws it smooth. This too
+is announced with the load. Every world coordinate stays exact.
 """
 
 from __future__ import annotations
@@ -34,6 +42,15 @@ _MAX_SPACING_VARIATION = 0.01
 _MIN_SPACING_TOLERANCE_MM = 0.01
 # Direction cosines must be this close to a signed axis permutation.
 _MIN_AXIS_ALIGNMENT = 0.999
+#: Cubic voxel size a CT's jaw box is resampled to, mm: its own pixel size,
+#: but no coarser than the upper bound (a CBCT's) and no finer than the lower.
+CT_VOXEL_MM = (0.5, 0.75)
+#: A CT longer than this shows more than a head, mm, and is cut down to the
+#: jaws. A CBCT never is: its field of view is the jaws.
+HEAD_LENGTH_MM = 260.0
+#: Voxels coarser than this along any axis, mm, step the bone surface
+#: visibly: the jaw box is resampled to cubic voxels.
+SMOOTH_VOXEL_MM = 1.0
 #: Largest working volume, in voxels, before it is block-averaged. 80 M voxels
 #: is 320 MB as float32, which leaves room for the surface, the reformats and
 #: the reconstruction on an 8 GB machine.
@@ -74,6 +91,8 @@ class SeriesGeometry:
     warnings: list[str] = field(default_factory=list)
     #: Voxels averaged per axis to make the working grid (1 = native).
     working_factor: int = 1
+    #: True when this is a medical CT cut down to its jaws (see ``_ct_jaws``).
+    jaw_box: bool = False
 
 
 def list_series(folder: str | Path) -> list[SeriesInfo]:
@@ -240,6 +259,20 @@ def _reorient_to_lps(
     of image axis ``a``. With ``factor > 1`` the result is averaged over
     ``factor``³ blocks on the way, without a full-resolution float copy.
     """
+    out, new_spacing, new_origin = _lps_view(array, spacing, origin, direction)
+    if factor > 1:
+        data = block_average(out, factor)
+        # A block's value belongs at the centre of the voxels it averaged.
+        new_origin = new_origin + 0.5 * (factor - 1) * new_spacing
+        new_spacing = new_spacing * factor
+    else:
+        data = np.ascontiguousarray(out, dtype=np.float32)
+    return Volume(array=data, spacing=new_spacing, origin=new_origin)
+
+
+def _lps_view(array, spacing, origin, direction):
+    """``(view, spacing, origin)``: the array as indexed ``[z, y, x]`` in
+    patient axes, as a view (no copy), after refusing oblique series."""
     world_axis = np.argmax(np.abs(direction), axis=0)  # per image axis
     if sorted(world_axis.tolist()) != [0, 1, 2]:
         raise DicomLoadError(
@@ -275,15 +308,7 @@ def _reorient_to_lps(
             flips.append(w)
     for w in flips:
         out = np.flip(out, axis=2 - w)  # world x,y,z -> numpy axis 2,1,0
-
-    if factor > 1:
-        data = block_average(out, factor)
-        # A block's value belongs at the centre of the voxels it averaged.
-        new_origin = new_origin + 0.5 * (factor - 1) * new_spacing
-        new_spacing = new_spacing * factor
-    else:
-        data = np.ascontiguousarray(out, dtype=np.float32)
-    return Volume(array=data, spacing=new_spacing, origin=new_origin)
+    return out, new_spacing, new_origin
 
 
 def block_average(array: np.ndarray, factor: int) -> np.ndarray:
@@ -315,9 +340,13 @@ def working_factor(shape, budget: int = WORKING_VOXEL_BUDGET) -> int:
 
 
 def load_series(
-    files: list[str], voxel_budget: int = WORKING_VOXEL_BUDGET
+    files: list[str], voxel_budget: int = WORKING_VOXEL_BUDGET, modality: str = ""
 ) -> tuple[Volume, SeriesGeometry]:
-    """Validate and load a DICOM series into an LPS-aligned :class:`Volume`."""
+    """Validate and load a DICOM series into an LPS-aligned :class:`Volume`.
+
+    A CT (``modality == "CT"``) is cut down to its jaws and made of cubic
+    voxels; see the module docstring.
+    """
     import SimpleITK as sitk
 
     geometry = inspect_geometry(files)
@@ -331,6 +360,14 @@ def load_series(
     spacing = np.asarray(image.GetSpacing(), dtype=float)
     origin = np.asarray(image.GetOrigin(), dtype=float)
     direction = np.asarray(image.GetDirection(), dtype=float).reshape(3, 3)
+    # Not every "CT" is a medical CT: many CBCT scanners write that modality
+    # too. What matters is whether the scan shows more than the head, or has
+    # voxels coarse enough to step the bone surface; a CBCT does neither.
+    length = _length_mm(array.shape, spacing, direction)
+    if modality.upper() == "CT" and (length > HEAD_LENGTH_MM or spacing.max() > SMOOTH_VOXEL_MM):
+        jaws = _ct_jaws(array, spacing, origin, direction, geometry, voxel_budget)
+        if jaws is not None:
+            return jaws, geometry
     factor = working_factor(array.shape, voxel_budget)
     volume = _reorient_to_lps(array, spacing, origin, direction, factor)
     del array, image
@@ -346,6 +383,78 @@ def load_series(
             "millimetres from the DICOM spacing."
         )
     return volume, geometry
+
+
+def _length_mm(shape, spacing, direction) -> float:
+    """Head-to-foot extent of a series, mm."""
+    direction = np.asarray(direction, dtype=float).reshape(3, 3)
+    axis = int(np.argmax(np.abs(direction[2])))  # image axis along world z
+    return float((shape[2 - axis] - 1) * spacing[axis])
+
+
+def _ct_jaws(array, spacing, origin, direction, geometry, voxel_budget) -> Volume | None:
+    """The box round the jaws of a CT, in cubic voxels; None if the jaws are
+    not found (the scan is then loaded whole, as any other)."""
+    from .geometry.head_region import coarse_view, find_jaw_region
+
+    view, spacing, origin = _lps_view(array, spacing, origin, direction)
+    region = find_jaw_region(coarse_view(view, spacing, origin))
+    if region is None:
+        geometry.warnings.append(
+            "The jaws could not be found in this CT on their own, so the whole scan "
+            "is shown. If it shows more than the head, the mandible may not be "
+            "found automatically either: draw the arch curve (step 2)."
+        )
+        return None
+    shape = np.array(view.shape[::-1])  # x, y, z
+    lo = np.clip(np.floor((region.lo - origin) / spacing).astype(int), 0, shape - 1)
+    hi = np.clip(np.ceil((region.hi - origin) / spacing).astype(int) + 1, lo + 2, shape)
+    crop = np.ascontiguousarray(view[lo[2] : hi[2], lo[1] : hi[1], lo[0] : hi[0]], dtype=np.float32)
+    crop_origin = origin + lo * spacing
+    extent = (hi - lo - 1) * spacing
+
+    scan_mm = (shape - 1) * spacing
+    geometry.jaw_box = True
+    kept = (
+        f"This CT covers {scan_mm[0]:.0f} × {scan_mm[1]:.0f} × {scan_mm[2]:.0f} mm. "
+        f"MandiPlan keeps the jaws: a {extent[0]:.0f} × {extent[1]:.0f} × "
+        f"{extent[2]:.0f} mm box round the mandible, at the scan's full resolution"
+    )
+    if spacing.max() <= SMOOTH_VOXEL_MM:
+        geometry.warnings.append(kept + ". Distances are in millimetres from the DICOM spacing.")
+        return Volume(array=crop, spacing=spacing.copy(), origin=crop_origin)
+
+    voxel = float(np.clip(spacing[:2].min(), *CT_VOXEL_MM))
+    while np.prod(np.floor(extent / voxel) + 1) > voxel_budget:
+        voxel *= 1.1
+    volume = _resample_cubic(crop, spacing, crop_origin, voxel)
+    geometry.warnings[:] = [w for w in geometry.warnings if not w.startswith("Anisotropic")]
+    geometry.warnings.append(
+        kept + f", resampled from {spacing[0]:.2f} × {spacing[1]:.2f} × {spacing[2]:.2f} mm "
+        f"voxels to {voxel:.2f} mm cubes so the bone surface is smooth rather than "
+        "stepped. Distances are in millimetres from the DICOM spacing."
+    )
+    return volume
+
+
+def _resample_cubic(array: np.ndarray, spacing, origin, voxel: float) -> Volume:
+    """``array`` resampled to cubic ``voxel``-sized voxels, cubic B-spline."""
+    import SimpleITK as sitk
+
+    image = sitk.GetImageFromArray(array)
+    image.SetSpacing([float(v) for v in spacing])
+    image.SetOrigin([float(v) for v in origin])
+    extent = (np.array(array.shape[::-1]) - 1) * np.asarray(spacing, dtype=float)
+    size = [int(n) for n in np.floor(extent / voxel) + 1]
+    reference = sitk.Image(size, sitk.sitkFloat32)
+    reference.SetSpacing([voxel] * 3)
+    reference.SetOrigin([float(v) for v in origin])
+    out = sitk.Resample(
+        image, reference, sitk.Transform(), sitk.sitkBSpline, float(array.min()), sitk.sitkFloat32
+    )
+    # The cubic overshoots a little beside metal; keep within the scan's range.
+    data = np.clip(sitk.GetArrayFromImage(out), float(array.min()), float(array.max()))
+    return Volume(array=data, spacing=np.full(3, voxel), origin=np.asarray(origin, dtype=float))
 
 
 def load_folder(
@@ -364,5 +473,5 @@ def load_folder(
         chosen = matches[0]
     else:
         chosen = max(series, key=lambda s: s.n_files)
-    volume, geometry = load_series(chosen.files, voxel_budget)
+    volume, geometry = load_series(chosen.files, voxel_budget, chosen.modality)
     return volume, geometry, chosen

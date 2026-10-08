@@ -147,6 +147,9 @@ class VolumePanel(QWidget):
 
         self.load_button.clicked.connect(self.load_requested)
         self.threshold_panel.threshold_changed.connect(session.set_threshold)
+        self.threshold_panel.otsu_button.clicked.connect(
+            lambda: self.threshold_panel.set_value(session.automatic_threshold())
+        )
         self.separate.toggled.connect(session.set_separate_mandible)
         self.separate_again.clicked.connect(session.separate_along_arch)
         session.volume_changed.connect(self.refresh_volume)
@@ -195,6 +198,16 @@ class VolumePanel(QWidget):
             return
         self.info.setText("\n".join(session.info.lines(session.volume)))
         set_role(self.info, "hint")
+        if getattr(session.info.geometry, "jaw_box", False):
+            self.threshold_panel.note.setText(
+                "A CT's gray values are Hounsfield units, but its thick slices make "
+                "thin bone read low: the seed is set low for the rami and condyles. "
+                "Set it by eye on the bone."
+            )
+        else:
+            self.threshold_panel.note.setText(
+                "CBCT gray values are not Hounsfield units — set this by eye on the bone."
+            )
         counts, edges = session.volume.histogram()
         self.threshold_panel.configure(counts, edges, session.threshold)
 

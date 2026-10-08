@@ -374,3 +374,47 @@ def test_placing_a_cut_by_numbers_keeps_the_side_it_removes(arch_frames, spec):
     assert np.dot(session.planes[1].normal, before[1]) > 0
     assert session.plane_arc_position(1) == pytest.approx(mid + 14.0, abs=0.3)
     assert np.isfinite(session.report.arc_length_mm)
+
+
+def _condyle_to_condyle_frames():
+    """A U-shaped body with both rami climbing behind it, like the curve the
+    app lays from condyle to condyle."""
+    from mandiplan.geometry import cpr
+    from mandiplan.geometry.spline import ArchCurve
+
+    angles = np.radians(np.linspace(-170.0, -10.0, 9))
+    body = np.column_stack([45.0 * np.cos(angles), 45.0 * np.sin(angles), np.zeros(9)])
+    right = [body[0] + [-2.0 * i, 6.0 * i, 12.0 * i] for i in range(5, 0, -1)]
+    left = [body[-1] + [2.0 * i, 6.0 * i, 12.0 * i] for i in range(1, 6)]
+    return cpr.build_frames(ArchCurve(np.vstack([right, body, left])), step_mm=0.2)
+
+
+def test_a_resection_takes_only_the_stretch_between_its_cuts():
+    """Two cut planes enclose a wedge that runs on for ever; a far ramus in
+    it is not part of the resection, and the report measures the segment."""
+    from mandiplan.geometry.resection import bound_resection, build_report, resected_mask
+
+    frames = _condyle_to_condyle_frames()
+    # Find a 30 mm segment whose wedge also holds a far part of the curve, so
+    # the test is of the case that went wrong.
+    chosen = None
+    for start in np.arange(20.0, frames.length_mm - 60.0, 2.0):
+        planes = []
+        for s, sign in ((start, 1.0), (start + 30.0, -1.0)):
+            index = frames.index_of(s)
+            planes.append(CutPlane(frames.points[index], sign * frames.tangents[index]))
+        inside = resected_mask(planes, frames.points)
+        far = inside & ((frames.s < start - 5.0) | (frames.s > start + 35.0))
+        if far.any():
+            chosen = start, planes
+            break
+    assert chosen is not None, "no cut pair puts a far part of this curve in its wedge"
+    start, planes = chosen
+
+    bound_resection(frames, planes)
+    inside = resected_mask(planes, frames.points)
+    assert inside.any()
+    assert np.all((frames.s[inside] > start - 1.0) & (frames.s[inside] < start + 31.0))
+    report = build_report(frames, planes)
+    assert report.arc_length_mm == pytest.approx(30.0, abs=1.0)
+    assert report.entry_s_mm == pytest.approx(start, abs=1.0)
