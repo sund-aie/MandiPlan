@@ -196,7 +196,7 @@ class VolumePanel(QWidget):
             )
             set_role(self.info, "empty")
             return
-        self.info.setText("\n".join(session.info.lines(session.volume)))
+        self.info.setText("\n".join(session.info.lines(session.scan)))
         set_role(self.info, "hint")
         if getattr(session.info.geometry, "jaw_box", False):
             self.threshold_panel.note.setText(

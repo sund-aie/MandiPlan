@@ -16,13 +16,21 @@ coarser working grid. A full-head CBCT at 0.25 mm is 300 million voxels, some
 Block averaging keeps every world coordinate exact; only the voxel size
 changes, and it is reported with the load.
 
-A medical CT is handled differently, because it may show the whole body and
-is usually reconstructed in slices several times thicker than its pixels.
-The jaws are found in it first (``geometry/head_region.py``) and only a box
-round them is kept, at full resolution. That box is then resampled to cubic
-voxels with cubic interpolation: marching cubes on 3 mm slices draws a bone
-surface in 3 mm terraces, and on cubic voxels it draws it smooth. This too
-is announced with the load. Every world coordinate stays exact.
+A medical CT is handled in two parts, because it may show the whole body
+and is usually reconstructed in slices several times thicker than its
+pixels. The whole scan is kept, as any other, and is what the slices and the
+first 3-D view show. The jaws are also found in it (``geometry/head_region.py``)
+and a box round them is cut from the scan at its full resolution and
+resampled to cubic voxels with cubic interpolation: marching cubes on 3 mm
+slices draws a bone surface in 3 mm terraces, and on cubic voxels it draws it
+smooth. The mandible is separated and drawn from that box
+(``SeriesGeometry.jaw_volume``). Both are in the same world millimetres; the
+box is announced with the load.
+
+A folder often holds several series of one study: the scout, thin and thick
+reconstructions, reformats in other planes, dose reports. The one loaded by
+default is the one best suited to the bone (see :func:`choose_series`), not
+merely the one with the most files.
 """
 
 from __future__ import annotations
@@ -67,6 +75,8 @@ class SeriesInfo:
     description: str
     modality: str
     files: list[str]
+    #: DICOM ImageType values, e.g. ("ORIGINAL", "PRIMARY", "AXIAL").
+    image_type: tuple[str, ...] = ()
 
     @property
     def n_files(self) -> int:
@@ -91,8 +101,13 @@ class SeriesGeometry:
     warnings: list[str] = field(default_factory=list)
     #: Voxels averaged per axis to make the working grid (1 = native).
     working_factor: int = 1
-    #: True when this is a medical CT cut down to its jaws (see ``_ct_jaws``).
+    #: True when this is a medical CT whose jaws were found (see ``_ct_jaws``).
     jaw_box: bool = False
+    #: For such a CT: the box round the jaws, cut from the scan at its full
+    #: resolution and made of cubic voxels, in the scan's world millimetres.
+    #: The mandible is separated and drawn from it; the whole scan is what
+    #: the slices show. None for any other scan.
+    jaw_volume: Volume | None = None
 
 
 def list_series(folder: str | Path) -> list[SeriesInfo]:
@@ -110,9 +125,15 @@ def list_series(folder: str | Path) -> list[SeriesInfo]:
         files = list(reader.GetGDCMSeriesFileNames(folder, uid))
         if not files:
             continue
-        desc, modality = _series_labels(files[0])
+        desc, modality, image_type = _series_labels(files[0])
         found.append(
-            SeriesInfo(series_uid=uid, description=desc, modality=modality, files=files)
+            SeriesInfo(
+                series_uid=uid,
+                description=desc,
+                modality=modality,
+                files=files,
+                image_type=image_type,
+            )
         )
 
     if not found:
@@ -122,11 +143,84 @@ def list_series(folder: str | Path) -> list[SeriesInfo]:
     return found
 
 
-def _series_labels(path: str) -> tuple[str, str]:
+def _series_labels(path: str) -> tuple[str, str, tuple[str, ...]]:
     import pydicom
 
     ds = pydicom.dcmread(path, stop_before_pixels=True, force=True)
-    return str(getattr(ds, "SeriesDescription", "")), str(getattr(ds, "Modality", ""))
+    image_type = getattr(ds, "ImageType", ())
+    if isinstance(image_type, str):
+        image_type = image_type.split("\\")
+    return (
+        str(getattr(ds, "SeriesDescription", "")),
+        str(getattr(ds, "Modality", "")),
+        tuple(str(v).strip().upper() for v in image_type),
+    )
+
+
+#: Image types that are pictures of the patient rather than a volume.
+_NOT_A_VOLUME = ("LOCALIZER", "SCOUT", "TOPOGRAM", "MIP", "MINIP", "VR", "SSD", "DRR")
+#: Slice spacings within this of each other are the same, mm.
+_SPACING_TIE_MM = 0.05
+
+
+def _series_rank(series: SeriesInfo):
+    """Sort key for :func:`choose_series`; None if the series is not a volume.
+
+    Read from the first and last slice headers only, so ranking a study of
+    many series stays quick.
+    """
+    import pydicom
+
+    if series.n_files < 2 or any(t in series.image_type for t in _NOT_A_VOLUME):
+        return None
+    try:
+        first, last = (
+            pydicom.dcmread(path, stop_before_pixels=True, force=True)
+            for path in (series.files[0], series.files[-1])
+        )
+        orientation = np.asarray([float(v) for v in first.ImageOrientationPatient])
+        spacing = [float(v) for v in first.PixelSpacing]
+        steps = np.asarray([float(v) for v in last.ImagePositionPatient]) - np.asarray(
+            [float(v) for v in first.ImagePositionPatient]
+        )
+    except (AttributeError, TypeError, ValueError):
+        return None
+    normal = np.cross(orientation[:3], orientation[3:])
+    if np.linalg.norm(normal) < 0.5:
+        return None
+    normal /= np.linalg.norm(normal)
+    length = abs(float(steps @ normal))
+    slice_mm = length / (series.n_files - 1)
+    if slice_mm <= 0:
+        return None
+    return (
+        series.modality.upper() == "CT",
+        # Every scanner acquires axially; a coronal or sagittal series is a
+        # reformat of that, resampled once already.
+        abs(float(normal[2])) > 0.9,
+        # The finest slices resolve the bite and the joint spaces best.
+        -round(slice_mm / _SPACING_TIE_MM),
+        series.image_type[:1] == ("ORIGINAL",),
+        -round(min(spacing), 3),
+        length,
+        series.n_files,
+    )
+
+
+def choose_series(series: list[SeriesInfo]) -> SeriesInfo | None:
+    """The series to plan on, of several in one folder.
+
+    A CT study usually holds a scout, a dose report, thin and thick axial
+    reconstructions, and coronal and sagittal reformats of them; the reformats
+    can hold the most files. The one chosen is an axial volume (the plane the
+    scanner acquired in), with the finest slices, an original reconstruction
+    before a derived one, then the finest pixels and the longest coverage.
+    None when no series is a volume.
+    """
+    ranked = [(rank, s) for s in series if (rank := _series_rank(s)) is not None]
+    if not ranked:
+        return None
+    return max(ranked, key=lambda item: item[0])[1]
 
 
 def inspect_geometry(files: list[str]) -> SeriesGeometry:
@@ -344,8 +438,9 @@ def load_series(
 ) -> tuple[Volume, SeriesGeometry]:
     """Validate and load a DICOM series into an LPS-aligned :class:`Volume`.
 
-    A CT (``modality == "CT"``) is cut down to its jaws and made of cubic
-    voxels; see the module docstring.
+    The volume is always the whole series. For a medical CT
+    (``modality == "CT"``) the box round its jaws is made too, in cubic
+    voxels, as ``geometry.jaw_volume``; see the module docstring.
     """
     import SimpleITK as sitk
 
@@ -365,9 +460,8 @@ def load_series(
     # voxels coarse enough to step the bone surface; a CBCT does neither.
     length = _length_mm(array.shape, spacing, direction)
     if modality.upper() == "CT" and (length > HEAD_LENGTH_MM or spacing.max() > SMOOTH_VOXEL_MM):
-        jaws = _ct_jaws(array, spacing, origin, direction, geometry, voxel_budget)
-        if jaws is not None:
-            return jaws, geometry
+        geometry.jaw_volume = _ct_jaws(array, spacing, origin, direction, geometry, voxel_budget)
+        geometry.jaw_box = geometry.jaw_volume is not None
     factor = working_factor(array.shape, voxel_budget)
     volume = _reorient_to_lps(array, spacing, origin, direction, factor)
     del array, image
@@ -394,16 +488,16 @@ def _length_mm(shape, spacing, direction) -> float:
 
 def _ct_jaws(array, spacing, origin, direction, geometry, voxel_budget) -> Volume | None:
     """The box round the jaws of a CT, in cubic voxels; None if the jaws are
-    not found (the scan is then loaded whole, as any other)."""
+    not found (the mandible is then separated from the whole scan)."""
     from .geometry.head_region import coarse_view, find_jaw_region
 
     view, spacing, origin = _lps_view(array, spacing, origin, direction)
     region = find_jaw_region(coarse_view(view, spacing, origin))
     if region is None:
         geometry.warnings.append(
-            "The jaws could not be found in this CT on their own, so the whole scan "
-            "is shown. If it shows more than the head, the mandible may not be "
-            "found automatically either: draw the arch curve (step 2)."
+            "The jaws could not be found in this CT on their own. If the mandible "
+            "is not found automatically either, draw the arch curve on the axial "
+            "slice (step 2)."
         )
         return None
     shape = np.array(view.shape[::-1])  # x, y, z
@@ -413,26 +507,23 @@ def _ct_jaws(array, spacing, origin, direction, geometry, voxel_budget) -> Volum
     crop_origin = origin + lo * spacing
     extent = (hi - lo - 1) * spacing
 
-    scan_mm = (shape - 1) * spacing
-    geometry.jaw_box = True
-    kept = (
-        f"This CT covers {scan_mm[0]:.0f} × {scan_mm[1]:.0f} × {scan_mm[2]:.0f} mm. "
-        f"MandiPlan keeps the jaws: a {extent[0]:.0f} × {extent[1]:.0f} × "
-        f"{extent[2]:.0f} mm box round the mandible, at the scan's full resolution"
+    found = (
+        f"The jaws are a {extent[0]:.0f} × {extent[1]:.0f} × {extent[2]:.0f} mm box "
+        "of this CT; the mandible is separated and drawn from that box, at the "
+        "scan's full resolution"
     )
     if spacing.max() <= SMOOTH_VOXEL_MM:
-        geometry.warnings.append(kept + ". Distances are in millimetres from the DICOM spacing.")
+        geometry.warnings.append(found + ". Distances are in millimetres from the DICOM spacing.")
         return Volume(array=crop, spacing=spacing.copy(), origin=crop_origin)
 
     voxel = float(np.clip(spacing[:2].min(), *CT_VOXEL_MM))
     while np.prod(np.floor(extent / voxel) + 1) > voxel_budget:
         voxel *= 1.1
     volume = _resample_cubic(crop, spacing, crop_origin, voxel)
-    geometry.warnings[:] = [w for w in geometry.warnings if not w.startswith("Anisotropic")]
     geometry.warnings.append(
-        kept + f", resampled from {spacing[0]:.2f} × {spacing[1]:.2f} × {spacing[2]:.2f} mm "
-        f"voxels to {voxel:.2f} mm cubes so the bone surface is smooth rather than "
-        "stepped. Distances are in millimetres from the DICOM spacing."
+        found + f", resampled from {spacing[0]:.2f} × {spacing[1]:.2f} × {spacing[2]:.2f} mm "
+        f"voxels to {voxel:.2f} mm cubes so its surface is smooth rather than stepped. "
+        "Distances are in millimetres from the DICOM spacing."
     )
     return volume
 
@@ -454,7 +545,12 @@ def _resample_cubic(array: np.ndarray, spacing, origin, voxel: float) -> Volume:
     )
     # The cubic overshoots a little beside metal; keep within the scan's range.
     data = np.clip(sitk.GetArrayFromImage(out), float(array.min()), float(array.max()))
-    return Volume(array=data, spacing=np.full(3, voxel), origin=np.asarray(origin, dtype=float))
+    return Volume(
+        array=data,
+        spacing=np.full(3, voxel),
+        origin=np.asarray(origin, dtype=float),
+        resampled_from_mm=float(np.max(spacing)),
+    )
 
 
 def load_folder(
@@ -462,7 +558,8 @@ def load_folder(
     series_uid: str | None = None,
     voxel_budget: int = WORKING_VOXEL_BUDGET,
 ) -> tuple[Volume, SeriesGeometry, SeriesInfo]:
-    """Load one series from ``folder`` (the largest one unless ``series_uid`` is given)."""
+    """Load one series from ``folder``: ``series_uid``, or else the one
+    :func:`choose_series` picks."""
     series = list_series(folder)
     if not series:
         raise DicomLoadError(f"No DICOM series found in {folder}.")
@@ -472,6 +569,16 @@ def load_folder(
             raise DicomLoadError(f"Series {series_uid} is not in {folder}.")
         chosen = matches[0]
     else:
-        chosen = max(series, key=lambda s: s.n_files)
+        # A folder of nothing but single images still gets inspect_geometry's
+        # plain explanation of why it cannot be used.
+        chosen = choose_series(series) or max(series, key=lambda s: s.n_files)
     volume, geometry = load_series(chosen.files, voxel_budget, chosen.modality)
+    volumes = [s for s in series if s is not chosen and _series_rank(s) is not None]
+    if series_uid is None and volumes:
+        geometry.warnings.insert(
+            0,
+            f"This folder holds {len(volumes) + 1} scan series; MandiPlan opened "
+            f"\"{chosen.description or chosen.series_uid}\", whose "
+            f"{geometry.slice_spacing_mm:.1f} mm slices resolve the bone best.",
+        )
     return volume, geometry, chosen

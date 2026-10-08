@@ -202,19 +202,32 @@ def make_phantom(spec: PhantomSpec = PhantomSpec()) -> Volume:
 
 
 def write_dicom_series(
-    volume: Volume, out_dir: str | Path, patient_id: str = "PHANTOM"
+    volume: Volume,
+    out_dir: str | Path,
+    patient_id: str = "PHANTOM",
+    description: str = "MandiPlan analytic phantom",
+    image_type: tuple[str, ...] = ("ORIGINAL", "PRIMARY", "AXIAL"),
+    plane: str = "axial",
+    prefix: str = "slice",
+    series_number: int = 1,
+    study_uid: str | None = None,
 ) -> Path:
-    """Write ``volume`` as a CT DICOM series (one file per axial slice)."""
+    """Write ``volume`` as a CT DICOM series, one file per slice.
+
+    ``plane="coronal"`` writes it as coronal slices instead, as a scanner
+    writes a coronal reformat. Several series can share a folder when each
+    has its own ``prefix``; only files with that prefix are replaced.
+    """
     import pydicom
     from pydicom.dataset import Dataset, FileMetaDataset
     from pydicom.uid import CTImageStorage, ExplicitVRLittleEndian, generate_uid
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    for old in out_dir.glob("*.dcm"):
+    for old in out_dir.glob(f"{prefix}_*.dcm"):
         old.unlink()
 
-    study_uid = generate_uid()
+    study_uid = study_uid or generate_uid()
     series_uid = generate_uid()
     frame_uid = generate_uid()
 
@@ -226,8 +239,20 @@ def write_dicom_series(
     sx, sy, sz = (float(v) for v in volume.spacing)
     ox, oy, oz = (float(v) for v in volume.origin)
     nz, ny, nx = volume.array.shape
+    if plane == "coronal":
+        # Rows run down the patient (-z), columns along +x; one slice per y.
+        stored = np.ascontiguousarray(np.transpose(stored, (1, 0, 2))[:, ::-1, :])
+        slices = [
+            ([1.0, 0.0, 0.0, 0.0, 0.0, -1.0], [ox, oy + j * sy, oz + (nz - 1) * sz], [sz, sx], sy)
+            for j in range(ny)
+        ]
+    else:
+        slices = [
+            ([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], [ox, oy, oz + k * sz], [sy, sx], sz)
+            for k in range(nz)
+        ]
 
-    for k in range(nz):
+    for k, (orientation, position, pixel_spacing, thickness) in enumerate(slices):
         meta = FileMetaDataset()
         meta.MediaStorageSOPClassUID = CTImageStorage
         meta.MediaStorageSOPInstanceUID = generate_uid()
@@ -245,20 +270,20 @@ def write_dicom_series(
         ds.PatientName = "MandiPlan^Phantom"
         ds.PatientID = patient_id
         ds.Modality = "CT"
-        ds.SeriesDescription = "MandiPlan analytic phantom"
+        ds.SeriesDescription = description
+        ds.ImageType = list(image_type)
         ds.StudyDate = "20200101"
-        ds.SeriesNumber = 1
+        ds.SeriesNumber = series_number
         ds.InstanceNumber = k + 1
 
-        ds.ImageOrientationPatient = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-        ds.ImagePositionPatient = [ox, oy, oz + k * sz]
-        ds.PixelSpacing = [sy, sx]  # [row spacing, column spacing]
-        ds.SliceThickness = sz
-        ds.SpacingBetweenSlices = sz
-        ds.SliceLocation = oz + k * sz
+        ds.ImageOrientationPatient = orientation
+        ds.ImagePositionPatient = position
+        ds.PixelSpacing = pixel_spacing  # [row spacing, column spacing]
+        ds.SliceThickness = thickness
+        ds.SpacingBetweenSlices = thickness
+        ds.SliceLocation = position[2]
 
-        ds.Rows = ny
-        ds.Columns = nx
+        ds.Rows, ds.Columns = stored[k].shape
         ds.SamplesPerPixel = 1
         ds.PhotometricInterpretation = "MONOCHROME2"
         ds.BitsAllocated = 16
@@ -270,7 +295,7 @@ def write_dicom_series(
         ds.RescaleType = "US"
         ds.PixelData = stored[k].tobytes()
 
-        pydicom.dcmwrite(out_dir / f"slice_{k:04d}.dcm", ds, enforce_file_format=True)
+        pydicom.dcmwrite(out_dir / f"{prefix}_{k:04d}.dcm", ds, enforce_file_format=True)
 
     return out_dir
 
@@ -356,10 +381,274 @@ def make_body_ct(
     # The mandible, in the soft tissue.
     zz = z[:, None, None]
     sdf = signed_distance_field(spec, X[None], Y[None], zz)
-    frac = np.clip(0.5 - sdf / (2.0 * max(spacing)), 0.0, 1.0)
+    frac = np.clip(0.5 - sdf / (2.0 * min(spacing)), 0.0, 1.0)
     jaw = frac > 0.0
     array[jaw] = np.maximum(array[jaw], CT_SOFT + (CT_BONE - CT_SOFT) * frac[jaw])
     rng = np.random.default_rng(spec.seed)
     array += rng.normal(0.0, 15.0, size=array.shape).astype(np.float32)
     return Volume(array=array, spacing=np.asarray(spacing, dtype=float),
                   origin=np.array([x[0], y[0], z[0]]))
+
+
+# --------------------------------------------------------------------------
+# A head-and-neck CT with the teeth in occlusion, to test separating the
+# mandible where it touches the rest of the skull.
+# --------------------------------------------------------------------------
+
+#: Hounsfield-like values of the dentate CT's tissues.
+CT_CROWN, CT_METAL, CT_MARROW = 2100.0, 3071.0, 300.0
+
+
+@dataclass(frozen=True)
+class DentateSpec:
+    """A head-and-neck CT of a dentate jaw in occlusion. Lengths in mm.
+
+    Everything the separation has to undo on a real CT is here, at a CT's
+    resolution: the upper and lower crowns touch along the whole arch, each
+    condyle sits in its fossa a millimetre below the skull base, each
+    coronoid a millimetre below its zygomatic arch, and the maxilla, the
+    palate, the skull base and the spine are one piece of bone. The scan is
+    reconstructed in slices thicker than its pixels, so the joint spaces and
+    the bite blur across, and it starts below the vault, as a neck CT does.
+    ``roll_deg`` turns the head about its front-to-back axis, which tilts the
+    bite and puts one condyle higher than the other; ``metal`` puts a
+    filling in each lower first molar, with the streaks a CT draws from it
+    across the slices it lies in.
+    """
+
+    spacing: tuple[float, float, float] = (0.75, 0.75, 2.0)
+    roll_deg: float = 0.0
+    metal: bool = False
+    noise_sigma: float = 20.0
+    seed: int = 0
+    #: Radius of the front of the arch curve, through the middle of the body.
+    arch_radius_mm: float = 30.0
+    #: The body runs on straight behind the curve this far, to the angle.
+    arch_back_mm: float = 22.0
+    #: Height of the bite above the middle of the body.
+    bite_mm: float = 18.0
+    #: Gap between upper and lower crowns; 0 is teeth in contact.
+    bite_gap_mm: float = 0.0
+    condyle_centre: tuple[float, float, float] = (46.0, 30.0, 57.0)
+    field_mm: tuple[float, float] = (220.0, 220.0)
+    z_range_mm: tuple[float, float] = (-90.0, 100.0)
+
+    @property
+    def molar_s(self) -> float:
+        """Arc length from the right end of the tooth row to the first molar."""
+        return 14.0
+
+
+def _arch_distance(x, y, radius, back):
+    """Distance in plan from the arch curve: a front semicircle and a
+    straight run behind each end."""
+    front = np.abs(np.hypot(x, y) - radius)
+    side = np.where(
+        y > back, np.hypot(np.abs(x) - radius, y - back), np.abs(np.abs(x) - radius)
+    )
+    return np.where(y <= 0.0, front, side)
+
+
+def _arch_point(s, radius, back, extra=10.0):
+    """Point and tangent at arc length ``s`` along the tooth row, from the
+    right end (``extra`` mm up the right straight run) to the left."""
+    half = np.pi * radius
+    if s < extra:  # right straight run, coming forward
+        return np.array([-radius, extra - s]), np.array([0.0, -1.0])
+    if s > extra + half:  # left straight run, going back
+        return np.array([radius, s - extra - half]), np.array([0.0, 1.0])
+    theta = np.pi + (s - extra) / radius
+    return (
+        np.array([radius * np.cos(theta), radius * np.sin(theta)]),
+        np.array([-np.sin(theta), np.cos(theta)]),
+    )
+
+
+def _teeth(x, y, z, radius, back, centre_z, half_along, half_across, half_up, count=15, extra=10.0):
+    """A row of crowns (ellipsoids) along the arch."""
+    out = np.zeros(np.broadcast(x, y, z).shape, dtype=bool)
+    length = np.pi * radius + 2.0 * extra
+    for s in np.linspace(half_along, length - half_along, count):
+        (cx, cy), (tx, ty) = _arch_point(s, radius, back, extra)
+        dx, dy = x - cx, y - cy
+        along = dx * tx + dy * ty
+        across = -dx * ty + dy * tx
+        out |= (along / half_along) ** 2 + (across / half_across) ** 2 + ((z - centre_z) / half_up) ** 2 <= 1.0
+    return out
+
+
+def _ramus(x, y, z, side, spec):
+    """One ramus: a plate rising and turning outwards from the angle to the
+    condylar neck and the coronoid, in the (y, z) outline below."""
+    from mandiplan.geometry.plate_profile import point_in_polygon
+
+    cx, _, cz = spec.condyle_centre
+    r = spec.arch_radius_mm
+    plate_x = r + (z + 11.0) * (cx - r) / (cz + 11.0)
+    near = np.abs(side * x - plate_x) <= 2.5
+    outline = np.array(
+        [(8, 4), (14, -10), (32, -12), (36, 0), (33, 48), (31, 54), (27, 50), (22, 43),
+         (17, 50), (13, 56), (10, 50), (9, 30)], dtype=float
+    )
+    out = np.zeros(np.broadcast(x, y, z).shape, dtype=bool)
+    if near.any():
+        yy = np.broadcast_to(y, out.shape)[near]
+        zz = np.broadcast_to(z, out.shape)[near]
+        out[near] = point_in_polygon(np.column_stack([yy, zz]), outline)
+    return out
+
+
+def _bones(x, y, z, spec):
+    """Occupancy of each tissue at anatomical points: (mandible, crowns of
+    the lower teeth, upper teeth, maxilla and skull, hyoid and spine, metal,
+    the marrow of the mandibular body)."""
+    r, back, bite = spec.arch_radius_mm, spec.arch_back_mm, spec.bite_mm
+    cx, cy, cz = spec.condyle_centre
+    along = _arch_distance(x, y, r, back)
+    body = (along / 5.5) ** 2 + (z / 11.0) ** 2 <= 1.0
+    # A cortex 2 mm thick round marrow far below any bone threshold.
+    marrow = (along / 3.5) ** 2 + (z / 9.0) ** 2 <= 1.0
+    lower = _teeth(x, y, z, r, back, bite - 3.5, 3.4, 4.0, 3.5)
+    upper = _teeth(x, y, z, r + 1.0, back, bite + spec.bite_gap_mm + 3.5, 3.5, 4.3, 3.5)
+    rami = _ramus(x, y, z, 1.0, spec) | _ramus(x, y, z, -1.0, spec)
+    condyles = np.zeros_like(body)
+    fossae = np.zeros_like(body)
+    for side in (-1.0, 1.0):
+        e = ((x - side * cx) / 9.0) ** 2 + ((y - cy) / 4.5) ** 2 + ((z - cz) / 4.0) ** 2
+        condyles |= e <= 1.0
+        # The neck, widening from the ramus into the head.
+        widen = np.clip((z - (cz - 14.0)) / 14.0, 0.0, 1.0)
+        neck = ((x - side * (cx - 4.0 * (1.0 - widen))) / (2.5 + 2.5 * widen)) ** 2 + (
+            (y - (cy - 1.0)) / 3.0
+        ) ** 2 <= 1.0
+        condyles |= neck & (z >= cz - 14.0) & (z <= cz)
+        # The fossa: a dome over the condyle, as clear of it as a joint
+        # space is (some 2.5 mm above, 2 mm in front and behind), which
+        # 2 mm slices blur across.
+        inner = ((x - side * cx) / 12.0) ** 2 + ((y - cy) / 6.5) ** 2 + ((z - cz) / 6.5) ** 2
+        outer = ((x - side * cx) / 16.0) ** 2 + ((y - cy) / 10.5) ** 2 + ((z - cz) / 10.0) ** 2
+        fossae |= (inner > 1.0) & (outer <= 1.0) & (z >= cz + 1.0)
+    mandible = body | rami | condyles | lower
+
+    upper_curve = _arch_distance(x, np.minimum(y, 12.0) + np.maximum(y - 12.0, 0.0) * 1e3, r + 1.0, 12.0)
+    maxilla = (upper_curve / 6.0) ** 2 + ((z - bite - 11.0) / 7.0) ** 2 <= 1.0
+    inside = np.where(y <= 0.0, np.hypot(x, y) < r - 3.0, (np.abs(x) < r - 3.0) & (y <= 12.0))
+    palate = inside & (z >= bite + 15.0) & (z <= bite + 18.0)
+    pterygoid = (np.abs(x) >= 12.0) & (np.abs(x) <= 16.0) & (y >= 8.0) & (y <= 26.0) & (z >= bite + 12.0) & (z <= cz + 9.0)
+    base = (z >= cz + 6.5) & (z <= cz + 10.5) & (np.abs(x) <= 62.0) & (y >= -5.0) & (y <= 70.0)
+    # The zygomatic arch, over the coronoid, back to the eminence in front of
+    # the condyle, where it joins the skull base.
+    arch_bar = (np.abs(x) >= 42.0) & (np.abs(x) <= 50.0) & (y >= -8.0) & (y <= 22.0) & (z >= cz + 0.5) & (z <= cz + 7.0)
+    zygoma = (np.abs(x) >= 34.0) & (np.abs(x) <= 50.0) & (y >= -12.0) & (y <= -2.0) & (z >= bite + 12.0) & (z <= cz + 4.5)
+    skull = maxilla | palate | pterygoid | base | arch_bar | zygoma | fossae
+
+    spine = (np.hypot(x, y - 58.0) <= 8.0) & (z <= cz + 7.0)
+    hyoid = (np.abs(np.hypot(x, y - 10.0) - 16.0) <= 2.5) & (y < 10.0) & (np.abs(z + 28.0) <= 2.5)
+    metal = np.zeros_like(body)
+    if spec.metal:
+        for s in (spec.molar_s, np.pi * r + 20.0 - spec.molar_s):
+            (mx, my), _ = _arch_point(s, r, back)
+            metal |= ((x - mx) / 2.5) ** 2 + ((y - my) / 2.5) ** 2 + ((z - bite + 1.0) / 1.5) ** 2 <= 1.0
+    return mandible, lower, upper, skull & ~mandible, spine | hyoid, metal, marrow & ~lower
+
+
+def make_dentate_ct(spec: DentateSpec = DentateSpec()):
+    """The CT of ``spec``, and the share of each voxel that is each bone.
+
+    Returns ``(volume, truth)``: ``truth`` maps "mandible", "upper" (the
+    upper teeth) and "skull" (every other bone of the head) to volumes on
+    the CT's grid holding the share of each voxel that bone fills.
+    Each slice averages four planes through its thickness, and each pixel
+    two by two points across it, as a CT detector integrates.
+    """
+    sx, sy, sz = spec.spacing
+    x = np.arange(-spec.field_mm[0] / 2, spec.field_mm[0] / 2 + 1e-6, sx)
+    y = np.arange(-spec.field_mm[1] / 2 + 20.0, spec.field_mm[1] / 2 + 20.0 + 1e-6, sy)
+    z = np.arange(spec.z_range_mm[0], spec.z_range_mm[1] + 1e-6, sz)
+    # The bone lies within this box; only it is sampled finely.
+    bx = (np.abs(x) <= 66.0)
+    by = (y >= -30.0) & (y <= 75.0)
+    fx = (x[bx][:, None] + np.array([-0.25, 0.25]) * sx).ravel()
+    fy = (y[by][:, None] + np.array([-0.25, 0.25]) * sy).ravel()
+    FX, FY = np.meshgrid(fx, fy)
+    roll = np.radians(spec.roll_deg)
+    ca, sa = np.cos(roll), np.sin(roll)
+    pivot = 20.0
+    shape = (len(z), len(y), len(x))
+    values = np.full(shape, CT_AIR, dtype=np.float32)
+    truth = {name: np.zeros(shape, dtype=np.float32) for name in ("mandible", "upper", "skull")}
+    X2, Y2 = np.meshgrid(x, y)
+    for k, zk in enumerate(z):
+        # Soft tissue: the head above the jaw, the neck below.
+        head = ((X2 / 75.0) ** 2 + ((Y2 - 20.0) / 95.0) ** 2 <= 1.0) & (zk > -40.0)
+        neck = (np.hypot(X2, Y2 - 30.0) <= 55.0) & (zk <= -40.0)
+        values[k][head | neck] = CT_SOFT
+        shares = np.zeros((7,) + FX.shape, dtype=np.float32)
+        for dz in (-0.375, -0.125, 0.125, 0.375):
+            # Anatomical coordinates of the plane, the head rolled about y.
+            za = zk + dz * sz
+            ax = FX * ca + (za - pivot) * sa
+            az = -FX * sa + (za - pivot) * ca + pivot
+            for i, part in enumerate(_bones(ax, FY, az, spec)):
+                shares[i] += part
+        shares /= 4.0
+        # Two by two fine points to a pixel.
+        ny_b, nx_b = int(by.sum()), int(bx.sum())
+        shares = shares.reshape(7, ny_b, 2, nx_b, 2).mean(axis=(2, 4))
+        mandible, lower, upper, skull, other, metal, marrow = shares
+        crown = np.clip(lower + upper, 0.0, 1.0)
+        bone = np.clip(mandible - lower - marrow + skull + other, 0.0, 1.0 - crown)
+        metal = np.minimum(metal, 1.0)
+        block = values[k][np.ix_(by, bx)]
+        soft = np.clip(1.0 - bone - crown - marrow, 0.0, 1.0)
+        block = block * soft + CT_BONE * bone + CT_CROWN * crown + CT_MARROW * marrow
+        block = block * (1.0 - metal) + CT_METAL * metal
+        values[k][np.ix_(by, bx)] = block
+        truth["mandible"][k][np.ix_(by, bx)] = mandible
+        truth["upper"][k][np.ix_(by, bx)] = upper
+        truth["skull"][k][np.ix_(by, bx)] = skull
+    origin = np.array([x[0], y[0], z[0]])
+    if spec.metal:
+        _add_streaks(values, x, y, z, spec, ca, sa, pivot)
+    rng = np.random.default_rng(spec.seed)
+    values += rng.normal(0.0, spec.noise_sigma, size=shape).astype(np.float32)
+    np.clip(values, CT_AIR - 24.0, CT_METAL, out=values)
+    spacing = np.asarray(spec.spacing, dtype=float)
+    return Volume(values, spacing, origin), {
+        name: Volume(share, spacing, origin) for name, share in truth.items()
+    }
+
+
+def _add_streaks(values, x, y, z, spec, ca, sa, pivot):
+    """Bright and dark rays from each filling across the slices it lies in,
+    as a CT draws them, and a bright band between the two fillings."""
+    r, back = spec.arch_radius_mm, spec.arch_back_mm
+    X2, Y2 = np.meshgrid(x, y)
+    centres = []
+    for s in (spec.molar_s, np.pi * r + 20.0 - spec.molar_s):
+        (mx, my), _ = _arch_point(s, r, back)
+        mz = spec.bite_mm - 1.0
+        # Back to scanner coordinates.
+        wx = (mx * ca - (mz - pivot) * sa)
+        wz = (mx * sa + (mz - pivot) * ca) + pivot
+        centres.append((wx, my, wz))
+    for k, zk in enumerate(z):
+        for wx, wy, wz in centres:
+            weight = np.clip(1.0 - abs(zk - wz) / 2.0, 0.0, 1.0)
+            if weight <= 0:
+                continue
+            dist = np.hypot(X2 - wx, Y2 - wy)
+            angle = np.arctan2(Y2 - wy, X2 - wx)
+            rays = np.cos(9.0 * angle) * np.exp(-dist / 25.0) * (dist > 3.0)
+            values[k] += (600.0 * weight * rays).astype(np.float32)
+        (ax_, ay_, az_), (bx_, by_, bz_) = centres
+        weight = np.clip(1.0 - abs(zk - 0.5 * (az_ + bz_)) / 2.5, 0.0, 1.0)
+        if weight > 0:
+            # Across the mouth from one filling to the other.
+            d = np.array([bx_ - ax_, by_ - ay_])
+            length = float(np.linalg.norm(d))
+            u = d / length
+            along = (X2 - ax_) * u[0] + (Y2 - ay_) * u[1]
+            off = np.abs(-(X2 - ax_) * u[1] + (Y2 - ay_) * u[0])
+            band = (along > 3.0) & (along < length - 3.0) & (off < 0.8)
+            values[k][band] += 500.0 * weight

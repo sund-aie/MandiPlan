@@ -36,7 +36,7 @@ def _volume_step(session) -> tuple[bool, str, str]:
     points = session.surface.GetNumberOfPoints() if session.surface is not None else 0
     if points == 0:
         return False, "", "No bone at this threshold — move the slider."
-    spacing = session.volume.spacing
+    spacing = getattr(session, "scan", session.volume).spacing
     mandible = getattr(session, "mandible", None)
     separated = (
         f" Mandible {mandible.volume_mm3 / 1000:.1f} cm³, separated." if mandible is not None else ""

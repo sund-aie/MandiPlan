@@ -21,9 +21,15 @@ would have been wrong. One line each.
 - **Otsu returns the middle of the near-optimal plateau.** When two populations
   are cleanly separated the between-class variance is flat across the whole
   empty gap, and a plain `argmax` returns the very edge of the noise floor.
-- **No surface smoothing.** A smoothed isosurface no longer coincides with the
-  gray-value boundary that was thresholded, and every distance is taken off
-  that surface.
+- **No surface smoothing,** with one exception. A smoothed isosurface no
+  longer coincides with the gray-value boundary that was thresholded, and every
+  distance is taken off that surface. The exception is a medical CT's jaw box,
+  interpolated from slices thicker than its voxels: its isosurface steps in
+  ledges one slice high whatever the interpolation, and those are the
+  scanner's, not the bone's. It is low-pass filtered with a windowed-sinc
+  filter (no shrinkage), whose passband falls with the ratio of slice to voxel;
+  on a 2 mm CT the surface moved 0.3 mm on average, under 0.7 mm for 95 % of
+  it.
 
 ## DICOM
 
@@ -32,7 +38,17 @@ would have been wrong. One line each.
   variable orientation and oblique direction cosines all raise `DicomLoadError`
   with an explanation. Resampling them silently is the failure this application
   can least afford.
-- **The series with the most slices is loaded** when a folder holds several.
+- **The series that resolves the bone best is loaded** when a folder holds
+  several, not the one with the most files: a CT study's coronal reformat often
+  has more files than its axial series. Axial first (the acquisition plane),
+  then the finest slices, an original reconstruction before a derived one, the
+  finest pixels, the longest coverage; scouts and MIPs never.
+- **A medical CT is kept whole; its jaws are a second, cubic volume.** The
+  slices and the first 3-D view show the scan as acquired. The mandible is
+  separated, drawn and planned on a box round the jaws cut from the scan at
+  full resolution and resampled to cubic voxels, in the same world
+  millimetres. Cropping the scan to that box instead hid most of the CT, and
+  when the jaws were found in the wrong place it hid the mandible as well.
 
 ## Resection
 

@@ -123,7 +123,12 @@ def reconstruct(
     k0, j0, i0 = lo[2], lo[1], lo[0]
     nz, ny, nx = field.shape
     array[k0 : k0 + nz, j0 : j0 + ny, i0 : i0 + nx] = field
-    rebuilt = Volume(array=array, spacing=volume.spacing, origin=volume.origin)
+    rebuilt = Volume(
+        array=array,
+        spacing=volume.spacing,
+        origin=volume.origin,
+        resampled_from_mm=volume.resampled_from_mm,
+    )
     result = SurfaceExtractor(rebuilt).update(threshold, largest_component=True)
     _label_regions(result, planes, donorless, lo, volume, band_mm)
     return Reconstruction(result, report, rebuilt)

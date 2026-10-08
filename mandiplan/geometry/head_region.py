@@ -66,11 +66,27 @@ class JawRegion:
 
 
 def coarse_view(array: np.ndarray, spacing, origin, mm: float = COARSE_MM) -> Volume:
-    """Every n-th voxel, about ``mm`` apart: a cheap look at a large scan."""
+    """The scan averaged over blocks about ``mm`` across: a cheap look at it.
+
+    Averaged, not sampled every n-th voxel: on a sharp (bone) kernel the
+    voxels are noisy, and a sample every 3 mm breaks a 2 mm cortex into
+    pieces, so the mandible's outline is no longer one U. One output slice
+    is made at a time, so the scan is never converted to float whole.
+    """
     spacing = np.asarray(spacing, dtype=float)
-    stride = np.maximum(np.round(mm / spacing).astype(int), 1)
-    view = np.asarray(array[:: stride[2], :: stride[1], :: stride[0]], dtype=np.float32)
-    return Volume(view, spacing * stride, np.asarray(origin, dtype=float))
+    fx, fy, fz = (int(v) for v in np.maximum(np.round(mm / spacing).astype(int), 1))
+    nz, ny, nx = array.shape[0] // fz, array.shape[1] // fy, array.shape[2] // fx
+    if min(nz, ny, nx) < 1:
+        view = np.asarray(array, dtype=np.float32)
+        return Volume(view, spacing, np.asarray(origin, dtype=float))
+    out = np.empty((nz, ny, nx), dtype=np.float32)
+    for k in range(nz):
+        slab = np.asarray(array[k * fz : (k + 1) * fz, : ny * fy, : nx * fx], dtype=np.float32)
+        out[k] = slab.reshape(fz, ny, fy, nx, fx).mean(axis=(0, 2, 4))
+    factor = np.array([fx, fy, fz], dtype=float)
+    # A block's value belongs at the centre of the voxels it averaged.
+    centre = np.asarray(origin, dtype=float) + 0.5 * (factor - 1) * spacing
+    return Volume(out, spacing * factor, centre)
 
 
 def tissue_thresholds(volume: Volume) -> tuple[float, float]:

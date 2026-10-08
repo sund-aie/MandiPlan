@@ -31,6 +31,11 @@ class Volume:
     array: np.ndarray  # (nz, ny, nx)
     spacing: np.ndarray  # (sx, sy, sz) in mm
     origin: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    #: The coarsest voxel size of the scan this volume was interpolated
+    #: from, mm, when it was (a thick-slice CT resampled to cubic voxels);
+    #: 0 for a volume on the scan's own grid. Its isosurface steps at that
+    #: size, not its own, and is drawn smoothed (``render/surface.py``).
+    resampled_from_mm: float = 0.0
 
     def __post_init__(self) -> None:
         self.array = np.asarray(self.array)

@@ -156,6 +156,9 @@ class View3D(QWidget):
         self._last_dab: np.ndarray | None = None
 
         session.surface_changed.connect(self.refresh_surface)
+        # A scan just opened is shown from the front, whatever the last one was.
+        self._new_scan = True
+        session.volume_changed.connect(lambda: setattr(self, "_new_scan", True))
         session.resection_changed.connect(self.refresh_resection)
         session.plate_changed.connect(self.refresh_plate)
         session.arch_changed.connect(self.refresh_arch)
@@ -339,6 +342,9 @@ class View3D(QWidget):
             self.bone_mapper.SetInputData(empty_polydata())
         else:
             self.bone_mapper.SetInputData(surface)
+            if self._new_scan and surface.GetNumberOfPoints():
+                self._new_scan = False
+                self.set_view_direction("anterior")
             self.renderer.ResetCamera()
         self._sync_plane_widgets()
         self.refresh_resection()

@@ -1,9 +1,21 @@
 """Bone surface extraction, surface picking and plane clipping.
 
 Segmentation here is threshold plus one morphological step (keep the largest
-connected component).  No smoothing is applied: a smoothed isosurface no
-longer coincides with the gray-value boundary that was thresholded, and every
-distance in this application is taken off that surface.
+connected component).  No smoothing is applied to a scan on its own grid: a
+smoothed isosurface no longer coincides with the gray-value boundary that was
+thresholded, and every distance in this application is taken off that
+surface.
+
+The one exception is a volume interpolated from slices thicker than its
+voxels (a medical CT's jaws, ``Volume.resampled_from_mm``). Its isosurface
+steps at the slice spacing whatever the interpolation, because a nearly
+horizontal edge sits at a different place in each slice and nothing between
+them says where it runs; on 2 mm slices that is a ledge 2 mm high every few
+millimetres along the lower border. Those ledges are the scanner's, not the
+bone's, so that surface is low-pass filtered with a windowed-sinc filter,
+which does not shrink it. On the 2 mm CT it was tuned on, vertices moved
+0.3 mm on average and under 0.7 mm for 95 % of them, well inside the slice
+spacing the scan resolves.
 """
 
 from __future__ import annotations
@@ -14,6 +26,23 @@ from vtkmodules.util.numpy_support import vtk_to_numpy
 
 from ..geometry.resection import CutPlane
 from .convert import volume_to_vtk
+
+
+#: Iterations of the slice-ledge filter. Its passband is set by how much
+#: coarser the slices were than the voxels (``slice_smoothing``).
+SLICE_SMOOTHING_ITERATIONS = 60
+#: Slices this many times the voxel size or more are filtered.
+SLICE_SMOOTHING_FROM = 1.5
+
+
+def slice_smoothing(volume) -> float | None:
+    """Windowed-sinc passband for ``volume``'s surface; None for a volume on
+    its scan's own grid. Thicker slices, relative to the voxels, take a
+    lower passband: their ledges are longer."""
+    ratio = float(getattr(volume, "resampled_from_mm", 0.0)) / float(np.min(volume.spacing))
+    if ratio < SLICE_SMOOTHING_FROM:
+        return None
+    return float(np.clip(0.12 / ratio**2, 0.003, 0.1))
 
 
 class SurfaceExtractor:
@@ -38,9 +67,24 @@ class SurfaceExtractor:
         self._triangles = vtk.vtkTriangleFilter()
         self._triangles.PassLinesOff()
         self._triangles.PassVertsOff()
+        last = self._triangles
+
+        #: Passband of the slice-ledge filter, or None for none (see the
+        #: module docstring).
+        self.smoothing = slice_smoothing(volume)
+        if self.smoothing is not None:
+            self._smoother = vtk.vtkWindowedSincPolyDataFilter()
+            self._smoother.SetInputConnection(last.GetOutputPort())
+            self._smoother.SetNumberOfIterations(SLICE_SMOOTHING_ITERATIONS)
+            self._smoother.SetPassBand(self.smoothing)
+            self._smoother.BoundarySmoothingOff()
+            self._smoother.FeatureEdgeSmoothingOff()
+            self._smoother.NonManifoldSmoothingOn()
+            self._smoother.NormalizeCoordinatesOn()
+            last = self._smoother
 
         self._normals = vtk.vtkPolyDataNormals()
-        self._normals.SetInputConnection(self._triangles.GetOutputPort())
+        self._normals.SetInputConnection(last.GetOutputPort())
         self._normals.SplittingOff()
         self._normals.ConsistencyOn()
         self._normals.AutoOrientNormalsOn()

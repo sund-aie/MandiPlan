@@ -317,34 +317,60 @@ than loaded distorted. A scan too large to plan on in memory (a 0.25 mm head
 scan is 300 million voxels) is averaged over whole blocks of voxels into a
 coarser working grid, and the load says so; world coordinates stay exact.
 
-**A medical CT, up to the whole body,** opens the same way. A CT that shows
-more than a head (longer than 260 mm), or has voxels coarser than 1 mm (thick
-slices), is cut down to its jaws on loading: the skull vault is found as the
-region of soft tissue that bone encloses for several centimetres in the axial
-slices (the brain — the ribs never close a ring and the pelvis only for a few
-slices), the mandible's U is searched for in the band below it (where the
-shoulders cannot be mistaken for it), and a box round the jaws is kept at the
-scan's full resolution. That box is then resampled with cubic interpolation
-to cubic voxels of the pixel size (0.5–0.75 mm), because marching cubes on
-3 mm slices draws the bone in 3 mm terraces and on cubic voxels draws it as
-smooth as a CBCT's. The load says what it kept and at what voxel size, and
-the bone panel's field of view becomes *Jaw box*. A head lying turned in the
-scanner is found too. Distances stay in millimetres from the DICOM spacing.
-A CBCT is never cut down, even one whose files call it "CT": it shows only
-the jaws and its voxels are fine and cubic.
+**A folder with several series** — a CT study usually holds a scout, a dose
+report, thin and thick axial reconstructions, and coronal and sagittal
+reformats of them — opens the series that resolves the bone best: an axial
+one (the plane the scanner acquired in; a reformat has been resampled once
+already), with the finest slices, an original reconstruction before a derived
+one, then the finest pixels and the longest coverage. Scouts, MIPs and
+single images are never chosen. The load says which series it opened. The
+reformats can hold more files than the axial series, which is why the series
+with the most files is not the one taken.
+
+**A medical CT, of the head and neck or the whole body,** opens the same
+way, and **the whole scan is shown**: the slices run over all of it and the
+first 3-D view is all of its bone. A CT that shows more than a head (longer
+than 260 mm), or has voxels coarser than 1 mm (thick slices), also has its
+jaws found on loading: the skull vault is found as the region of soft tissue
+that bone encloses for several centimetres in the axial slices (the brain —
+the ribs never close a ring and the pelvis only for a few slices), and the
+mandible's U is searched for in the band below it, where the shoulders cannot
+be mistaken for it; a neck CT that starts below the vault is searched from
+its bottom up, and the lowest U that holds for a centimetre is the mandible,
+not the maxilla above it. The search runs on the scan averaged over 3 mm
+blocks, so a sharp (bone) kernel's noise cannot break the thin cortex of the
+body into pieces. A box round the jaws is then cut from the scan at its full
+resolution and resampled with cubic interpolation to cubic voxels of the
+pixel size (0.5–0.75 mm). The mandible is separated and drawn from that box,
+in the scan's own millimetres, while the slices keep showing the whole scan.
+The bone panel lists the scan's field of view and, below it, the *Jaw box*.
+A head lying turned in the scanner is found too. A CBCT is never boxed, even
+one whose files call it "CT": it shows only the jaws and its voxels are fine
+and cubic.
+
+Cubic voxels alone do not make a thick-slice CT's surface smooth: a nearly
+horizontal edge, such as the lower border of the mandible, sits at a
+different place in each slice and nothing between them says where it runs,
+so on 2 mm slices the surface steps in ledges 2 mm high. Those ledges are the
+scanner's, not the bone's, so the surface of a box made from slices thicker
+than its voxels is low-pass filtered with a windowed-sinc filter, which does
+not shrink it. On a 2 mm head-and-neck CT that moved the surface 0.3 mm on
+average and less than 0.7 mm for 95 % of it, well inside the slice spacing;
+a CBCT's surface, or a CT's in fine voxels, is never smoothed.
 
 CBCT gray values are not Hounsfield units — they depend on the scanner, the
 field of view and the exposure — so there is no fixed bone threshold. The
 slider is seeded from the scan's own histogram: a real head scan holds air,
 soft tissue and bone, and the seed is the split between the last two (a
 two-class split draws the skin), over a range that ignores metal fillings.
-Move it by eye; the isosurface follows as you drag. No smoothing is applied,
+Move it by eye; the isosurface follows as you drag. No smoothing is applied
+(but for a thick-slice CT's jaw box, above),
 because a smoothed surface no longer coincides with the gray values you
 thresholded. A CT's gray values are Hounsfield units, but in thick slices the
 thin bone of a ramus or a condylar neck averages with the soft tissue either
 side and reads low, so for a CT the seed is halfway from the soft-tissue peak
-to that split (around 230 HU on the scans tried). *Reset to the automatic
-estimate* puts the slider back on the seed.
+to that split, taken over the jaw box (230–360 HU on the scans tried).
+*Reset to the automatic estimate* puts the slider back on the seed.
 
 **2 · Arch curve.** Nothing to draw: once the mandible is separated (below),
 the arch curve is laid along the middle of it **from one condyle to the
@@ -373,16 +399,41 @@ the mandible itself (the lowest wide U of bone in the axial sections, open
 towards the back, which the hyoid below it is too small to be), finds the bite
 along it (the dark line between bright upper and lower crowns), cuts only the
 tooth contacts along that line, and splits any remaining contact at the jaw
-joints at its thinnest, darkest point. On a thick-slice CT the joint space is
-often blurred away and a ramus's thin middle is thinner and darker than any
-joint, so the split is told where the joints are: each ramus is found rising
-from the body behind the last tooth and seeds the mandible up to below its
-notch, its condylar and coronoid processes are followed up slice by slice
-until they end or run into the skull base, and the bone lining the brain and
-the spine seed the skull. Only the few millimetres round each joint are left
-to decide. The same holds for a jaw without teeth, or a mouth held open,
-whose condyles stand higher above the bite than a closed bite puts them. The bone panel reports the separated
-mandible's volume. If a scan defeats the automatic search, draw the arch curve
+joints at its thinnest, darkest point.
+
+The bite is searched for twice. Metal fillings and crowns throw dark and
+bright streaks across the slices they lie in, and on a CT that streak band
+can look more like a bite than the bite does; so an occlusal plane is fitted
+robustly to the first search (the stretches it lost carry no weight — a head
+lying rolled tilts that plane, and it tilts with it), and the second search
+keeps within 3.5 mm of it. Along the whole tooth row, from the last molar on
+one side to the last on the other, bone more than 2 mm above the bite is the
+upper teeth and the maxilla, and bone more than 2 mm below it the lower teeth
+(4.5 mm at the front, where the upper incisors overlap the lower ones); the
+millimetres between are decided by the split, at full resolution, so a bite
+height a little off costs nothing. The upper markers reach 13 mm in front of
+the arch curve at the incisors, which stand forward of the mandibular body,
+and 8 mm beside the molars, where the coronoid and the front of the ramus
+rise; anything in the same axial piece of bone as a ramus is kept clear of
+them. Streaks that pass the threshold stand off the crowns as fins and webs:
+they lie only in the slices their metal lies in, while bone carries on above
+or below, so whatever of the mandible near metal stops within that slab, and
+is not crown-bright, is streak and is removed, and thin sheets left round
+the crowns are opened away.
+
+On a thick-slice CT the joint space is often blurred away and a ramus's thin
+middle is thinner and darker than any joint, so the split is told where the
+joints are: each ramus is found rising from the body behind the last tooth
+and seeds the mandible up to below its notch, and its condylar and coronoid
+processes are followed up slice by slice, each ramus from the top of its own
+seeds, until they end or run into the skull base. Lower than any joint (20 mm
+above the bite plane) a large piece of bone met on the way is the maxilla,
+where a coronoid rests against it, and the process is followed through it;
+no upper molar inside the arch is followed. The bone lining the brain and the
+spine seed the skull. Only the few millimetres round each joint are left to
+decide. The same holds for a jaw without teeth, or a mouth held open, whose
+condyles stand higher above the bite than a closed bite puts them. The bone
+panel reports the separated mandible's volume. If a scan defeats the automatic search, draw the arch curve
 and the separation follows it; *Separate again along my curve* redoes it
 along your curve at any time, and the checkbox shows all bone again. *Export →
 Mandible (STL)* writes the separated mandible on its own.
@@ -564,7 +615,25 @@ keeps both condyles and none of the maxilla or palate, that a cut removes
 mandible only, and that the reconstruction of a lateral defect is one piece
 with junction steps under 0.15 mm and smaller than a plain mirror's (0.05 mm
 against 0.47 mm on this scan). The same checks were run by hand on the two
-dental-surgery CBCTs in the 3D Slicer sample data.
+dental-surgery CBCTs and the full-resolution head CBCT in the 3D Slicer
+sample data, on the head-and-neck CTs in the SlicerRT test data (an RTOG
+case in 3 mm slices, a head CT in 3 mm slices with and without contrast, and
+an ENT phantom in 2.5 mm slices), and on a contrast-enhanced neck CT in 2 mm
+slices with metal crowns: each mandible complete from one condyle to the
+other, with no upper teeth and no warning.
+
+**Against a dentate CT phantom** (`tests/make_phantom.py`, `make_dentate_ct`):
+a head-and-neck CT in 2 mm slices, starting below the vault, with the teeth in
+occlusion along the whole arch, condyles in their fossae and coronoids under
+the zygomatic arches, the maxilla, palate, skull base and spine one piece of
+bone, and the body a thin cortex round marrow. The tests open it as a study of
+three series (axial, a coronal reformat with more files, a scout) and check
+that the axial series is opened and shown whole, that the jaws are found
+without a vault and with a sharp kernel's noise, and that the separated
+mandible holds over 90 % of the mandible's bone, under 1 % of the upper teeth
+and under 0.2 % of the rest of the skull, with both condyles; and again with
+the head rolled 6° and a filling, with its streaks, in each first molar: both
+condyles kept, and nothing of the mandible more than 2 mm off the true bone.
 
 The bending guide is checked geometrically: two neighbouring saddles do not
 touch up to the stop angle and do just past it, for a curl and for an in-plane
@@ -588,7 +657,12 @@ export.
 - The mandible separation needs teeth or joint contacts it can find. Heavy
   metal artefact across the bite, or a curve drawn far from the mandible, can
   leave a piece on the wrong side; the bone panel's checkbox shows all bone,
-  and the separated volume is reported so a wrong split is visible.
+  and the separated volume is reported so a wrong split is visible. An upper
+  wisdom tooth standing against the front of a ramus can stay partly with the
+  mandible, and a condyle whose fossa hugs it so closely that the two merge
+  at its widest, not at its top, can be handed to the skull.
+- A thick-slice CT's metal artefact can leave small streak remnants on the
+  crowns nearest the metal.
 - The plate library is generic. Its dimensions come from published size
   classes, not from any manufacturer, and nothing in the application knows the
   real bending characteristics of the plate in your hand.

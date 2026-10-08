@@ -413,7 +413,8 @@ class MainWindow(QMainWindow):
 
     def _connect_session(self) -> None:
         session = self.session
-        session.volume_changed.connect(self.refresh_slices)
+        # Ranges first, then the slices: drawn the other way round, a new scan
+        # is first shown at the old scan's slice positions.
         session.volume_changed.connect(self._reset_slice_sliders)
         session.arch_changed.connect(self.refresh_slices)
         session.arch_laid.connect(self._show_axial_level)
@@ -553,7 +554,7 @@ class MainWindow(QMainWindow):
     # -- slice views -------------------------------------------------------
 
     def _reset_slice_sliders(self) -> None:
-        volume = self.session.volume
+        volume = self.session.scan
         if volume is None:
             return
         for name, axis in (("axial", 2), ("coronal", 1), ("sagittal", 0)):
@@ -566,7 +567,7 @@ class MainWindow(QMainWindow):
 
     def _show_axial_level(self, z_mm: float) -> None:
         """Move the axial slice to a height, mm (the mandibular body's)."""
-        volume = self.session.volume
+        volume = self.session.scan
         if volume is None:
             return
         index = int(round((z_mm - float(volume.origin[2])) / float(volume.spacing[2])))
@@ -574,14 +575,15 @@ class MainWindow(QMainWindow):
         slider.setValue(int(np.clip(index, slider.minimum(), slider.maximum())))
 
     def _slice_world_coord(self, name: str) -> float:
-        volume = self.session.volume
+        volume = self.session.scan
         axis = {"axial": 2, "coronal": 1, "sagittal": 0}[name]
         return float(
             volume.origin[axis] + self.slice_sliders[name].value() * volume.spacing[axis]
         )
 
     def refresh_slices(self) -> None:
-        volume = self.session.volume
+        # The whole scan, as loaded; a CT's mandible is drawn from a box of it.
+        volume = self.session.scan
         if volume is None:
             return
         sx, sy, sz = (float(v) for v in volume.spacing)
@@ -723,7 +725,7 @@ class MainWindow(QMainWindow):
     # -- picking and measurement -------------------------------------------
 
     def _on_slice_pick(self, name: str, x_mm: float, y_mm: float) -> None:
-        volume = self.session.volume
+        volume = self.session.scan
         if volume is None:
             return
         if self.mode == Mode.ARCH and name == "axial":

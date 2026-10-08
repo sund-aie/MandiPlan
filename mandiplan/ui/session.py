@@ -114,19 +114,27 @@ class VolumeInfo:
     geometry: SeriesGeometry
     folder: str
 
-    def lines(self, volume: Volume) -> list[str]:
-        nx, ny, nz = (int(v) for v in volume.size_xyz)
-        sx, sy, sz = volume.spacing
-        return [
+    def lines(self, scan: Volume) -> list[str]:
+        """What was loaded: ``scan`` is the whole series as shown."""
+        nx, ny, nz = (int(v) for v in scan.size_xyz)
+        sx, sy, sz = scan.spacing
+        lines = [
             f"Series: {self.series.description or '(no description)'}",
-            f"Slices: {self.series.n_files or int(volume.size_xyz[2])}",
+            f"Slices: {self.series.n_files or int(scan.size_xyz[2])}",
             f"Matrix: {nx} × {ny} × {nz} voxels",
             f"Voxel size: {sx:.3f} × {sy:.3f} × {sz:.3f} mm",
-            # A CT is cut down to a box round the jaws (see dicom_io).
-            ("Jaw box: " if getattr(self.geometry, "jaw_box", False) else "Field of view: ")
-            + f"{volume.extent_mm[0]:.1f} × {volume.extent_mm[1]:.1f}"
-            f" × {volume.extent_mm[2]:.1f} mm",
+            f"Field of view: {scan.extent_mm[0]:.1f} × {scan.extent_mm[1]:.1f}"
+            f" × {scan.extent_mm[2]:.1f} mm",
         ]
+        jaws = getattr(self.geometry, "jaw_volume", None)
+        if jaws is not None:
+            # A CT's mandible is separated and drawn from a box round its
+            # jaws in cubic voxels (see dicom_io).
+            lines.append(
+                f"Jaw box: {jaws.extent_mm[0]:.0f} × {jaws.extent_mm[1]:.0f} × "
+                f"{jaws.extent_mm[2]:.0f} mm in {float(jaws.spacing[0]):.2f} mm cubes"
+            )
+        return lines
 
 
 class Session(QObject):
@@ -160,12 +168,19 @@ class Session(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        #: The whole series as loaded: what the slices show, and the bone
+        #: surface until the mandible has been separated.
+        self.scan: Volume | None = None
+        #: What the mandible is separated, drawn and planned on: for a
+        #: medical CT the box round its jaws in cubic voxels
+        #: (``SeriesGeometry.jaw_volume``), otherwise the scan itself. Both
+        #: are in the same world millimetres.
         self.volume: Volume | None = None
         self.info: VolumeInfo | None = None
         self.threshold: float = 0.0
         self.surface = None
         self._extractor: SurfaceExtractor | None = None
-        self.projector: SurfaceProjector | None = None
+        self._projector: SurfaceProjector | None = None
         #: Separate the mandible from the skull once the arch curve exists.
         self.separate_mandible = True
         self.mandible: MandibleIsolation | None = None
@@ -270,10 +285,13 @@ class Session(QObject):
         self._load_volume(volume, geometry, series, str(SAMPLE_SCAN))
 
     def _load_volume(self, volume, geometry, series, folder: str) -> None:
-        self.volume = volume
-        self._extractor = SurfaceExtractor(volume)
+        self.scan = volume
+        jaws = getattr(geometry, "jaw_volume", None)
+        self.volume = jaws if jaws is not None else volume
+        # All bone, until the mandible is separated: the whole scan.
+        self._extractor = SurfaceExtractor(self.scan)
         self.info = VolumeInfo(series=series, geometry=geometry, folder=folder)
-        self.threshold = estimate_bone_threshold(volume, thin_bone=geometry.jaw_box)
+        self.threshold = estimate_bone_threshold(self.volume, thin_bone=geometry.jaw_box)
         self.arch_seeds.clear()
         self.arch_source = ""
         self.arch_curve = None
@@ -329,9 +347,9 @@ class Session(QObject):
 
     def _set_surface(self, surface) -> None:
         self.surface = surface
-        self.projector = (
-            SurfaceProjector(self.surface) if self.surface.GetNumberOfPoints() else None
-        )
+        # Built when first needed: on a whole CT's bone a locator takes
+        # seconds, and the first view should not wait for it.
+        self._projector = None
         self.cut_applied = False
         self.fragment_surface = None
         self.retained_surface = None
@@ -342,10 +360,22 @@ class Session(QObject):
     # -- mandible ----------------------------------------------------------
 
     @property
+    def projector(self) -> SurfaceProjector | None:
+        """Projects points onto the bone surface; built on first use."""
+        if self._projector is None and self.surface is not None and self.surface.GetNumberOfPoints():
+            self._projector = SurfaceProjector(self.surface)
+        return self._projector
+
+    @projector.setter
+    def projector(self, value: SurfaceProjector | None) -> None:
+        self._projector = value
+
+    @property
     def bone_volume(self) -> Volume | None:
         """The scan as the planning steps should see it: the mandible's bone
-        only, once it has been separated from the skull."""
-        return self._bone_volume if self._bone_volume is not None else self.volume
+        only, once it has been separated from the skull; until then all bone,
+        the volume the bone surface was drawn from."""
+        return self._bone_volume if self._bone_volume is not None else self.scan
 
     def set_separate_mandible(self, enabled: bool) -> None:
         self.separate_mandible = bool(enabled)

@@ -54,6 +54,13 @@ BITE_CUT_MM = 0.75
 #: brightest gray values, and the gap between them is at least this deep.
 CROWN_LEVEL = 0.55
 MIN_GAP_DEPTH = 0.06
+#: Gray values are scaled to the crowns (1.0); metal is clipped at this.
+METAL_CLIP = 1.25
+#: The second bite search keeps within this of the occlusal plane fitted to
+#: the first, mm: the curve of Spee and an overbite stray about this far.
+BITE_PLANE_BAND_MM = 3.5
+#: The plane is fitted only when at least this many stations show teeth.
+MIN_PLANE_STATIONS = 10
 #: The rami continue behind the last station of the arch curve by about
 #: this much, mm.
 RAMUS_EXTENSION_MM = 35.0
@@ -62,9 +69,6 @@ RAMUS_EXTENSION_MM = 35.0
 #: plane, not from world height, keeps a head tipped chin-down from putting
 #: its condyles above the line.
 SKULL_ABOVE_BITE_MM = 55.0
-#: Only this middle share of the arch has nothing but upper teeth and palate
-#: above the bite; towards the ends the rami rise beside the teeth.
-UPPER_ARCH_SHARE = 0.6
 #: Each ramus seeds the mandible up to this far above the bite plane, mm,
 #: and its processes are followed up from there (see ``_processes``). Low
 #: enough to stay below the condyles of a jaw without teeth, whose bite
@@ -87,6 +91,28 @@ MIN_BRAIN_SECTION_CM2 = 15.0
 #: plane, mm. A mouth held open, or a jaw without teeth, puts the condyles
 #: higher above the bite than ``SKULL_ABOVE_BITE_MM``.
 CONDYLE_CLEAR_MM = 80.0
+#: Along the tooth row, bone more than this above the bite is upper teeth and
+#: maxilla, and bone more than this below it lower teeth and mandible, mm.
+#: The few millimetres between are left to the watershed, so a bite height a
+#: little off, as it is where metal hides the gap, costs nothing.
+BITE_MARGIN_MM = 2.0
+#: ... and the upper row's markers reach this much higher, mm: crowns and
+#: the alveolar bone round their roots.
+UPPER_ROW_MM = 20.0
+#: At the front the upper incisors overlap the lower ones by a few
+#: millimetres (the overbite), so mandible seeds start this far below the
+#: bite there, mm, within this of the chin along the arch, mm.
+OVERBITE_MM = 4.5
+INCISOR_SPAN_MM = 22.0
+#: The arch curve is found in the body, where the last molar can stand a
+#: little past its end; the tooth row reaches at most this far past it, mm.
+TOOTH_ROW_BEYOND_MM = 8.0
+#: The upper teeth stand up to this far from the arch curve in plan, mm: the
+#: curve runs through the middle of the mandibular body; the upper molars
+#: stand over the lower ones, but the upper incisors stand in front of the
+#: lower ones, tipped forward. Beside the molars, further out than this,
+#: rise the coronoid and the front of the ramus.
+UPPER_REACH_MM = (8.0, 13.0)
 
 
 @dataclass
@@ -151,7 +177,17 @@ def find_bite(volume, frames, band_mm: float = BAND_MM, step_mm: float = 0.5) ->
 
 
 def bite_along(volume, points, across, band_mm: float = BAND_MM, step_mm: float = 0.5) -> Bite:
-    """The occlusal gap along a polyline with horizontal across-directions."""
+    """The occlusal gap along a polyline with horizontal across-directions.
+
+    Searched twice. The first search finds the darkest smooth line with
+    crowns either side anywhere in the band; an occlusal plane is fitted to
+    it robustly, so the stretches where it went astray carry no weight; the
+    second search keeps within ``BITE_PLANE_BAND_MM`` of that plane. A metal
+    filling or crown shades the slices it lies in with dark and bright
+    streaks, and on a CT reconstructed in slices a few millimetres thick that
+    streak band can be darker, with brighter metal beside it, than the bite
+    itself: the first search follows it into the crowns, the second cannot.
+    """
     offsets = np.arange(-band_mm, band_mm + 1e-9, step_mm)
     rise = np.arange(BITE_SEARCH_MM[0], BITE_SEARCH_MM[1] + 1e-9, step_mm)
     grid = (
@@ -162,10 +198,12 @@ def bite_along(volume, points, across, band_mm: float = BAND_MM, step_mm: float 
     fill = float(np.min(volume.array))
     image = volume.sample(grid, fill=fill).mean(axis=1)  # (stations, rise)
     # Scale to the crowns, not to metal: fillings and brackets are a few
-    # percent of the band at most and would make every crown look dim.
+    # percent of the band at most and would make every crown look dim. Above
+    # the crowns the scale stops, so a filling is no brighter a crown than
+    # enamel and its glare beside a dark streak is not taken for a bite.
     low = float(np.percentile(image, 1.0))
     high = float(np.percentile(image, 97.0))
-    image = (image - low) / max(high - low, 1e-6)
+    image = np.minimum((image - low) / max(high - low, 1e-6), METAL_CLIP)
 
     # A gap is dark with bright crowns on both sides within a crown height.
     reach = int(round(6.0 / step_mm))
@@ -182,31 +220,80 @@ def bite_along(volume, points, across, band_mm: float = BAND_MM, step_mm: float 
     crowns = np.minimum(below, above)
     depth = crowns - image
 
-    # Smooth, darkest path across the stations: at most one row per station.
-    cost = -depth
+    rows = np.arange(len(points))
+    path = _darkest_path(-depth)
+    has_teeth = (crowns[rows, path] >= CROWN_LEVEL) & (depth[rows, path] >= MIN_GAP_DEPTH)
+    if int(has_teeth.sum()) >= MIN_PLANE_STATIONS:
+        plane = robust_plane(
+            points[has_teeth], points[has_teeth, 2] + rise[path[has_teeth]], depth[rows, path][has_teeth]
+        )
+        if plane is not None:
+            expected = plane(points[:, 0], points[:, 1]) - points[:, 2]
+            allowed = np.abs(rise[None, :] - expected[:, None]) <= BITE_PLANE_BAND_MM
+            # A station whose plane lies outside the searched band keeps its
+            # nearest row, so every station still has a path through it.
+            nearest = np.argmin(np.abs(rise[None, :] - expected[:, None]), axis=1)
+            allowed[rows, nearest] = True
+            path = _darkest_path(np.where(allowed, -depth, np.inf))
+            has_teeth = (crowns[rows, path] >= CROWN_LEVEL) & (depth[rows, path] >= MIN_GAP_DEPTH)
+    return Bite(
+        station_points=points,
+        heights_mm=points[:, 2] + rise[path],
+        has_teeth=has_teeth,
+        depth=depth[rows, path],
+    )
+
+
+def _darkest_path(cost: np.ndarray) -> np.ndarray:
+    """The cheapest path across the stations (rows of ``cost``), moving at
+    most one height step per station: dynamic programming."""
     n, m = cost.shape
     penalty = np.array([[0.02], [0.0], [0.02]])
     total = cost[0].copy()
     step = np.zeros((n, m), dtype=np.int8)
     for i in range(1, n):
         options = np.stack([np.r_[np.inf, total[:-1]], total, np.r_[total[1:], np.inf]])
-        choice = np.argmin(options + penalty, axis=0)
+        with np.errstate(invalid="ignore"):
+            choice = np.argmin(options + penalty, axis=0)
         step[i] = choice - 1
         total = options[choice, np.arange(m)] + cost[i]
     path = np.empty(n, dtype=int)
     path[-1] = int(np.argmin(total))
     for i in range(n - 1, 0, -1):
         path[i - 1] = path[i] + step[i, path[i]]
+    return path
 
-    rows = np.arange(n)
-    gap_depth = depth[rows, path]
-    has_teeth = (crowns[rows, path] >= CROWN_LEVEL) & (gap_depth >= MIN_GAP_DEPTH)
-    return Bite(
-        station_points=points,
-        heights_mm=points[:, 2] + rise[path],
-        has_teeth=has_teeth,
-        depth=gap_depth,
-    )
+
+def robust_plane(points: np.ndarray, z: np.ndarray, weights=None, max_slope: float = 0.6):
+    """``z(x, y)`` of the plane through ``(points[:, :2], z)``, outliers aside.
+
+    Iteratively reweighted least squares with Tukey's biweight: a stretch of
+    stations where the bite search followed a streak instead of the bite
+    gets no weight once it is far from the plane the rest agree on. None
+    when there are too few points or the fit is implausibly steep (a head
+    is never tipped so far that its occlusal plane rises 0.6 mm per mm).
+    """
+    points = np.asarray(points, dtype=float)
+    z = np.asarray(z, dtype=float)
+    if len(z) < 3:
+        return None
+    base = np.ones(len(z)) if weights is None else np.clip(np.asarray(weights, dtype=float), 1e-3, None)
+    design = np.column_stack([points[:, 0], points[:, 1], np.ones(len(z))])
+    w = base.copy()
+    coef = np.zeros(3)
+    for _ in range(20):
+        sw = np.sqrt(w)
+        coef, *_ = np.linalg.lstsq(design * sw[:, None], z * sw, rcond=None)
+        residual = z - design @ coef
+        scale = max(1.4826 * float(np.median(np.abs(residual - np.median(residual)))), 0.75)
+        u = residual / (4.685 * scale)
+        w = base * np.where(np.abs(u) < 1.0, (1.0 - u * u) ** 2, 0.0)
+        if np.count_nonzero(w) < 3:
+            return None
+    a, b, c = (float(v) for v in coef)
+    if np.hypot(a, b) >= max_slope:
+        return None
+    return lambda x, y: a * np.asarray(x, dtype=float) + b * np.asarray(y, dtype=float) + c
 
 
 def _extended_polyline(points: np.ndarray, extension_mm: float, step_mm: float):
@@ -585,7 +672,6 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     height_above = zs[:, None, None] - ref[nearest][None, :, :]
     X, Y = np.meshgrid(xs, ys)
     above_plane = zs[:, None, None] - plane(X, Y).astype(np.float32)[None, :, :]
-    arch_interior = _interior_stations(len(extended), n_head, len(points))
 
     # The palate and the palatal side of the upper jaw: inside the arch's
     # outline, above the bite. Nothing of the mandible stands there: the
@@ -621,18 +707,45 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
 
     braincase = _braincase(volume.array[box], crop, spacing) & (above_plane > RAMUS_SEED_MM)
 
-    def skull_markers(mask: np.ndarray, clear=None) -> np.ndarray:
+    # The tooth row, from the last tooth on one side to the last on the
+    # other, and its front, where the upper incisors overlap the lower ones.
+    dental = _tooth_row(bite.has_teeth | filled_teeth, n_head, n_head + len(points) - 1, step)
+    along = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(extended, axis=0), axis=1))])
+    front, _, _ = arch_axes(points)
+    chin = int(np.argmin(np.linalg.norm(extended[:, :2] - front, axis=1)))
+    front_teeth = np.abs(along - along[chin]) < INCISOR_SPAN_MM
+    below_bite = np.where(front_teeth, OVERBITE_MM, BITE_MARGIN_MM)
+    upper_reach = np.where(front_teeth, UPPER_REACH_MM[1], UPPER_REACH_MM[0])[nearest]
+    # Along the bite: the crowns and the bone round them. A crown's enamel and
+    # dentin are brighter than any cortex, a ramus's included.
+    gray = volume.array[box]
+    near_bite = ((distance < STREAK_REACH_MM) & dental[nearest])[None] & (
+        np.abs(height_above) < STREAK_BAND_MM
+    )
+    crown_level = (
+        float(np.percentile(gray[near_bite & crop], 90.0)) if (near_bite & crop).sum() >= 100 else np.inf
+    )
+
+    def skull_markers(mask: np.ndarray, clear=None, ramus_columns=None, rami=None) -> np.ndarray:
         """The skull's markers; ``clear`` (columns) is kept free of the
-        far-above-the-bite ones below the condyles' greatest height."""
+        far-above-the-bite ones below the condyles' greatest height, and
+        ``ramus_columns`` and ``rami`` (voxels) of the upper teeth's."""
         high = above_plane > SKULL_ABOVE_BITE_MM
         if clear is not None:
             high = high & ~(clear[None] & (above_plane < CONDYLE_CLEAR_MM))
+        # Above the bite along the whole tooth row: the upper teeth and the
+        # alveolar bone they stand in. The rami, rising behind and beside
+        # the last molars, are kept clear.
+        reach = (distance < upper_reach) | inside_arch
         upper_arch = (
-            (distance < 8.0)[None]
-            & arch_interior[nearest][None]
-            & (height_above > 3.0)
-            & (height_above < 12.0)
+            (reach & dental[nearest])[None]
+            & (height_above > BITE_MARGIN_MM)
+            & (height_above < BITE_MARGIN_MM + UPPER_ROW_MM)
         )
+        if ramus_columns is not None:
+            upper_arch &= ~ramus_columns[None]
+        if rami is not None:
+            upper_arch &= ~rami
         return mask & (high | ((upper_arch | palatal | upper_teeth) & bite.found))
 
     steps: list[str] = []
@@ -672,8 +785,15 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
         ramus = mandible & (plate & ~inside_arch)[None] & (above_plane > -2.0) & (
             above_plane < RAMUS_SEED_MM
         )
-        processes, joint_roofs = _processes(mandible, ramus & (above_plane > RAMUS_SEED_MM - 4.0), spacing)
-        skull = skull_markers(mandible, clear=corridor)
+        processes, joint_roofs = _processes(
+            mandible, ramus & (above_plane > RAMUS_SEED_MM - 4.0), spacing, above_plane,
+            plate & ~inside_arch, inside_arch,
+        )
+        # The front of a ramus rises beside the last molar, ahead of where its
+        # plate was fitted; in each axial slice it is still one small piece
+        # of bone with the ramus, and no upper tooth's.
+        rami = _pieces_touching(mandible, ramus | processes, spacing)
+        skull = skull_markers(mandible, clear=corridor, ramus_columns=plate | corridor, rami=rami)
         # The braincase is skull even in the corridor: over each joint it is
         # the fossa roof, the skull's side of the joint.
         skull |= mandible & braincase
@@ -688,7 +808,7 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
         skull |= mandible & spine[None]
         skull |= joint_roofs
         if skull.any():
-            seeds = mandible & (distance < 15.0)[None] & (height_above < -2.0)
+            seeds = mandible & (distance < 15.0)[None] & (height_above < -below_bite[nearest][None])
             seeds |= ramus | processes
             markers = seeds.astype(np.uint8) + 2 * (skull & ~seeds).astype(np.uint8)
             split = _split_at_narrowest(
@@ -700,6 +820,26 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
             if target:
                 mandible = labels == target
             steps.append("at the jaw joints")
+        if bite.found:
+            # Metal in the teeth throws streaks across the slices it lies in,
+            # and where they pass the threshold they stand off the crowns as
+            # thin fins. They are opened away at their roots, round the
+            # crowns along the bite near metal, and fall away with them; a
+            # ramus beside the last molar, whose middle is as thin, is left.
+            metal = _metal(gray, crop, near_bite)
+            if metal.any():
+                crowns = gray >= float(np.percentile(gray[near_bite & crop], CROWN_PERCENTILE))
+                mandible = _without_streaks(mandible, metal, spacing, volume.resampled_from_mm, crowns)
+            band = near_bite & _round_crowns(gray, crop, near_bite, metal, crown_level, spacing)
+            mandible = _without_fins(mandible, band, spacing, volume.resampled_from_mm)
+            labels = _components(mandible)
+            target = _label_at(labels, station_index, radius)
+            if target:
+                mandible = labels == target
+            # The bite cut runs on past the last molar into the front of each
+            # ramus; where the mandible lies both above and below a cut
+            # voxel it was never a bite, and the slot is closed again.
+            mandible |= cut & _between(mandible, max(int(np.ceil(1.5 / spacing[2])), 1))
 
     mask = np.zeros(full_shape, dtype=bool)
     mask[box] = mandible
@@ -842,9 +982,14 @@ PROCESS_MAX_CM2 = 6.0
 PROCESS_MARGIN_MM = 3.0
 #: Skull markers are put this far up above the meeting, mm.
 PROCESS_ROOF_MM = 12.0
+#: Below this height above the bite plane, mm, a big section a process runs
+#: into is not the skull base: no joint is that low. It is the maxilla, met
+#: where a coronoid rests against the tuberosity or a filling's streaks join
+#: the two in the axial slices.
+PROCESS_JOINT_MIN_MM = 20.0
 
 
-def _processes(mandible, start, spacing):
+def _processes(mandible, start, spacing, above_plane=None, columns=None, inside=None):
     """The condylar and coronoid processes, followed up from the ramus seeds.
 
     ``start`` is the top of the ramus seeds. Slice by slice upwards, the
@@ -854,7 +999,15 @@ def _processes(mandible, start, spacing):
     its eminence with the mouth open, runs into a piece far too big to be a
     process: the skull base. It is taken to end there; the bone just above
     its tip is the skull's, the bone just below the mandible's, and the few
-    millimetres between are left to the watershed. Returns ``(seeds, roofs)``.
+    millimetres between are left to the watershed. A big piece met lower
+    than any joint (``PROCESS_JOINT_MIN_MM`` above the bite plane, from
+    ``above_plane``) is the maxilla instead: the process is followed through
+    it, keeping to its own footprint from the slice below, which may grow
+    by a pixel per slice only within ``columns`` (the ramus's plate), until
+    it stands free again. Below that height an upper molar can touch a
+    ramus, and is a small piece with it; the processes rise outside the
+    arch, so there nothing ``inside`` it (columns) is followed.
+    Returns ``(seeds, roofs)``.
     """
     import SimpleITK as sitk
 
@@ -867,27 +1020,48 @@ def _processes(mandible, start, spacing):
     margin = max(int(round(PROCESS_MARGIN_MM / spacing[2])), 1)
     roof = max(int(round(PROCESS_ROOF_MM / spacing[2])), 1)
     reach = max(int(round(3.0 / min(spacing[0], spacing[1]))), 1)
-    k = int(levels.max())
-    current = start[k]
+    # Each ramus from the top of its own start: the two end at different
+    # heights when the bite plane is tilted, and a trace begun lower, where
+    # a ramus can touch the upper molars, would wander along the upper teeth.
+    pieces = _components(start)
+    counts = np.bincount(pieces.ravel())
+    counts[0] = 0
     traced = []
     meetings = []
-    while k + 1 < mandible.shape[0] and current.any():
-        k += 1
-        labels = sitk.GetArrayFromImage(
-            sitk.ConnectedComponent(sitk.GetImageFromArray(mandible[k].astype(np.uint8)), True)
-        )
-        touching = np.unique(labels[current & (labels > 0)])
-        sizes = np.bincount(labels.ravel(), minlength=int(labels.max()) + 1)
-        following = np.zeros_like(current)
-        for label in touching:
-            piece = labels == label
-            if sizes[label] * pixel_cm2 > PROCESS_MAX_CM2:
-                meetings.append((k, current & _grow2d(piece, reach)))
-            else:
-                following |= piece
-        if following.any():
-            traced.append((k, following))
-        current = following
+    tips = []
+    for part in np.flatnonzero(counts >= 0.05 * counts.max()):
+        own = pieces == part
+        k = int(np.flatnonzero(own.any(axis=(1, 2))).max())
+        current = own[k]
+        while k + 1 < mandible.shape[0] and current.any():
+            k += 1
+            labels = sitk.GetArrayFromImage(
+                sitk.ConnectedComponent(sitk.GetImageFromArray(mandible[k].astype(np.uint8)), True)
+            )
+            touching = np.unique(labels[current & (labels > 0)])
+            sizes = np.bincount(labels.ravel(), minlength=int(labels.max()) + 1)
+            following = np.zeros_like(current)
+            for label in touching:
+                piece = labels == label
+                if sizes[label] * pixel_cm2 <= PROCESS_MAX_CM2:
+                    following |= piece
+                    continue
+                met = current & _grow2d(piece, reach)
+                if above_plane is not None and float(np.mean(above_plane[k][met])) < PROCESS_JOINT_MIN_MM:
+                    footprint = current if columns is None else current | (_grow2d(current, 1) & columns)
+                    following |= piece & footprint
+                else:
+                    meetings.append((k, met))
+            low = above_plane is not None and float(np.mean(above_plane[k][current])) < PROCESS_JOINT_MIN_MM
+            if low and inside is not None:
+                following &= ~inside
+            # A process with no bone above it has ended in its joint space.
+            ended = current & ~_grow2d(mandible[k], 1)
+            if ended.any():
+                tips.append((k - 1, ended))
+            if following.any():
+                traced.append((k, following))
+            current = following
     for level, section in traced:
         seeds[level] |= section
     for level, tip in meetings:
@@ -896,10 +1070,186 @@ def _processes(mandible, start, spacing):
             seeds[below] &= ~tip
         for above in range(level + margin, min(level + roof, mandible.shape[0])):
             roofs[above] |= mandible[above] & tip
-    if traced:  # a process that simply stops keeps clear of its joint too
-        top = traced[-1][0]
-        seeds[max(top - margin + 1, 0) : top + 1] = False
+    # A process that simply stops keeps clear of its joint too.
+    for level, tip in tips:
+        tip = _grow2d(tip, reach)
+        for below in range(max(level - margin + 1, 0), level + 1):
+            seeds[below] &= ~tip
     return seeds, roofs
+
+
+#: Sheets of "bone" thinner than twice this, mm, standing off the crowns
+#: along the bite are metal streaks, and are opened away; within this of the
+#: bite, mm, and this of the arch curve in plan, mm.
+FIN_MM = 1.0
+STREAK_BAND_MM = 5.0
+STREAK_REACH_MM = 30.0
+#: ... within this of metal, mm, and this of a crown in plan, mm.
+METAL_REACH_MM = 12.0
+CROWN_REACH_MM = 3.0
+#: Bone carries on at least this far above or below the slices a piece of
+#: metal lies in, mm; its streaks do not.
+STREAK_CONTINUES_MM = 2.0
+#: Crowns are bone near the bite at least this bright, as a percentile of
+#: the bone there; a streak, just over the threshold, never is.
+CROWN_PERCENTILE = 75.0
+
+
+def _metal(gray: np.ndarray, bone: np.ndarray, band: np.ndarray) -> np.ndarray:
+    """Metal in ``band``: brighter than any tooth, above the band's 99.5th
+    percentile of bone and above 1.3 times its 90th, or at the scan's
+    ceiling where it is clipped there (a CT stores at most 3071 HU).
+    Relative, because CBCT gray values are not Hounsfield units; on a scan
+    with no metal it finds only the brightest enamel, which is thick and
+    loses nothing to what is done near metal."""
+    values = gray[band & bone]
+    if values.size < 100:
+        return np.zeros_like(band)
+    level = min(
+        max(float(np.percentile(values, 99.5)), 1.3 * float(np.percentile(values, 90.0))),
+        float(values.max()),
+    )
+    return band & (gray >= level)
+
+
+def _without_streaks(
+    mask: np.ndarray, metal: np.ndarray, spacing, slice_mm: float = 0.0, crowns=None
+) -> np.ndarray:
+    """``mask`` without the streaks round each piece of metal.
+
+    A filling's streaks lie in the slices the metal lies in. Bone does not
+    stop there: a ramus, a tooth or the body beside the metal carries on
+    above or below that slab. So, within ``STREAK_REACH_MM`` of metal in
+    plan, what of ``mask`` lies in the slab and has nothing of ``mask`` just
+    above or just below it in its column is streak. Where several pieces of
+    metal reach a column, at different heights where the bite is tilted,
+    the slab there runs from the lowest to the highest, for their streaks
+    cross and stack. A crown that leans can leave its column within the
+    slab; ``crowns`` (enamel and dentin, far brighter than any streak) and
+    the voxel round them are kept whatever their column.
+    """
+    import SimpleITK as sitk
+
+    if not metal.any():
+        return mask
+    nz = mask.shape[0]
+    pixel = float(min(spacing[0], spacing[1]))
+    margin = max(int(round(0.5 * max(slice_mm, 1.0) / spacing[2])), 1)
+    beyond = max(int(round(STREAK_CONTINUES_MM / spacing[2])), 1)
+    low = np.full(mask.shape[1:], nz, dtype=np.int64)
+    high = np.full(mask.shape[1:], -1, dtype=np.int64)
+    pieces = _components(metal)
+    sizes = np.bincount(pieces.ravel())
+    for piece in np.flatnonzero(sizes[1:] >= 8) + 1:
+        own = pieces == piece
+        levels = np.flatnonzero(own.any(axis=(1, 2)))
+        footprint = sitk.GetImageFromArray((~own.any(axis=0)).astype(np.uint8))
+        footprint.SetSpacing([pixel, pixel])
+        near = sitk.GetArrayFromImage(
+            sitk.SignedMaurerDistanceMap(footprint, insideIsPositive=True, squaredDistance=False,
+                                         useImageSpacing=True)
+        ) <= STREAK_REACH_MM
+        low[near] = np.minimum(low[near], int(levels.min()) - margin)
+        high[near] = np.maximum(high[near], int(levels.max()) + margin)
+    tested = (high >= 0) & (low - beyond >= 0) & (high + beyond < nz)
+    if not tested.any():
+        return mask
+    # Whether the column holds anything of the mask just below its slab or
+    # just above it, by cumulative counts down each column.
+    count = np.concatenate([np.zeros((1,) + mask.shape[1:], dtype=np.int32), np.cumsum(mask, axis=0, dtype=np.int32)])
+    lo = np.clip(low, beyond, nz)
+    hi = np.clip(high, -1, nz - beyond - 1)
+    rows, cols = np.indices(mask.shape[1:])
+    below = count[lo, rows, cols] - count[lo - beyond, rows, cols]
+    above = count[hi + 1 + beyond, rows, cols] - count[hi + 1, rows, cols]
+    streak_columns = tested & ~((below > 0) | (above > 0))
+    levels = np.arange(nz)[:, None, None]
+    streak = mask & streak_columns[None] & (levels >= low[None]) & (levels <= high[None])
+    if crowns is not None and (crowns & streak).any():
+        keep = sitk.GetArrayFromImage(
+            sitk.BinaryDilate(sitk.GetImageFromArray((crowns & mask).astype(np.uint8)), [1, 1, 1])
+        ) > 0
+        streak &= ~keep
+    return mask & ~streak
+
+
+def _round_crowns(
+    gray: np.ndarray, bone: np.ndarray, band: np.ndarray, metal: np.ndarray, crown_level: float, spacing
+) -> np.ndarray:
+    """The part of ``band`` within ``CROWN_REACH_MM`` (in plan) of a crown
+    (bone at ``crown_level`` or brighter) and within ``METAL_REACH_MM`` of
+    metal."""
+    import SimpleITK as sitk
+
+    if not metal.any() or not np.isfinite(crown_level):
+        return np.zeros_like(band)
+    image = sitk.GetImageFromArray(metal.astype(np.uint8))
+    image.SetSpacing([float(v) for v in spacing])
+    distance = sitk.GetArrayFromImage(
+        sitk.SignedMaurerDistanceMap(image, insideIsPositive=False, squaredDistance=False,
+                                     useImageSpacing=True)
+    )
+    crowns = (band & bone & (gray >= crown_level)).any(axis=0)
+    reach = max(int(round(CROWN_REACH_MM / float(min(spacing[0], spacing[1])))), 1)
+    return (distance <= METAL_REACH_MM) & _grow2d(crowns, reach)[None]
+
+
+def _without_fins(mask: np.ndarray, band: np.ndarray, spacing, slice_mm: float = 0.0) -> np.ndarray:
+    """``mask`` with thin sheets opened away inside ``band``.
+
+    On a volume interpolated from thick slices (``slice_mm``) a streak is a
+    sheet as thick as the slices it lies in, and is opened that much in z.
+    """
+    import SimpleITK as sitk
+
+    if not band.any():
+        return mask
+    kk, jj, ii = np.nonzero(band)
+    pad = 4
+    box = tuple(
+        slice(max(int(lo) - pad, 0), int(hi) + pad + 1)
+        for lo, hi in ((kk.min(), kk.max()), (jj.min(), jj.max()), (ii.min(), ii.max()))
+    )
+    radius = max(int(round(FIN_MM / float(min(spacing[0], spacing[1])))), 1)
+    radius_z = max(int(round(max(FIN_MM, 0.75 * slice_mm) / float(spacing[2]))), 1)
+    opened = sitk.GetArrayFromImage(
+        sitk.BinaryMorphologicalOpening(
+            sitk.GetImageFromArray(mask[box].astype(np.uint8)), [radius, radius, radius_z],
+            sitk.sitkBall,
+        )
+    ) > 0
+    out = mask.copy()
+    out[box] = np.where(band[box], opened, mask[box])
+    return out
+
+
+def _between(mask: np.ndarray, reach: int) -> np.ndarray:
+    """Voxels with ``mask`` within ``reach`` voxels both above and below."""
+    above = np.zeros_like(mask)
+    below = np.zeros_like(mask)
+    for d in range(1, reach + 1):
+        above[:-d] |= mask[d:]
+        below[d:] |= mask[:-d]
+    return above & below
+
+
+def _pieces_touching(bone: np.ndarray, seeds: np.ndarray, spacing) -> np.ndarray:
+    """In each axial slice, the pieces of ``bone`` that hold ``seeds`` and
+    are small enough to be a ramus or a process (``PROCESS_MAX_CM2``), not
+    one merged with the maxilla or the skull base."""
+    import SimpleITK as sitk
+
+    pixel_cm2 = float(spacing[0] * spacing[1]) / 100.0
+    out = np.zeros_like(bone)
+    for k in np.flatnonzero(seeds.any(axis=(1, 2))):
+        labels = sitk.GetArrayFromImage(
+            sitk.ConnectedComponent(sitk.GetImageFromArray(bone[k].astype(np.uint8)), True)
+        )
+        sizes = np.bincount(labels.ravel())
+        for label in np.unique(labels[seeds[k] & (labels > 0)]):
+            if sizes[label] * pixel_cm2 <= PROCESS_MAX_CM2:
+                out[k] |= labels == label
+    return out
 
 
 def _grow2d(mask: np.ndarray, radius: int) -> np.ndarray:
@@ -957,6 +1307,12 @@ def _pool(mask: np.ndarray, factor: int) -> np.ndarray:
     return padded.reshape(nz, factor, ny, factor, nx, factor).any(axis=(1, 3, 5))
 
 
+#: Pitch of the watershed's grid, mm. Fine enough to follow the contact
+#: between an upper and a lower incisor; on a coarser grid the labels come
+#: back to the scan's voxels in visible blocks.
+WATERSHED_MM = 0.6
+
+
 def _split_at_narrowest(
     region: np.ndarray, markers: np.ndarray, gray: np.ndarray, threshold: float, spacing
 ) -> np.ndarray:
@@ -971,12 +1327,27 @@ def _split_at_narrowest(
     value still tells it from the neck. So the flooding height is the sum
     of the two, each scaled to 0-1.
 
-    The flooding runs on a grid of about 1 mm and the labels are carried
-    back to the full grid.
+    The flooding runs on a grid of about ``WATERSHED_MM``, inside the box
+    round ``region``, and the labels are carried back to the full grid.
+    Neighbours are face neighbours only: a contact one voxel across, corner
+    to corner, is no path for either side to flood through.
     """
+    if not region.any():
+        return np.zeros(region.shape, dtype=np.uint8)
+    kk, jj, ii = (np.flatnonzero(region.any(axis=axes)) for axes in ((1, 2), (0, 2), (0, 1)))
+    box = tuple(
+        slice(max(int(found[0]) - 1, 0), int(found[-1]) + 2) for found in (kk, jj, ii)
+    )
+    labels = np.zeros(region.shape, dtype=np.uint8)
+    labels[box] = _flood(region[box], markers[box], gray[box], threshold, spacing)
+    return labels
+
+
+def _flood(region: np.ndarray, markers: np.ndarray, gray: np.ndarray, threshold: float, spacing):
+    """The watershed of :func:`_split_at_narrowest`, on ``region``'s box."""
     import SimpleITK as sitk
 
-    factor = max(int(round(1.0 / float(np.min(spacing)))), 1)
+    factor = max(int(round(WATERSHED_MM / float(np.min(spacing)))), 1)
     if factor > 1:
         coarse = _pool(region, factor)
         seeds = _pool(markers == 1, factor)
@@ -1005,7 +1376,7 @@ def _split_at_narrowest(
     marker_image.CopyInformation(height)
     labels = sitk.GetArrayFromImage(
         sitk.MorphologicalWatershedFromMarkers(
-            height, marker_image, markWatershedLine=False, fullyConnected=True
+            height, marker_image, markWatershedLine=False, fullyConnected=False
         )
     )
     if factor > 1:
@@ -1032,17 +1403,24 @@ def _reference_heights(bite: Bite, points: np.ndarray) -> np.ndarray:
     return np.interp(stations, stations[known], bite.heights_mm[known])
 
 
-def _interior_stations(total: int, n_head: int, n_arch: int) -> np.ndarray:
-    """The middle of the arch, where only upper teeth stand above the bite.
+def _tooth_row(teeth: np.ndarray, first: int, last: int, step_mm: float) -> np.ndarray:
+    """The tooth row: the stations from the first with teeth to the last,
+    gaps between teeth included, reaching at most ``TOOTH_ROW_BEYOND_MM``
+    past the ends of the arch curve (stations ``first`` to ``last``).
 
-    Towards the ends the rami rise beside the last molars; a skull marker
-    there would hand a ramus to the skull. So only the middle
-    ``UPPER_ARCH_SHARE`` of the arch is used.
+    The arch curve is carried on straight past its ends, which takes it up
+    the rami; there the bone of a ramus below and the maxilla above can look
+    like a bite to the search, and an upper-teeth marker on a ramus would
+    hand it to the skull.
     """
-    margin = int(round(n_arch * (1.0 - UPPER_ARCH_SHARE) / 2.0))
-    interior = np.zeros(total, dtype=bool)
-    interior[n_head + margin : n_head + n_arch - margin] = True
-    return interior
+    beyond = int(round(TOOTH_ROW_BEYOND_MM / step_mm))
+    allowed = np.zeros(len(teeth), dtype=bool)
+    allowed[max(first - beyond, 0) : last + beyond + 1] = True
+    row = np.zeros(len(teeth), dtype=bool)
+    found = np.flatnonzero(teeth & allowed)
+    if len(found):
+        row[found[0] : found[-1] + 1] = True
+    return row
 
 
 def _bite_plane(bite: Bite, stations: np.ndarray, heights: np.ndarray):
@@ -1051,15 +1429,16 @@ def _bite_plane(bite: Bite, stations: np.ndarray, heights: np.ndarray):
     Fitted to the bite where there are teeth; with too few, the mean height
     of the reference line. A head scanned tilted tilts this plane with it.
     """
-    if bite.found and int(bite.has_teeth.sum()) >= 10:
-        teeth = bite.station_points[bite.has_teeth]
-        z = bite.heights_mm[bite.has_teeth]
-        design = np.column_stack([teeth[:, 0], teeth[:, 1], np.ones(len(teeth))])
-        (a, b, c), *_ = np.linalg.lstsq(design, z, rcond=None)
-        # A plausible tilt only: a fit pulled steep by a few stray stations
-        # would put the skull markers on the condyles of one side.
-        if np.hypot(a, b) < 0.6:
-            return lambda x, y: a * np.asarray(x) + b * np.asarray(y) + c
+    if bite.found and int(bite.has_teeth.sum()) >= MIN_PLANE_STATIONS:
+        # Robustly, and a plausible tilt only: a fit pulled steep by a few
+        # stray stations would put the skull markers on one side's condyle.
+        plane = robust_plane(
+            bite.station_points[bite.has_teeth],
+            bite.heights_mm[bite.has_teeth],
+            bite.depth[bite.has_teeth],
+        )
+        if plane is not None:
+            return plane
     level = float(np.mean(heights))
     return lambda x, y: np.full(np.broadcast(np.asarray(x), np.asarray(y)).shape, level)
 
@@ -1077,4 +1456,9 @@ def masked_bone_volume(volume, isolation: MandibleIsolation):
     array = volume.array.astype(np.float32, copy=True)
     background = float(np.min(array))
     array[isolation.other_bone] = background
-    return Volume(array=array, spacing=volume.spacing.copy(), origin=volume.origin.copy())
+    return Volume(
+        array=array,
+        spacing=volume.spacing.copy(),
+        origin=volume.origin.copy(),
+        resampled_from_mm=volume.resampled_from_mm,
+    )

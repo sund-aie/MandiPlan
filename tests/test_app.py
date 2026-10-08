@@ -606,11 +606,13 @@ def _drag(window, hold: bool) -> float:
     """Move the pointer across the 3-D view, with or without the button down."""
     iren = window.view3d.interactor._Iren
     before = _camera(window)
-    iren.SetEventPosition(300, 200)
+    # In a corner, clear of the bone and of any cut plane's widget, which
+    # would take the drag for itself.
+    iren.SetEventPosition(12, 12)
     if hold:
         iren.LeftButtonPressEvent()
-    for x in (320, 350, 380):
-        iren.SetEventPosition(x, 210)
+    for x in (32, 62, 92):
+        iren.SetEventPosition(x, 22)
         iren.MouseMoveEvent()
     if hold:
         iren.LeftButtonReleaseEvent()
