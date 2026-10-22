@@ -103,6 +103,10 @@ class PlateShape:
     #: Gaps whose notch differs from the default, as ``(index, NotchSpec)``
     #: pairs — the long bridge of a bridged miniplate, for instance.
     gap_notches: tuple[tuple[int, NotchSpec], ...] = field(default_factory=tuple)
+    #: Round lobes round each hole, ``width_mm`` across, joined by concave
+    #: fillets that leave this waist between neighbours, mm; None for the
+    #: straight-edged plate with notches.
+    lobe_waist_mm: float | None = None
 
     def notch_for(self, gap: int) -> NotchSpec:
         for index, spec in self.gap_notches:
@@ -133,6 +137,10 @@ class PlateShape:
             )
         if self.hole.bore_diameter_mm >= self.hole.seat_diameter_mm:
             raise ValueError("the bore must be narrower than the screw seat")
+        if self.lobe_waist_mm is not None:
+            if not 0.0 < self.lobe_waist_mm < self.width_mm:
+                raise ValueError("the waist between lobes must be narrower than the lobes")
+            return
         for i, (a, b) in enumerate(zip(xs[:-1], xs[1:])):
             if i in self.unnotched_gaps:
                 continue
@@ -169,6 +177,8 @@ def outline(shape: PlateShape, inset_mm: float = 0.0) -> np.ndarray:
     Returns (N, 2). The same shape always yields the same N whatever the
     inset, and point k of one inset corresponds to point k of another.
     """
+    if shape.lobe_waist_mm is not None:
+        return _lobed_outline(shape, inset_mm)
     xs = np.asarray(shape.hole_x_mm, dtype=float)
     h = shape.half_width_mm - inset_mm
     if h <= 0:
@@ -215,6 +225,46 @@ def outline(shape: PlateShape, inset_mm: float = 0.0) -> np.ndarray:
     lower = [(x, -y) for x, y in reversed(upper[1:-1])]
     loop = np.array(upper + lower, dtype=float)
     # Upper edge left to right then lower edge back is clockwise; flip it.
+    return loop[::-1].copy()
+
+
+_LOBE_SAMPLES = 20
+_FILLET_SAMPLES = 10
+
+
+def _lobed_outline(shape: PlateShape, inset_mm: float) -> np.ndarray:
+    """Outline of a plate of round lobes joined by concave fillets.
+
+    Each lobe is a circle of half the plate width about its hole; each
+    fillet a circle tangent to both neighbouring lobes whose lowest point
+    leaves half the waist. An inset shrinks the lobes and grows the fillets
+    about the same centres, so tangent points, and vertex counts, stay put.
+    """
+    xs = np.asarray(shape.hole_x_mm, dtype=float)
+    R = shape.half_width_mm
+    w = shape.lobe_waist_mm / 2.0
+    fillets = []
+    for a, b in zip(xs[:-1], xs[1:]):
+        half = (b - a) / 2.0
+        rf = (half * half + w * w - R * R) / (2.0 * (R - w))
+        fillets.append(((a + b) / 2.0, w + rf, rf, math.atan2(w + rf, half)))
+    r = R - inset_mm
+    if r <= 0:
+        raise ValueError("inset is larger than half the plate width")
+    upper: list[tuple[float, float]] = []
+    for i, x in enumerate(xs):
+        start = math.pi if i == 0 else math.pi - fillets[i - 1][3]
+        stop = 0.0 if i == len(xs) - 1 else fillets[i][3]
+        last = i == len(xs) - 1
+        for ang in np.linspace(start, stop, _LOBE_SAMPLES + (1 if last else 0), endpoint=last):
+            upper.append((x + r * math.cos(ang), r * math.sin(ang)))
+        if not last:
+            m, cy, rf, theta = fillets[i]
+            radius = rf + inset_mm
+            for ang in np.linspace(-math.pi + theta, -theta, _FILLET_SAMPLES, endpoint=False):
+                upper.append((m + radius * math.cos(ang), cy + radius * math.sin(ang)))
+    lower = [(x, -y) for x, y in reversed(upper[1:-1])]
+    loop = np.array(upper + lower, dtype=float)
     return loop[::-1].copy()
 
 

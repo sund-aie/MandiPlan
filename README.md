@@ -133,8 +133,19 @@ do publish is dimensions, and those are what these plates follow:
 | Primary reconstruction 1.5 | 1.5 × 6.0 mm | 7 mm | 1.5 mm plates for primary reconstruction, not load-bearing |
 | Miniplate 2.0 | 1.0 × 4.3 mm | 6 mm | FE studies: 2.0 4-hole miniplate, 26 × 4.3 × 1.0 mm |
 | Preformed body, angle, hemimandibular (5 + 17), full mandibular (6 + 13 + 6) | as their straight family | | published preformed configurations |
-| Angled locking reconstruction, square segments, left and right (6 + 12, 6 + 18 holes) | 2.5 × 7.5 mm, square segments on notched bridges, 2.4/2.9 mm locking screws | 7.5 mm | published 2.5 mm thickness and screws of its plate line; 40° ramus turn; pitch and width from photographs |
-| Angled locking reconstruction, 3.0 mm profile (6 + 21 holes) | 3.0 × 8.5 mm, round lobes, 2.7 mm screws | 8 mm | published 3.0 mm profile and 2.7 mm screws of its plate line; 55° ramus turn, curved body; pitch and width from photographs |
+
+Plates modelled on a manufacturer's range are listed under that name, then
+shape, then hole count, and drawn in their own colour:
+
+| brand › shape | holes | section | pitch | measured from |
+| --- | --- | --- | --- | --- |
+| KLS Martin LevelOne › Reconstruction plate 2.7, angled, left / right (green) | 26: 6-hole ramus limb at 55°, 7 straight, then a further 28° | 3.0 mm profile, round lobes 7.6 mm, waist 4.7 mm, bore 3.2 mm, 2.7 mm locking screws | 7.95 mm | the catalogue's 1:1 drawings (LevelOne Fixation 2.0–2.7, 90-442-02-04) |
+| DePuy Synthes MatrixMANDIBLE › Angle reconstruction plate 2.8, left / right (gold) | 7 × 23, ramus limb at 55° | 2.8 mm, round lobes 8.5 mm, waist 6.0 mm, 2.9 mm locking screws | 8.5 mm | the technique guide's drawings (DSUSCMF04140034), scaled so the bore passes a 2.9 mm screw |
+| DePuy Synthes MatrixMANDIBLE › Reconstruction plate 2.8, straight (gold) | 12, 20 | as above | 8.5 mm | as above |
+| DePuy Synthes (plate in hand) › Angled reconstruction plate, square segments, left / right (gold) | 6 + 12, 6 + 18, ramus limb at 54° | raised square segments 3.2 mm (caliper) on 2.5 mm bridges (estimate), 7.4 mm wide | 8.4 mm | photographs of the plate, scaled by the KLS Martin plate beside it |
+
+None of these is the manufacturer's CAD; each is drawn from the figures its
+sources give, and the remaining estimates are named there.
 
 Each is built the way real plates are: straight parallel edges with small
 notches between holes (where the plate is meant to bend), rounded ends,

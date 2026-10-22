@@ -109,6 +109,12 @@ class Family:
     code: str = ""
     brand: str = "Generic"
     shape: str = ""
+    #: Raised segments: the bridges between holes are this thick instead of
+    #: the section's thickness, over this length about each midpoint, mm.
+    bridge_thickness_mm: float | None = None
+    bridge_length_mm: float = 0.0
+    #: Round lobes with this waist between them, mm (see PlateShape).
+    lobe_waist_mm: float | None = None
     colour_rgb: tuple[float, float, float] = (0.722, 0.733, 0.757)
 
 
@@ -140,12 +146,20 @@ def evenly(count: int, pitch: float) -> tuple[float, ...]:
 LOCK_24 = Section(2.5, 8.0, 8.0, HoleSpec(2.5, 4.2, locking=True), NotchSpec(0.9, 2.9))
 LP_24 = Section(2.4, 8.0, 8.0, HoleSpec(2.5, 4.0), NotchSpec(0.9, 2.9))
 HEAVY_28 = Section(2.8, 10.0, 9.0, HoleSpec(2.8, 5.0, locking=True), NotchSpec(1.1, 3.4))
-#: An angled locking plate of square hole segments on short notched bridges,
-#: 2.5 mm thick for 2.4 and 2.9 mm locking screws (the published thickness
-#: and screws of the plate line it follows); and a 3.0 mm-profile locking plate of round lobes for
-#: 2.7 mm screws (the published screw size and profile of that plate line).
-SQUARE_20 = Section(2.5, 7.5, 7.5, HoleSpec(3.0, 4.6, locking=True), NotchSpec(1.8, 2.0), 0.3)
-LOBED_30 = Section(3.0, 8.5, 8.0, HoleSpec(2.8, 4.8, locking=True), NotchSpec(1.3, 3.6), 0.4)
+#: Sections of plates modelled on a manufacturer's range, measured as the
+#: sources below say. Width is across a segment or lobe; the notch makes the
+#: waist between lobes.
+#: The square-segment angled plate in hand: segments 3.2 mm thick (caliper),
+#: pitch and width from photographs scaled by the 1:1 KLS Martin plate lying
+#: beside it.
+SQUARE_IN_HAND = Section(3.2, 7.4, 8.4, HoleSpec(3.9, 5.0, locking=True), NotchSpec(0.8, 1.6), 0.3)
+#: MatrixMANDIBLE 2.8 mm reconstruction plates: proportions from the
+#: technique guide's drawings, scaled so the bore passes the system's 2.9 mm
+#: screws.
+MATRIX_28 = Section(2.8, 8.5, 8.5, HoleSpec(3.0, 4.9, locking=True), NotchSpec(1.3, 5.0), 0.4)
+#: KLS Martin LevelOne 2.7 reconstruction plates (3.0 mm profile), measured
+#: off the catalogue's 1:1 drawings.
+LEVELONE_27 = Section(3.0, 7.6, 7.95, HoleSpec(3.2, 4.8, locking=True), NotchSpec(1.45, 4.6), 0.4)
 PRIMARY_15 = Section(1.5, 6.0, 7.0, HoleSpec(2.1, 3.4, seat_depth_fraction=0.6), NotchSpec(0.8, 2.6), 0.25)
 MINI_20 = Section(1.0, 4.3, 6.0, HoleSpec(2.1, 3.1, seat_depth_fraction=0.6), NotchSpec(1.05, 4.4), 0.15)
 
@@ -341,67 +355,133 @@ FAMILIES: tuple[Family, ...] = (
 )
 
 
-SRC_ANGLED = (
-    "Modelled on angled mandibular reconstruction plates handled in clinic: a "
-    "ramus limb of 6 holes turned in the plate's own plane from a body of 12 "
-    "or 18 holes, as left and right plates. The square-segment plate is 2.5 mm "
-    "thick for 2.4/2.9 mm locking screws, as published; the lobed plate is a 3.0 mm "
-    "profile for 2.7 mm screws, as published for its plate line. Pitch and "
-    "width are estimated from photographs; check them and edit this file."
+SRC_IN_HAND = (
+    "Angled reconstruction plate in hand (DePuy Synthes, marked 445.45): segment "
+    "thickness 3.2 mm by caliper; hole pitch 8.4 mm, width 7.4 mm and the 54 "
+    "degree ramus turn measured on photographs scaled by the KLS Martin plate "
+    "beside it, whose pitch is known from its 1:1 catalogue drawing. Bridge "
+    "thickness (2.5 mm) is an estimate."
 )
+SRC_MATRIX = (
+    "DePuy Synthes MatrixMANDIBLE Plating System surgical technique "
+    "(DSUSCMF04140034): 2.8 mm thick reconstruction plates, colour-coded gold, "
+    "for 2.9 mm screws; angle plates 7 x 23 holes left and right, straight 12 "
+    "and 20 holes. Outline, lobe, waist and turn measured off its drawings, "
+    "scaled so the bore passes a 2.9 mm screw (pitch 8.5 mm)."
+)
+SRC_LEVELONE = (
+    "KLS Martin LevelOne Fixation 2.0-2.7 product range (90-442-02-04), "
+    "reconstruction plates 2.7 with 3.0 mm plate profile, angled left and right, "
+    "26 holes. Pitch 7.95 mm, lobe 7.6 mm, waist 4.7 mm, bore 3.2 mm and both "
+    "turns measured off the catalogue's 1:1 drawings."
+)
+GOLD = (0.80, 0.68, 0.30)
+LEVELONE_GREEN = (0.36, 0.76, 0.40)
 
 
-def _angled(side: str, sign: float) -> Family:
+def _in_hand(side: str, sign: float) -> Family:
     return Family(
-        family=f"generic-recon-2.5-angled-{side}",
-        name=f"Locking reconstruction plate, square segments, angled, {side}",
+        family=f"synthes-angled-square-{side}",
+        name=f"Angled reconstruction plate, square segments, {side}",
         category="mandibular angle and ramus",
-        section=SQUARE_20,
-        layouts=[(f"{6 + n}h", evenly(6 + n, 7.5)) for n in (12, 18)],
-        preform=(("turn", 4, 6, sign * 40.0),),
+        section=SQUARE_IN_HAND,
+        layouts=[(f"{6 + n}h", evenly(6 + n, 8.4)) for n in (12, 18)],
+        preform=(("turn", 4, 6, sign * 54.0),),
         material_id="cp-ti-grade-4",
         load_bearing=True,
-        sources=(SRC_ANGLED, SRC_NOTCH),
+        sources=(SRC_IN_HAND,),
         notes=(
-            "Square hole segments on short notched bridges; the 6-hole ramus "
-            f"limb turns 40 degrees in the plate's plane ({side} side). Fit "
-            "bending insets in locking holes before contouring."
+            "Raised square segments on thinner notched bridges; 6-hole ramus "
+            "limb turned 54 degrees. Fit bending insets in locking holes "
+            "before contouring."
         ),
-        marking=("Ti4", "2.5", "AG" + side[0].upper()),
-        code="AG25" + side[0].upper(),
-        brand="DePuy Synthes MatrixMANDIBLE (approximation)",
-        shape=f"Angled reconstruction plate, {side}",
-        colour_rgb=(0.78, 0.66, 0.30),
+        marking=("Ti", "SWISS"),
+        code="SQ32" + side[0].upper(),
+        brand="DePuy Synthes (plate in hand)",
+        shape=f"Angled reconstruction plate, square segments, {side}",
+        colour_rgb=GOLD,
+        bridge_thickness_mm=2.5,
+        bridge_length_mm=1.6,
+    )
+
+
+def _matrix_angle(side: str, sign: float) -> Family:
+    return Family(
+        family=f"matrixmandible-2.8-angle-{side}",
+        name=f"Angle reconstruction plate 2.8, 7 x 23 holes, {side}",
+        category="mandibular angle and ramus",
+        section=MATRIX_28,
+        layouts=[("30h", evenly(30, 8.5))],
+        preform=(("turn", 5, 8, sign * 55.0),),
+        material_id="cp-ti-grade-2",
+        load_bearing=True,
+        sources=(SRC_MATRIX,),
+        min_bend_radius_mm=15.0,
+        notes=(
+            "Bridges continuity defects before secondary reconstruction. 7-hole "
+            "ramus limb turned 55 degrees from a 23-hole body; 2.9 mm locking screws."
+        ),
+        marking=("Ti", "2.8"),
+        code="MX28" + side[0].upper(),
+        brand="DePuy Synthes MatrixMANDIBLE",
+        shape=f"Angle reconstruction plate 2.8, {side}",
+        colour_rgb=GOLD,
+        lobe_waist_mm=5.95,
+    )
+
+
+def _levelone_angled(side: str, sign: float) -> Family:
+    return Family(
+        family=f"levelone-2.7-angled-{side}",
+        name=f"Reconstruction plate 2.7, angled, {side}",
+        category="mandibular angle and ramus",
+        section=LEVELONE_27,
+        layouts=[("26h", evenly(26, 7.95))],
+        preform=(("turn", 5, 7, sign * 55.0), ("turn", 13, 18, sign * 28.0)),
+        material_id="cp-ti-grade-4",
+        load_bearing=True,
+        sources=(SRC_LEVELONE,),
+        min_bend_radius_mm=15.0,
+        notes=(
+            "Round lobes, threaded locking holes for 2.7 mm screws, 3.0 mm "
+            "profile: a 6-hole ramus limb turned 55 degrees, 7 holes of straight "
+            "body, then a further 28 degree turn toward the chin."
+        ),
+        marking=("Ti", "3.0"),
+        code="L027" + side[0].upper(),
+        brand="KLS Martin LevelOne",
+        shape=f"Reconstruction plate 2.7, angled, {side}",
+        colour_rgb=LEVELONE_GREEN,
+        lobe_waist_mm=4.7,
     )
 
 
 FAMILIES = FAMILIES + (
-    _angled("left", 1.0),
-    _angled("right", -1.0),
+    _in_hand("left", 1.0),
+    _in_hand("right", -1.0),
+    _matrix_angle("left", 1.0),
+    _matrix_angle("right", -1.0),
     Family(
-        family="generic-recon-3.0-angled",
-        name="Locking reconstruction plate, 3.0 mm profile, angled",
-        category="mandibular angle and ramus",
-        section=LOBED_30,
-        layouts=[("27h", evenly(27, 8.0))],
-        preform=(("turn", 4, 7, 55.0), ("arch", 9, 24, 40.0)),
-        material_id="cp-ti-grade-4",
+        family="matrixmandible-2.8-straight",
+        name="Reconstruction plate 2.8, straight",
+        category="reconstruction bar",
+        section=MATRIX_28,
+        layouts=[(f"{n}h", evenly(n, 8.5)) for n in (12, 20)],
+        material_id="cp-ti-grade-2",
         load_bearing=True,
-        sources=(SRC_ANGLED, SRC_NOTCH),
+        sources=(SRC_MATRIX,),
         min_bend_radius_mm=15.0,
-        notes=(
-            "Round lobes, threaded locking holes, 3.0 mm profile: a 6-hole "
-            "ramus limb turned 55 degrees and a gently curved body. Mirror it "
-            "for the other side. Shape any further by press."
-        ),
-        marking=("Ti4", "3.0", "AG"),
-        code="AG30",
-        brand="KLS Martin LevelOne (approximation)",
-        shape="Angled reconstruction plate, 3.0 mm profile",
-        colour_rgb=(0.40, 0.74, 0.42),
+        notes="Bridges continuity defects before secondary reconstruction; 2.9 mm locking screws.",
+        marking=("Ti", "2.8"),
+        code="MX28S",
+        brand="DePuy Synthes MatrixMANDIBLE",
+        shape="Reconstruction plate 2.8, straight",
+        colour_rgb=GOLD,
+        lobe_waist_mm=5.95,
     ),
+    _levelone_angled("left", 1.0),
+    _levelone_angled("right", -1.0),
 )
-
 
 # -- meshing ----------------------------------------------------------------
 
@@ -624,6 +704,26 @@ def write_ply(path: Path, points: np.ndarray, triangles: np.ndarray) -> None:
         handle.write(faces.tobytes())
 
 
+def _raise_segments(points, shape: PlateShape, bridge_mm: float, length_mm: float, ramp_mm: float = 0.4):
+    """Lower the plate to ``bridge_mm`` over ``length_mm`` about each midpoint
+    between holes, ramping over ``ramp_mm``: raised segments on thinner
+    bridges. The section is compressed toward the bone face, so the mesh
+    stays watertight and the bone face flat."""
+    xs = np.asarray(shape.hole_x_mm, dtype=float)
+    t = shape.thickness_mm
+    bottom = -t / 2.0
+    if len(xs) < 2:
+        return points
+    mids = (xs[:-1] + xs[1:]) / 2.0
+    u = np.min(np.abs(points[:, 0][:, None] - mids[None, :]), axis=1)
+    w = np.clip((length_mm / 2.0 + ramp_mm - u) / ramp_mm, 0.0, 1.0)
+    w[(points[:, 0] < xs[0]) | (points[:, 0] > xs[-1])] = 0.0
+    scale = 1.0 - w * (t - bridge_mm) / t
+    out = points.copy()
+    out[:, 2] = bottom + (points[:, 2] - bottom) * scale
+    return out
+
+
 def build(family: Family, suffix: str, hole_x):
     s = family.section
     xs = np.asarray(hole_x, dtype=float)
@@ -643,9 +743,12 @@ def build(family: Family, suffix: str, hole_x):
         notch=s.notch,
         edge_radius_mm=s.edge_radius_mm,
         gap_notches=overrides,
+        lobe_waist_mm=family.lobe_waist_mm,
     )
     shape.validate()
     points, triangles = flat_solid(shape)
+    if family.bridge_thickness_mm is not None:
+        points = _raise_segments(points, shape, family.bridge_thickness_mm, family.bridge_length_mm)
     xs = np.asarray(shape.hole_x_mm)
     holes = np.column_stack([xs, np.zeros(len(xs)), np.zeros(len(xs))])
     axes = np.tile([0.0, 0.0, 1.0], (len(xs), 1))
