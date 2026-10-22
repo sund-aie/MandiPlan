@@ -107,6 +107,9 @@ class PlateShape:
     #: fillets that leave this waist between neighbours, mm; None for the
     #: straight-edged plate with notches.
     lobe_waist_mm: float | None = None
+    #: Oval holes: each hole this much longer along the plate than across,
+    #: from the bore up through the seat, mm.
+    hole_elongation_mm: float = 0.0
 
     def notch_for(self, gap: int) -> NotchSpec:
         for index, spec in self.gap_notches:
@@ -291,10 +294,13 @@ def _straight_samples(shape: PlateShape, a: float, b: float, where: str, index: 
     return 2
 
 
-def hole_loop(centre_x: float, radius: float, samples: int) -> np.ndarray:
-    """A screw-hole circle, counter-clockwise, starting on +x."""
+def hole_loop(centre_x: float, radius: float, samples: int, elongation_mm: float = 0.0) -> np.ndarray:
+    """A screw-hole circle, counter-clockwise, starting on +x; with
+    ``elongation_mm`` an oval that much longer along the plate."""
     angles = np.linspace(0.0, 2.0 * math.pi, samples, endpoint=False)
-    return np.column_stack([centre_x + radius * np.cos(angles), radius * np.sin(angles)])
+    return np.column_stack(
+        [centre_x + (radius + elongation_mm / 2.0) * np.cos(angles), radius * np.sin(angles)]
+    )
 
 
 def point_in_polygon(points: np.ndarray, polygon: np.ndarray) -> np.ndarray:

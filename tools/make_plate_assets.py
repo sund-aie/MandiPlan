@@ -115,6 +115,10 @@ class Family:
     bridge_length_mm: float = 0.0
     #: Round lobes with this waist between them, mm (see PlateShape).
     lobe_waist_mm: float | None = None
+    #: Oval holes, this much longer along the plate than across, mm.
+    hole_elongation_mm: float = 0.0
+    #: Height of the etched lettering, mm.
+    marking_height_mm: float = 0.9
     colour_rgb: tuple[float, float, float] = (0.722, 0.733, 0.757)
 
 
@@ -152,7 +156,7 @@ HEAVY_28 = Section(2.8, 10.0, 9.0, HoleSpec(2.8, 5.0, locking=True), NotchSpec(1
 #: The square-segment angled plate in hand: segments 3.2 mm thick (caliper),
 #: pitch and width from photographs scaled by the 1:1 KLS Martin plate lying
 #: beside it.
-SQUARE_IN_HAND = Section(3.2, 7.4, 8.4, HoleSpec(3.9, 5.0, locking=True), NotchSpec(0.8, 1.6), 0.3)
+SQUARE_IN_HAND = Section(3.2, 7.4, 8.4, HoleSpec(3.1, 5.0, locking=True), NotchSpec(0.8, 1.6), 0.3)
 #: MatrixMANDIBLE 2.8 mm reconstruction plates: proportions from the
 #: technique guide's drawings, scaled so the bore passes the system's 2.9 mm
 #: screws.
@@ -359,8 +363,9 @@ SRC_IN_HAND = (
     "Angled reconstruction plate in hand (DePuy Synthes, marked 445.45): segment "
     "thickness 3.2 mm by caliper; hole pitch 8.4 mm, width 7.4 mm and the 54 "
     "degree ramus turn measured on photographs scaled by the KLS Martin plate "
-    "beside it, whose pitch is known from its 1:1 catalogue drawing. Bridge "
-    "thickness (2.5 mm) is an estimate."
+    "beside it, whose pitch is known from its 1:1 catalogue drawing; 24 holes; "
+    "oval holes 27 % longer along the plate than across, measured on a close-up "
+    "photograph. Bridge thickness (2.5 mm) is an estimate."
 )
 SRC_MATRIX = (
     "DePuy Synthes MatrixMANDIBLE Plating System surgical technique "
@@ -385,23 +390,26 @@ def _in_hand(side: str, sign: float) -> Family:
         name=f"Angled reconstruction plate, square segments, {side}",
         category="mandibular angle and ramus",
         section=SQUARE_IN_HAND,
-        layouts=[(f"{6 + n}h", evenly(6 + n, 8.4)) for n in (12, 18)],
+        layouts=[("24h", evenly(24, 8.4))],
         preform=(("turn", 4, 6, sign * 54.0),),
         material_id="cp-ti-grade-4",
         load_bearing=True,
         sources=(SRC_IN_HAND,),
         notes=(
-            "Raised square segments on thinner notched bridges; 6-hole ramus "
-            "limb turned 54 degrees. Fit bending insets in locking holes "
+            "24 holes: raised square segments on thinner notched bridges, a "
+            "6-hole ramus limb turned 54 degrees, oval holes 3.1 x 3.95 mm "
+            "(longer along the plate). Fit bending insets in locking holes "
             "before contouring."
         ),
-        marking=("Ti", "SWISS"),
+        marking=("445.45", "SWISS", "2024"),
         code="SQ32" + side[0].upper(),
         brand="DePuy Synthes (plate in hand)",
         shape=f"Angled reconstruction plate, square segments, {side}",
         colour_rgb=GOLD,
         bridge_thickness_mm=2.5,
         bridge_length_mm=1.6,
+        hole_elongation_mm=0.85,
+        marking_height_mm=0.6,
     )
 
 
@@ -576,14 +584,14 @@ def flat_solid(shape: PlateShape) -> tuple[np.ndarray, np.ndarray]:
     section = shape.hole.section(t)
     for x in shape.hole_x_mm:
         stack = np.vstack([
-            np.column_stack([hole_loop(x, radius, HOLE_SAMPLES), np.full(HOLE_SAMPLES, z)])
+            np.column_stack([hole_loop(x, radius, HOLE_SAMPLES, shape.hole_elongation_mm), np.full(HOLE_SAMPLES, z)])
             for radius, z in section
         ])
         add(stack, _ring_strip(len(section), HOLE_SAMPLES, 0))
 
-    add(*_face(loops[0], [hole_loop(x, section[0][0], HOLE_SAMPLES)
+    add(*_face(loops[0], [hole_loop(x, section[0][0], HOLE_SAMPLES, shape.hole_elongation_mm)
                           for x in shape.hole_x_mm], top))
-    add(*_face(loops[-1], [hole_loop(x, section[-1][0], HOLE_SAMPLES)
+    add(*_face(loops[-1], [hole_loop(x, section[-1][0], HOLE_SAMPLES, shape.hole_elongation_mm)
                            for x in shape.hole_x_mm], bottom))
 
     points = np.vstack(pieces)
@@ -744,6 +752,7 @@ def build(family: Family, suffix: str, hole_x):
         edge_radius_mm=s.edge_radius_mm,
         gap_notches=overrides,
         lobe_waist_mm=family.lobe_waist_mm,
+        hole_elongation_mm=family.hole_elongation_mm,
     )
     shape.validate()
     points, triangles = flat_solid(shape)
@@ -753,7 +762,13 @@ def build(family: Family, suffix: str, hole_x):
     holes = np.column_stack([xs, np.zeros(len(xs)), np.zeros(len(xs))])
     axes = np.tile([0.0, 0.0, 1.0], (len(xs), 1))
 
-    anchors = marking_anchors(shape, family.marking + (f"{len(xs)}H",) if family.marking else ())
+    anchors = marking_anchors(
+        shape,
+        # The generic library carries its hole count; a modelled plate only
+        # what its maker etches on it.
+        family.marking + ((f"{len(xs)}H",) if family.brand == "Generic" else ()) if family.marking else (),
+        family.marking_height_mm,
+    )
     if family.preform:
         stations, normals = preform_stations(xs, family.preform)
         extra = []
