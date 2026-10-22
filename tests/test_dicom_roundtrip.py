@@ -121,3 +121,72 @@ def test_a_scan_too_large_for_memory_is_block_averaged_with_exact_geometry(writt
     centre = loaded.index_to_world(np.array(loaded.size_xyz) // 2)
     assert loaded.sample(centre[None])[0] == pytest.approx(volume.sample(centre[None])[0], abs=60.0)
     assert any("millimetres" in w for w in geometry.warnings)
+
+
+def _write_multiframe(volume, path, descending=True):
+    """``volume`` as one enhanced CT file, its geometry in functional groups,
+    frames top-down as cone-beam scanners write them."""
+    import pydicom
+    from pydicom.dataset import Dataset, FileMetaDataset
+    from pydicom.sequence import Sequence
+    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+
+    data = np.asarray(volume.array, dtype=np.float64)
+    stored = np.clip(np.rint(data + 1000.0), 0, 65535).astype(np.uint16)
+    order = np.arange(stored.shape[0])[::-1] if descending else np.arange(stored.shape[0])
+    meta = FileMetaDataset()
+    meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.2.1"
+    meta.MediaStorageSOPInstanceUID = generate_uid()
+    meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    ds = Dataset()
+    ds.file_meta = meta
+    ds.SOPClassUID, ds.SOPInstanceUID = meta.MediaStorageSOPClassUID, meta.MediaStorageSOPInstanceUID
+    ds.StudyInstanceUID, ds.SeriesInstanceUID = generate_uid(), generate_uid()
+    ds.Modality, ds.ImageType, ds.SeriesDescription = "CT", ["ORIGINAL", "PRIMARY"], "CBCT multi-frame"
+    ds.Rows, ds.Columns = stored.shape[1:]
+    ds.NumberOfFrames = len(order)
+    ds.SamplesPerPixel, ds.PhotometricInterpretation = 1, "MONOCHROME2"
+    ds.BitsAllocated, ds.BitsStored, ds.HighBit, ds.PixelRepresentation = 16, 16, 15, 0
+    sx, sy, sz = (float(v) for v in volume.spacing)
+    measures = Dataset()
+    measures.PixelSpacing, measures.SliceThickness = [sy, sx], sz
+    shared = Dataset()
+    shared.PixelMeasuresSequence = Sequence([measures])
+    ds.SharedFunctionalGroupsSequence = Sequence([shared])
+    frames = []
+    for k in order:
+        item, position, orientation, transform = Dataset(), Dataset(), Dataset(), Dataset()
+        position.ImagePositionPatient = [float(volume.origin[0]), float(volume.origin[1]), float(volume.origin[2] + k * sz)]
+        orientation.ImageOrientationPatient = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        transform.RescaleSlope, transform.RescaleIntercept, transform.RescaleType = 1.0, -1000.0, "HU"
+        item.PlanePositionSequence = Sequence([position])
+        item.PlaneOrientationSequence = Sequence([orientation])
+        item.PixelValueTransformationSequence = Sequence([transform])
+        frames.append(item)
+    ds.PerFrameFunctionalGroupsSequence = Sequence(frames)
+    ds.PixelData = stored[order].tobytes()
+    pydicom.dcmwrite(path, ds, enforce_file_format=True)
+
+
+def test_a_multiframe_cbct_loads_like_the_same_scan_in_slices(tmp_path, phantom, spec):
+    """A CBCT stored as one enhanced multi-frame file, frames top-down."""
+    folder = tmp_path / "multiframe"
+    folder.mkdir()
+    _write_multiframe(phantom, folder / "scan.dcm")
+    loaded, geometry, series = load_folder(folder)
+    assert series.n_files == 1
+    assert np.allclose(loaded.spacing, spec.spacing)
+    assert np.allclose(loaded.origin, phantom.origin, atol=1e-4)
+    assert loaded.array.shape == phantom.array.shape
+    assert np.abs(loaded.array - np.rint(phantom.array)).max() <= 1.0
+
+
+def test_a_multiframe_scan_too_large_is_averaged_from_disk(tmp_path, phantom):
+    folder = tmp_path / "multiframe_big"
+    folder.mkdir()
+    _write_multiframe(phantom, folder / "scan.dcm", descending=False)
+    budget = phantom.array.size // 6
+    loaded, geometry, _ = load_folder(folder, voxel_budget=budget)
+    assert geometry.working_factor == 2
+    assert np.allclose(loaded.spacing, phantom.spacing * 2)
+    assert np.allclose(loaded.origin, phantom.origin + 0.5 * phantom.spacing, atol=1e-4)

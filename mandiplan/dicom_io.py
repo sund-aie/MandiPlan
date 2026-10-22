@@ -171,7 +171,11 @@ def _series_rank(series: SeriesInfo):
     """
     import pydicom
 
-    if series.n_files < 2 or any(t in series.image_type for t in _NOT_A_VOLUME):
+    if any(t in series.image_type for t in _NOT_A_VOLUME):
+        return None
+    if series.n_files == 1:
+        return _multiframe_rank(series)
+    if series.n_files < 2:
         return None
     try:
         first, last = (
@@ -204,6 +208,36 @@ def _series_rank(series: SeriesInfo):
         -round(min(spacing), 3),
         length,
         series.n_files,
+    )
+
+
+def _multiframe_rank(series: SeriesInfo):
+    """Sort key of a volume stored as one multi-frame file; None if it is not."""
+    import pydicom
+
+    try:
+        ds = pydicom.dcmread(series.files[0], stop_before_pixels=True, force=True)
+        stack = _multiframe_stack(ds)
+    except (DicomLoadError, AttributeError, TypeError, ValueError):
+        return None
+    if stack is None:
+        return None
+    positions, orientations, spacing, _, _ = stack
+    orientation = np.asarray(orientations[0])
+    normal = np.cross(orientation[:3], orientation[3:])
+    along = np.asarray(positions) @ normal
+    length = float(along.max() - along.min())
+    slice_mm = length / (len(positions) - 1)
+    if slice_mm <= 0:
+        return None
+    return (
+        series.modality.upper() == "CT",
+        abs(float(normal[2])) > 0.9,
+        -round(slice_mm / _SPACING_TIE_MM),
+        series.image_type[:1] == ("ORIGINAL",),
+        -round(min(spacing), 3),
+        length,
+        len(positions),
     )
 
 
@@ -256,6 +290,12 @@ def inspect_geometry(files: list[str]) -> SeriesGeometry:
         if hasattr(ds, "PixelSpacing"):
             pixel_spacings.append([float(v) for v in ds.PixelSpacing])
 
+    return _stack_geometry(positions, orientations, tilts, pixel_spacings)
+
+
+def _stack_geometry(positions, orientations, tilts, pixel_spacings) -> SeriesGeometry:
+    """The checks of :func:`inspect_geometry` on slice positions, direction
+    cosines, gantry tilts and pixel spacings, however they were read."""
     positions = np.asarray(positions)
     orientations = np.asarray(orientations)
 
@@ -433,6 +473,135 @@ def working_factor(shape, budget: int = WORKING_VOXEL_BUDGET) -> int:
     return factor
 
 
+def _multiframe_stack(ds):
+    """``(positions, orientations, pixel_spacing, slope, intercept)`` of an
+    enhanced (multi-frame) image, from its functional groups; None if it is
+    not a multi-frame volume."""
+    frames = int(getattr(ds, "NumberOfFrames", 1) or 1)
+    if frames < 2 or "PerFrameFunctionalGroupsSequence" not in ds:
+        return None
+    shared = ds.SharedFunctionalGroupsSequence[0] if "SharedFunctionalGroupsSequence" in ds else None
+
+    def find(item, sequence, keyword):
+        for group in (item, shared):
+            if group is not None and sequence in group and len(group[sequence].value):
+                inner = group[sequence].value[0]
+                if keyword in inner:
+                    return inner[keyword].value
+        return None
+
+    positions, orientations = [], []
+    for item in ds.PerFrameFunctionalGroupsSequence:
+        position = find(item, "PlanePositionSequence", "ImagePositionPatient")
+        orientation = find(item, "PlaneOrientationSequence", "ImageOrientationPatient")
+        if position is None or orientation is None:
+            raise DicomLoadError(
+                "A frame of this multi-frame image has no position or orientation; the "
+                "slice geometry is unknown and cannot be used for measurement."
+            )
+        positions.append([float(v) for v in position])
+        orientations.append([float(v) for v in orientation])
+    first = ds.PerFrameFunctionalGroupsSequence[0]
+    spacing = find(first, "PixelMeasuresSequence", "PixelSpacing")
+    if spacing is None:
+        raise DicomLoadError("PixelSpacing is missing; the volume has no scale.")
+    slope = find(first, "PixelValueTransformationSequence", "RescaleSlope")
+    intercept = find(first, "PixelValueTransformationSequence", "RescaleIntercept")
+    slope = float(slope if slope is not None else getattr(ds, "RescaleSlope", 1.0) or 1.0)
+    intercept = float(intercept if intercept is not None else getattr(ds, "RescaleIntercept", 0.0) or 0.0)
+    return positions, orientations, [float(v) for v in spacing], slope, intercept
+
+
+def _pixel_offset(path: str, nbytes: int) -> int:
+    """File offset of the uncompressed pixel data of ``nbytes`` bytes."""
+    import os
+
+    size = os.path.getsize(path)
+    with open(path, "rb") as handle:
+        # Usually the last element; else look for its tag near the end.
+        for offset in (size - nbytes, size - nbytes - 2):
+            handle.seek(offset - 12)
+            head = handle.read(12)
+            if head[:4] == b"\xe0\x7f\x10\x00" or head[4:8] == b"\xe0\x7f\x10\x00":
+                return offset
+        handle.seek(max(size - nbytes - 4096, 0))
+        tail = handle.read(4096 + 64)
+        at = tail.rfind(b"\xe0\x7f\x10\x00")
+        if at < 0:
+            raise DicomLoadError("The pixel data of this multi-frame image could not be found.")
+        return max(size - nbytes - 4096, 0) + at + 12
+
+
+def load_multiframe(
+    path: str, voxel_budget: int = WORKING_VOXEL_BUDGET
+) -> tuple[Volume, SeriesGeometry]:
+    """Load an enhanced (multi-frame) CT or CBCT stored in one file.
+
+    The frames are mapped from disk, not read into memory, so a 1.7 GB
+    CBCT is averaged into its working grid a few frames at a time. Its
+    geometry is checked exactly as a series of slices is.
+    """
+    import pydicom
+
+    ds = pydicom.dcmread(path, stop_before_pixels=True, force=True)
+    stack = _multiframe_stack(ds)
+    if stack is None:
+        raise DicomLoadError("This series has fewer than 2 slices; MandiPlan needs a volume.")
+    positions, orientations, pixel_spacing, slope, intercept = stack
+    if ds.file_meta.TransferSyntaxUID.is_compressed:
+        raise DicomLoadError(
+            "This multi-frame image is compressed; export it uncompressed (explicit VR "
+            "little endian) for MandiPlan to read it."
+        )
+    if int(ds.BitsAllocated) != 16 or int(getattr(ds, "SamplesPerPixel", 1)) != 1:
+        raise DicomLoadError("Only 16-bit grey-scale multi-frame images can be read.")
+    geometry = _stack_geometry(positions, orientations, [], [pixel_spacing] * len(positions))
+    frames, rows, cols = int(ds.NumberOfFrames), int(ds.Rows), int(ds.Columns)
+    dtype = np.dtype("<i2" if int(ds.PixelRepresentation) else "<u2")
+    offset = _pixel_offset(path, frames * rows * cols * 2)
+    data = np.memmap(path, dtype=dtype, mode="r", offset=offset, shape=(frames, rows, cols))
+
+    row, col = np.asarray(orientations[0][:3]), np.asarray(orientations[0][3:])
+    normal = np.cross(row, col)
+    order = np.argsort(np.asarray(positions) @ normal)
+    if np.array_equal(order, np.arange(frames)[::-1]):
+        data = data[::-1]
+    elif not np.array_equal(order, np.arange(frames)):
+        data = data[order]
+    origin = np.asarray(positions[int(order[0])])
+    spacing = np.array([pixel_spacing[1], pixel_spacing[0], geometry.slice_spacing_mm])
+    direction = np.column_stack([row, col, normal])
+
+    factor = working_factor(data.shape, voxel_budget)
+    volume = _reorient_to_lps(data, spacing, origin, direction, factor)
+    del data
+    volume.array *= np.float32(slope)
+    volume.array += np.float32(intercept)
+    if factor > 1:
+        geometry.working_factor = factor
+        geometry.warnings.append(
+            f"This scan is {frames * rows * cols / 1e6:.0f} million voxels at "
+            f"{float(np.min(spacing)):.2f} mm, more than fits in memory for planning. "
+            f"MandiPlan works on it at {float(volume.spacing.min()):.2f} mm "
+            f"({np.prod(volume.size_xyz) / 1e6:.0f} million voxels), each the average "
+            f"of {factor}×{factor}×{factor} scan voxels. Distances are still in "
+            "millimetres from the DICOM spacing."
+        )
+    return volume, geometry
+
+
+def _is_multiframe(files) -> bool:
+    if len(files) != 1:
+        return False
+    import pydicom
+
+    try:
+        ds = pydicom.dcmread(files[0], stop_before_pixels=True, force=True)
+    except Exception:  # noqa: BLE001 - not readable as DICOM: not ours to load
+        return False
+    return int(getattr(ds, "NumberOfFrames", 1) or 1) > 1
+
+
 def load_series(
     files: list[str], voxel_budget: int = WORKING_VOXEL_BUDGET, modality: str = ""
 ) -> tuple[Volume, SeriesGeometry]:
@@ -444,6 +613,8 @@ def load_series(
     """
     import SimpleITK as sitk
 
+    if _is_multiframe(files):
+        return load_multiframe(files[0], voxel_budget)
     geometry = inspect_geometry(files)
 
     reader = sitk.ImageSeriesReader()

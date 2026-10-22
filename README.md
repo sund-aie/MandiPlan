@@ -319,6 +319,13 @@ than loaded distorted. A scan too large to plan on in memory (a 0.25 mm head
 scan is 300 million voxels) is averaged over whole blocks of voxels into a
 coarser working grid, and the load says so; world coordinates stay exact.
 
+**A CBCT stored as one multi-frame file** — the Enhanced CT format many
+cone-beam scanners export, all frames and their geometry in a single file —
+opens the same way. Its frames are read from disk a few at a time rather than
+into memory, so a 0.2 mm scan of 850 frames (1.7 GB) is averaged into its
+working grid without needing that much memory, and its per-frame positions
+and orientation are checked exactly as a series of slices is.
+
 **A folder with several series** — a CT study usually holds a scout, a dose
 report, thin and thick axial reconstructions, and coronal and sagittal
 reformats of them — opens the series that resolves the bone best: an axial
@@ -675,5 +682,6 @@ export.
   hemimandibulectomy with a condylar cut.
 - Margin distances are measured to points you place by eye, not to a segmented
   lesion.
-- Multi-frame enhanced-CT DICOM is not handled; one file per slice is expected.
+- A multi-frame (enhanced) DICOM file must be uncompressed; a compressed one is
+  refused with a message asking for an uncompressed export.
 - Nothing is saved between runs except what you export. There is no case file.
