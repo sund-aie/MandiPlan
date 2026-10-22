@@ -107,6 +107,9 @@ class Family:
     preform: tuple[tuple[str, int, int, float], ...] = ()
     marking: tuple[str, ...] = ()
     code: str = ""
+    brand: str = "Generic"
+    shape: str = ""
+    colour_rgb: tuple[float, float, float] = (0.722, 0.733, 0.757)
 
 
 def working_bend_limit(section: Section, pitch_mm: float, material_id: str) -> float:
@@ -366,6 +369,9 @@ def _angled(side: str, sign: float) -> Family:
         ),
         marking=("Ti4", "2.5", "AG" + side[0].upper()),
         code="AG25" + side[0].upper(),
+        brand="DePuy Synthes MatrixMANDIBLE (approximation)",
+        shape=f"Angled reconstruction plate, {side}",
+        colour_rgb=(0.78, 0.66, 0.30),
     )
 
 
@@ -390,6 +396,9 @@ FAMILIES = FAMILIES + (
         ),
         marking=("Ti4", "3.0", "AG"),
         code="AG30",
+        brand="KLS Martin LevelOne (approximation)",
+        shape="Angled reconstruction plate, 3.0 mm profile",
+        colour_rgb=(0.40, 0.74, 0.42),
     ),
 )
 
@@ -746,6 +755,9 @@ def entry(family: Family, suffix: str, shape, points, triangles, holes, axes, an
         "licence": LICENCE,
         "audit": audit,
         "notes": family.notes,
+        "brand": family.brand,
+        "shape": family.shape or family.name,
+        "colour_rgb": list(family.colour_rgb),
     }
 
 

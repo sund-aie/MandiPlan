@@ -283,7 +283,9 @@
         "points": 5570,
         "volume_mm3": 995.9481
       },
-      "notes": "Load-bearing bar for a segmental defect. Non-locking conical seats."
+      "notes": "Load-bearing bar for a segmental defect. Non-locking conical seats.",
+      "brand": "Generic",
+      "shape": "Low-profile reconstruction plate 2.4, straight"
     },
     {
       "id": "generic-recon-2.4-lp-12h",
@@ -623,7 +625,9 @@
         "points": 8374,
         "volume_mm3": 1506.241
       },
-      "notes": "Load-bearing bar for a segmental defect. Non-locking conical seats."
+      "notes": "Load-bearing bar for a segmental defect. Non-locking conical seats.",
+      "brand": "Generic",
+      "shape": "Low-profile reconstruction plate 2.4, straight"
     },
     {
       "id": "generic-recon-2.4-lp-17h",
@@ -1043,7 +1047,9 @@
         "points": 11873,
         "volume_mm3": 2144.1071
       },
-      "notes": "Load-bearing bar for a segmental defect. Non-locking conical seats."
+      "notes": "Load-bearing bar for a segmental defect. Non-locking conical seats.",
+      "brand": "Generic",
+      "shape": "Low-profile reconstruction plate 2.4, straight"
     },
     {
       "id": "generic-recon-2.4-lp-24h",
@@ -1575,7 +1581,9 @@
         "points": 16778,
         "volume_mm3": 3037.1197
       },
-      "notes": "Load-bearing bar for a segmental defect. Non-locking conical seats."
+      "notes": "Load-bearing bar for a segmental defect. Non-locking conical seats.",
+      "brand": "Generic",
+      "shape": "Low-profile reconstruction plate 2.4, straight"
     },
     {
       "id": "generic-recon-2.4-lock-10h",
@@ -1883,7 +1891,9 @@
         "points": 9191,
         "volume_mm3": 1290.0655
       },
-      "notes": "Threaded conical holes take locking screws; fit bending insets in any hole meant for a locking screw before contouring."
+      "notes": "Threaded conical holes take locking screws; fit bending insets in any hole meant for a locking screw before contouring.",
+      "brand": "Generic",
+      "shape": "Locking reconstruction plate 2.4, straight"
     },
     {
       "id": "generic-recon-2.4-lock-16h",
@@ -2287,7 +2297,9 @@
         "points": 14725,
         "volume_mm3": 2079.4952
       },
-      "notes": "Threaded conical holes take locking screws; fit bending insets in any hole meant for a locking screw before contouring."
+      "notes": "Threaded conical holes take locking screws; fit bending insets in any hole meant for a locking screw before contouring.",
+      "brand": "Generic",
+      "shape": "Locking reconstruction plate 2.4, straight"
     },
     {
       "id": "generic-recon-2.4-lock-20h",
@@ -2755,7 +2767,9 @@
         "points": 18415,
         "volume_mm3": 2605.7816
       },
-      "notes": "Threaded conical holes take locking screws; fit bending insets in any hole meant for a locking screw before contouring."
+      "notes": "Threaded conical holes take locking screws; fit bending insets in any hole meant for a locking screw before contouring.",
+      "brand": "Generic",
+      "shape": "Locking reconstruction plate 2.4, straight"
     },
     {
       "id": "generic-recon-2.8-11h",
@@ -3078,7 +3092,9 @@
         "points": 11479,
         "volume_mm3": 2280.6338
       },
-      "notes": "Stiff bar for a long defect or a poor bone bed; shape by press."
+      "notes": "Stiff bar for a long defect or a poor bone bed; shape by press.",
+      "brand": "Generic",
+      "shape": "Heavy reconstruction plate, 2.8 mm profile, straight"
     },
     {
       "id": "generic-recon-2.8-17h",
@@ -3497,7 +3513,9 @@
         "points": 17749,
         "volume_mm3": 3534.4791
       },
-      "notes": "Stiff bar for a long defect or a poor bone bed; shape by press."
+      "notes": "Stiff bar for a long defect or a poor bone bed; shape by press.",
+      "brand": "Generic",
+      "shape": "Heavy reconstruction plate, 2.8 mm profile, straight"
     },
     {
       "id": "generic-recon-1.5-primary-11h",
@@ -3739,7 +3757,9 @@
         "points": 6501,
         "volume_mm3": 540.4656
       },
-      "notes": "NOT load-bearing. Holds a vascularised bone graft in place; it does not carry the mandible across a defect on its own."
+      "notes": "NOT load-bearing. Holds a vascularised bone graft in place; it does not carry the mandible across a defect on its own.",
+      "brand": "Generic",
+      "shape": "Primary reconstruction plate 1.5, straight"
     },
     {
       "id": "generic-recon-1.5-primary-17h",
@@ -4077,7 +4097,9 @@
         "points": 10041,
         "volume_mm3": 844.182
       },
-      "notes": "NOT load-bearing. Holds a vascularised bone graft in place; it does not carry the mandible across a defect on its own."
+      "notes": "NOT load-bearing. Holds a vascularised bone graft in place; it does not carry the mandible across a defect on its own.",
+      "brand": "Generic",
+      "shape": "Primary reconstruction plate 1.5, straight"
     },
     {
       "id": "generic-miniplate-2.0-4h",
@@ -4206,7 +4228,9 @@
         "points": 1805,
         "volume_mm3": 53.7909
       },
-      "notes": "NOT load-bearing. Fracture and osteotomy fixation along Champy's lines. Too narrow to carry an etched mark."
+      "notes": "NOT load-bearing. Fracture and osteotomy fixation along Champy's lines. Too narrow to carry an etched mark.",
+      "brand": "Generic",
+      "shape": "Miniplate 2.0"
     },
     {
       "id": "generic-miniplate-2.0-4h-bridge",
@@ -4335,7 +4359,9 @@
         "points": 1855,
         "volume_mm3": 65.4591
       },
-      "notes": "NOT load-bearing. Fracture and osteotomy fixation along Champy's lines. Too narrow to carry an etched mark."
+      "notes": "NOT load-bearing. Fracture and osteotomy fixation along Champy's lines. Too narrow to carry an etched mark.",
+      "brand": "Generic",
+      "shape": "Miniplate 2.0"
     },
     {
       "id": "generic-miniplate-2.0-6h",
@@ -4496,7 +4522,9 @@
         "points": 2637,
         "volume_mm3": 83.1436
       },
-      "notes": "NOT load-bearing. Fracture and osteotomy fixation along Champy's lines. Too narrow to carry an etched mark."
+      "notes": "NOT load-bearing. Fracture and osteotomy fixation along Champy's lines. Too narrow to carry an etched mark.",
+      "brand": "Generic",
+      "shape": "Miniplate 2.0"
     },
     {
       "id": "generic-miniplate-2.0-8h",
@@ -4689,7 +4717,9 @@
         "points": 3469,
         "volume_mm3": 112.4963
       },
-      "notes": "NOT load-bearing. Fracture and osteotomy fixation along Champy's lines. Too narrow to carry an etched mark."
+      "notes": "NOT load-bearing. Fracture and osteotomy fixation along Champy's lines. Too narrow to carry an etched mark.",
+      "brand": "Generic",
+      "shape": "Miniplate 2.0"
     },
     {
       "id": "generic-recon-2.4-body-12h",
@@ -5035,7 +5065,9 @@
         "points": 11038,
         "volume_mm3": 1553.2483
       },
-      "notes": "Curved 35 degrees through its thickness, the way the lateral surface of the body curves; the bone face is the concave one."
+      "notes": "Curved 35 degrees through its thickness, the way the lateral surface of the body curves; the bone face is the concave one.",
+      "brand": "Generic",
+      "shape": "Locking reconstruction plate 2.4, preformed body curve"
     },
     {
       "id": "generic-recon-2.4-body-16h",
@@ -5445,7 +5477,9 @@
         "points": 14725,
         "volume_mm3": 2079.5225
       },
-      "notes": "Curved 35 degrees through its thickness, the way the lateral surface of the body curves; the bone face is the concave one."
+      "notes": "Curved 35 degrees through its thickness, the way the lateral surface of the body curves; the bone face is the concave one.",
+      "brand": "Generic",
+      "shape": "Locking reconstruction plate 2.4, preformed body curve"
     },
     {
       "id": "generic-recon-2.4-angle-12h",
@@ -5791,7 +5825,9 @@
         "points": 11038,
         "volume_mm3": 1553.5883
       },
-      "notes": "Turns 60 degrees in its own plane (a 120 degree gonial angle) between the ramus and the body; the bone face stays flat on the lateral surface through the turn."
+      "notes": "Turns 60 degrees in its own plane (a 120 degree gonial angle) between the ramus and the body; the bone face stays flat on the lateral surface through the turn.",
+      "brand": "Generic",
+      "shape": "Locking reconstruction plate 2.4, preformed angle"
     },
     {
       "id": "generic-recon-2.4-angle-16h",
@@ -6201,7 +6237,9 @@
         "points": 14725,
         "volume_mm3": 2079.8748
       },
-      "notes": "Turns 60 degrees in its own plane (a 120 degree gonial angle) between the ramus and the body; the bone face stays flat on the lateral surface through the turn."
+      "notes": "Turns 60 degrees in its own plane (a 120 degree gonial angle) between the ramus and the body; the bone face stays flat on the lateral surface through the turn.",
+      "brand": "Generic",
+      "shape": "Locking reconstruction plate 2.4, preformed angle"
     },
     {
       "id": "generic-recon-2.8-hemi-22h",
@@ -6713,7 +6751,9 @@
         "points": 22974,
         "volume_mm3": 4580.4156
       },
-      "notes": "Ramus (5 holes), the gonial angle, and the body toward the symphysis (17 holes), preformed. Shape any further by press."
+      "notes": "Ramus (5 holes), the gonial angle, and the body toward the symphysis (17 holes), preformed. Shape any further by press.",
+      "brand": "Generic",
+      "shape": "Hemimandibular reconstruction plate, 2.8 mm profile, 5 + 17"
     },
     {
       "id": "generic-recon-2.4-full-25h",
@@ -7280,7 +7320,9 @@
         "points": 23026,
         "volume_mm3": 3265.3754
       },
-      "notes": "Both rami, both angles and the whole arch, preformed: 6 + 13 + 6 holes with the arch curved through the thickness and each angle turned in the plate's own plane."
+      "notes": "Both rami, both angles and the whole arch, preformed: 6 + 13 + 6 holes with the arch curved through the thickness and each angle turned in the plate's own plane.",
+      "brand": "Generic",
+      "shape": "Full mandibular reconstruction plate 2.4, 6 + 13 + 6"
     },
     {
       "id": "generic-recon-3.0-angled-27h",
@@ -7872,7 +7914,14 @@
         "points": 24213,
         "volume_mm3": 4147.6718
       },
-      "notes": "Round lobes, threaded locking holes, 3.0 mm profile: a 6-hole ramus limb turned 55 degrees and a gently curved body. Mirror it for the other side. Shape any further by press."
+      "notes": "Round lobes, threaded locking holes, 3.0 mm profile: a 6-hole ramus limb turned 55 degrees and a gently curved body. Mirror it for the other side. Shape any further by press.",
+      "brand": "KLS Martin LevelOne (approximation)",
+      "shape": "Angled reconstruction plate, 3.0 mm profile",
+      "colour_rgb": [
+        0.4,
+        0.74,
+        0.42
+      ]
     },
     {
       "id": "generic-recon-2.5-angled-left-18h",
@@ -8314,7 +8363,14 @@
         "points": 15624,
         "volume_mm3": 1747.147
       },
-      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (left side). Fit bending insets in locking holes before contouring."
+      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (left side). Fit bending insets in locking holes before contouring.",
+      "brand": "DePuy Synthes MatrixMANDIBLE (approximation)",
+      "shape": "Angled reconstruction plate, left",
+      "colour_rgb": [
+        0.78,
+        0.66,
+        0.3
+      ]
     },
     {
       "id": "generic-recon-2.5-angled-left-24h",
@@ -8852,7 +8908,14 @@
         "points": 20832,
         "volume_mm3": 2333.7703
       },
-      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (left side). Fit bending insets in locking holes before contouring."
+      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (left side). Fit bending insets in locking holes before contouring.",
+      "brand": "DePuy Synthes MatrixMANDIBLE (approximation)",
+      "shape": "Angled reconstruction plate, left",
+      "colour_rgb": [
+        0.78,
+        0.66,
+        0.3
+      ]
     },
     {
       "id": "generic-recon-2.5-angled-right-18h",
@@ -9294,7 +9357,14 @@
         "points": 15624,
         "volume_mm3": 1747.147
       },
-      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (right side). Fit bending insets in locking holes before contouring."
+      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (right side). Fit bending insets in locking holes before contouring.",
+      "brand": "DePuy Synthes MatrixMANDIBLE (approximation)",
+      "shape": "Angled reconstruction plate, right",
+      "colour_rgb": [
+        0.78,
+        0.66,
+        0.3
+      ]
     },
     {
       "id": "generic-recon-2.5-angled-right-24h",
@@ -9832,7 +9902,14 @@
         "points": 20832,
         "volume_mm3": 2333.7703
       },
-      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (right side). Fit bending insets in locking holes before contouring."
+      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (right side). Fit bending insets in locking holes before contouring.",
+      "brand": "DePuy Synthes MatrixMANDIBLE (approximation)",
+      "shape": "Angled reconstruction plate, right",
+      "colour_rgb": [
+        0.78,
+        0.66,
+        0.3
+      ]
     }
   ]
 }

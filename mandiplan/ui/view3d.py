@@ -435,6 +435,8 @@ class View3D(QWidget):
         session = self.session
         fitted = session.plate_mesh()
         plan = session.plate_plan
+        asset = session.plate_asset
+        self.plate_actor.GetProperty().SetColor(*(asset.colour if asset is not None else PLATE_COLOUR))
 
         if fitted is None:
             self.plate_normals.SetInputData(empty_polydata())

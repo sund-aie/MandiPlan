@@ -105,6 +105,12 @@ class PlateAsset:
     code: str = ""
     audit: dict = field(default_factory=dict)
     root: Path = DATA_DIR
+    #: Whose plate this models ("Generic" for the parametric library), and
+    #: its shape within that range; the picker groups by these.
+    brand: str = "Generic"
+    shape: str = ""
+    #: Colour of the plate's anodised or bare titanium, RGB 0-1.
+    colour: tuple = (0.722, 0.733, 0.757)
 
     @property
     def status_label(self) -> str:
@@ -260,6 +266,9 @@ def _asset_from_entry(entry: dict, root: Path) -> PlateAsset:
         dimensional_class=entry.get("dimensional_class", ""),
         seat_diameter_mm=float(entry.get("seat_diameter_mm", 0.0)),
         locking=bool(entry.get("locking", False)),
+        brand=entry.get("brand", "Generic"),
+        shape=entry.get("shape", entry["name"].rsplit(", ", 1)[0]),
+        colour=tuple(float(v) for v in entry.get("colour_rgb", (0.722, 0.733, 0.757))),
         extent_mm=float(entry.get("extent_mm", entry.get("length_mm", 0.0))),
         marking=tuple(entry.get("marking", ())),
         dimension_sources=tuple(entry.get("dimension_sources", ())),
@@ -297,14 +306,19 @@ def asset_by_id(asset_id: str, root: Path | None = None) -> PlateAsset:
 
 
 def families(root: Path | None = None) -> list[tuple[str, str]]:
-    """``(family id, human label)`` for each installed family, in order."""
-    seen: dict[str, str] = {}
+    """``(family id, human label)`` for each installed family, grouped by
+    brand (the generic library first) and labelled "brand › shape"; the hole
+    counts are the lengths within a family."""
+    seen: dict[str, tuple[str, str]] = {}
     for asset in load_assets(root):
-        # Everything but the hole count: "Locking reconstruction plate 2.4,
-        # preformed angle", not just "Locking reconstruction plate 2.4",
-        # which three families share.
-        seen.setdefault(asset.family, asset.name.rsplit(", ", 1)[0])
-    return list(seen.items())
+        seen.setdefault(asset.family, (asset.brand, asset.shape))
+    brands = sorted({b for b, _ in seen.values()}, key=lambda b: (b != "Generic", b))
+    return [
+        (family, f"{brand} › {shape}")
+        for brand in brands
+        for family, (b, shape) in seen.items()
+        if b == brand
+    ]
 
 
 def assets_in_family(family: str, root: Path | None = None) -> list[PlateAsset]:
