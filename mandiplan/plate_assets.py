@@ -31,6 +31,10 @@ from .geometry.mesh_io import Mesh, check_scale, load_mesh, scale_for_units
 DATA_DIR = Path(__file__).resolve().parent / "data" / "plates"
 
 GENERIC_LABEL = "Generic parametric approximation"
+#: Plates modelled on a manufacturer's range from its published drawings, or
+#: measured from the plate in hand; neither is the manufacturer's CAD.
+MODELLED_LABEL = "Modelled from the manufacturer's published drawings"
+MEASURED_LABEL = "Measured from the plate in hand"
 EXACT_LABEL = "Exact licensed asset"
 GENERIC_NOTICE = (
     "Generic parametric approximation - not manufacturer-specific and not for "
@@ -114,7 +118,13 @@ class PlateAsset:
 
     @property
     def status_label(self) -> str:
-        return EXACT_LABEL if self.exact else GENERIC_LABEL
+        if self.exact:
+            return EXACT_LABEL
+        if self.brand == "Generic":
+            return GENERIC_LABEL
+        if "in hand" in self.brand:
+            return MEASURED_LABEL
+        return MODELLED_LABEL
 
     @property
     def is_generic(self) -> bool:
@@ -319,6 +329,21 @@ def families(root: Path | None = None) -> list[tuple[str, str]]:
         for family, (b, shape) in seen.items()
         if b == brand
     ]
+
+
+def brands(root: Path | None = None) -> list[str]:
+    """The brands in the library, the generic library first."""
+    found = {asset.brand for asset in load_assets(root)}
+    return sorted(found, key=lambda b: (b != "Generic", b))
+
+
+def families_of(brand: str, root: Path | None = None) -> list[tuple[str, str]]:
+    """``(family id, shape)`` for each family of ``brand``, in library order."""
+    seen: dict[str, str] = {}
+    for asset in load_assets(root):
+        if asset.brand == brand:
+            seen.setdefault(asset.family, asset.shape)
+    return list(seen.items())
 
 
 def assets_in_family(family: str, root: Path | None = None) -> list[PlateAsset]:

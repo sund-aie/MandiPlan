@@ -58,11 +58,20 @@ def test_every_asset_declares_provenance_and_licence(catalogue):
 
 
 def test_every_shipped_asset_is_labelled_generic(catalogue):
-    """Nothing shipped in this repository may claim to be a real implant."""
+    """Nothing shipped in this repository may claim to be a real implant: the
+    generic library says so, and a plate modelled on a manufacturer's range
+    says where its dimensions came from."""
     for asset in catalogue:
         assert not asset.exact, asset.id
-        assert asset.status_label == plate_assets.GENERIC_LABEL
-        assert "Generic parametric approximation" in "\n".join(asset.summary_lines())
+        expected = (
+            plate_assets.GENERIC_LABEL if asset.brand == "Generic"
+            else plate_assets.MEASURED_LABEL if "in hand" in asset.brand
+            else plate_assets.MODELLED_LABEL
+        )
+        assert asset.status_label == expected, asset.id
+        assert expected in "\n".join(asset.summary_lines())
+        if asset.brand != "Generic":
+            assert asset.dimension_sources, asset.id
 
 
 def test_an_exact_claim_without_provenance_is_refused():

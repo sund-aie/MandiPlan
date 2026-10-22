@@ -134,8 +134,10 @@ do publish is dimensions, and those are what these plates follow:
 | Miniplate 2.0 | 1.0 × 4.3 mm | 6 mm | FE studies: 2.0 4-hole miniplate, 26 × 4.3 × 1.0 mm |
 | Preformed body, angle, hemimandibular (5 + 17), full mandibular (6 + 13 + 6) | as their straight family | | published preformed configurations |
 
-Plates modelled on a manufacturer's range are listed under that name, then
-shape, then hole count, and drawn in their own colour:
+In step 5 the plate is chosen as **Brand**, then **Plate** (its shape), then
+**Length** (its hole count). Plates modelled on a manufacturer's range are
+listed under that brand and drawn in their own colour; their badge says where
+their dimensions came from:
 
 | brand › shape | holes | section | pitch | measured from |
 | --- | --- | --- | --- | --- |

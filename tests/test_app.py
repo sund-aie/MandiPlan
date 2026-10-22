@@ -728,3 +728,22 @@ def test_dragging_the_view_never_adds_plate_points(window):
     assert window.mode == Mode.NAVIGATE
     press_drag_release(0)
     assert len(session.plate_points) == before
+
+
+def test_plates_are_chosen_by_brand_then_shape_then_length(window):
+    """Brand, Plate (shape) and Length (holes) are three choices in that order."""
+    panel = window.plate_panel
+    brands = [panel.brand_box.itemText(i) for i in range(panel.brand_box.count())]
+    assert brands[0] == "Generic" and "KLS Martin LevelOne" in brands
+    assert "DePuy Synthes MatrixMANDIBLE" in brands
+    panel.brand_box.setCurrentIndex(panel.brand_box.findData("KLS Martin LevelOne"))
+    shapes = [panel.family_box.itemText(i) for i in range(panel.family_box.count())]
+    assert shapes == ["Reconstruction plate 2.7, angled, left", "Reconstruction plate 2.7, angled, right"]
+    assert window.session.plate_asset.brand == "KLS Martin LevelOne"
+    assert window.session.plate_asset.hole_count == 26
+    assert window.session.plate_asset.colour != window.session.plate_asset.__class__.colour
+    # A plate chosen elsewhere brings its brand with it.
+    window.session.set_plate_asset("generic-recon-2.4-lock-16h")
+    panel.refresh_library()
+    assert panel.brand_box.currentData() == "Generic"
+    assert panel.family_box.currentData() == "generic-recon-2.4-lock"

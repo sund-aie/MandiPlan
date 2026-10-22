@@ -29,7 +29,7 @@ from ..geometry.mirror import SYMMETRY_TOLERANCE_MM, SYMMETRY_WARNING
 from ..geometry.measure import format_mm
 from ..geometry.plate import bend_table_rows
 from ..plate_assets import assets_in_family
-from ..plate_assets import families as plate_families
+from ..plate_assets import brands as plate_brands, families_of
 from ..plate_catalog import load_kits
 from .histogram import ThresholdPanel
 from .modes import Mode
@@ -739,9 +739,12 @@ class PlatePanel(QWidget):
         self.session = session
 
         # -- plate library -------------------------------------------------
+        # Brand, then shape, then length (hole count).
+        self.brand_box = QComboBox()
+        for brand in plate_brands():
+            self.brand_box.addItem(brand, brand)
         self.family_box = QComboBox()
-        for family_id, label in plate_families():
-            self.family_box.addItem(label, family_id)
+        self._fill_families()
         self.model_box = QComboBox()
         self.status_badge = QLabel("")
         self.clearance = QDoubleSpinBox()
@@ -859,6 +862,7 @@ class PlatePanel(QWidget):
 
         # 3. Which plate. Its length follows the path until one is picked.
         library = QFormLayout()
+        library.addRow("Brand", self.brand_box)
         library.addRow("Plate", self.family_box)
         library.addRow("Length", self.model_box)
         library.addRow("", self.status_badge)
@@ -892,6 +896,7 @@ class PlatePanel(QWidget):
         layout.addWidget(_Section("Plate properties", _boxed(self.properties)))
         layout.addWidget(self.tabs, 1)
 
+        self.brand_box.currentIndexChanged.connect(self._on_brand)
         self.family_box.currentIndexChanged.connect(self._on_family)
         self.model_box.currentIndexChanged.connect(self._on_model)
         self.clearance.valueChanged.connect(session.set_plate_clearance)
@@ -918,6 +923,18 @@ class PlatePanel(QWidget):
         self._on_family()
 
     # -- plate library ---------------------------------------------------
+
+    def _fill_families(self) -> None:
+        """The plate shapes of the chosen brand."""
+        self.family_box.blockSignals(True)
+        self.family_box.clear()
+        for family_id, shape in families_of(self.brand_box.currentData()):
+            self.family_box.addItem(shape, family_id)
+        self.family_box.blockSignals(False)
+
+    def _on_brand(self) -> None:
+        self._fill_families()
+        self._on_family()
 
     def _on_family(self) -> None:
         # A new family: its length follows the path until one is picked.
@@ -965,6 +982,13 @@ class PlatePanel(QWidget):
         asset = self.session.plate_asset
         if asset is None:
             return
+        if self.brand_box.currentData() != asset.brand:
+            index = self.brand_box.findData(asset.brand)
+            if index >= 0:
+                self.brand_box.blockSignals(True)
+                self.brand_box.setCurrentIndex(index)
+                self.brand_box.blockSignals(False)
+                self._fill_families()
         if self.family_box.currentData() != asset.family:
             index = self.family_box.findData(asset.family)
             if index >= 0:
