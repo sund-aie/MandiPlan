@@ -137,6 +137,10 @@ def evenly(count: int, pitch: float) -> tuple[float, ...]:
 LOCK_24 = Section(2.5, 8.0, 8.0, HoleSpec(2.5, 4.2, locking=True), NotchSpec(0.9, 2.9))
 LP_24 = Section(2.4, 8.0, 8.0, HoleSpec(2.5, 4.0), NotchSpec(0.9, 2.9))
 HEAVY_28 = Section(2.8, 10.0, 9.0, HoleSpec(2.8, 5.0, locking=True), NotchSpec(1.1, 3.4))
+#: A 2.0 mm locking plate whose square hole segments are joined by short
+#: notched bridges; and a 3.0 mm-profile locking plate of round lobes.
+SQUARE_20 = Section(2.0, 7.0, 7.5, HoleSpec(2.4, 4.0, locking=True), NotchSpec(1.4, 2.2), 0.3)
+LOBED_30 = Section(3.0, 8.5, 8.0, HoleSpec(2.6, 4.6, locking=True), NotchSpec(1.3, 3.6), 0.4)
 PRIMARY_15 = Section(1.5, 6.0, 7.0, HoleSpec(2.1, 3.4, seat_depth_fraction=0.6), NotchSpec(0.8, 2.6), 0.25)
 MINI_20 = Section(1.0, 4.3, 6.0, HoleSpec(2.1, 3.1, seat_depth_fraction=0.6), NotchSpec(1.05, 4.4), 0.15)
 
@@ -328,6 +332,61 @@ FAMILIES: tuple[Family, ...] = (
         ),
         marking=("Ti4", "2.4", "FUL"),
         code="FL24",
+    ),
+)
+
+
+SRC_ANGLED = (
+    "Modelled on angled mandibular reconstruction plates handled in clinic: a "
+    "ramus limb of 6 holes turned in the plate's own plane from a body of 12 "
+    "or 18 holes, as left and right plates. Absolute dimensions are estimates "
+    "from photographs; check them against the specification of the plate you "
+    "hold and edit this file."
+)
+
+
+def _angled(side: str, sign: float) -> Family:
+    return Family(
+        family=f"generic-recon-2.0-angled-{side}",
+        name=f"Locking reconstruction plate 2.0, angled, {side}",
+        category="mandibular angle and ramus",
+        section=SQUARE_20,
+        layouts=[(f"{6 + n}h", evenly(6 + n, 7.5)) for n in (12, 18)],
+        preform=(("turn", 4, 6, sign * 40.0),),
+        material_id="cp-ti-grade-4",
+        load_bearing=True,
+        sources=(SRC_ANGLED, SRC_NOTCH),
+        notes=(
+            "Square hole segments on short notched bridges; the 6-hole ramus "
+            f"limb turns 40 degrees in the plate's plane ({side} side). Fit "
+            "bending insets in locking holes before contouring."
+        ),
+        marking=("Ti4", "2.0", "AG" + side[0].upper()),
+        code="AG20" + side[0].upper(),
+    )
+
+
+FAMILIES = FAMILIES + (
+    _angled("left", 1.0),
+    _angled("right", -1.0),
+    Family(
+        family="generic-recon-3.0-angled",
+        name="Locking reconstruction plate, 3.0 mm profile, angled",
+        category="mandibular angle and ramus",
+        section=LOBED_30,
+        layouts=[("27h", evenly(27, 8.0))],
+        preform=(("turn", 4, 7, 55.0), ("arch", 9, 24, 40.0)),
+        material_id="cp-ti-grade-4",
+        load_bearing=True,
+        sources=(SRC_ANGLED, SRC_NOTCH),
+        min_bend_radius_mm=15.0,
+        notes=(
+            "Round lobes, threaded locking holes, 3.0 mm profile: a 6-hole "
+            "ramus limb turned 55 degrees and a gently curved body. Mirror it "
+            "for the other side. Shape any further by press."
+        ),
+        marking=("Ti4", "3.0", "AG"),
+        code="AG30",
     ),
 )
 

@@ -7281,6 +7281,2558 @@
         "volume_mm3": 3265.3754
       },
       "notes": "Both rami, both angles and the whole arch, preformed: 6 + 13 + 6 holes with the arch curved through the thickness and each angle turned in the plate's own plane."
+    },
+    {
+      "id": "generic-recon-2.0-angled-left-18h",
+      "name": "Locking reconstruction plate 2.0, angled, left, 18 holes",
+      "family": "generic-recon-2.0-angled-left",
+      "category": "mandibular angle and ramus",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.0-angled-left-18h.ply",
+      "mesh_format": "ply",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
+      "thickness_mm": 2.0,
+      "width_mm": 7.0,
+      "hole_count": 18,
+      "hole_pitch_mm": 7.5,
+      "hole_diameter_mm": 2.4,
+      "seat_diameter_mm": 4.0,
+      "locking": true,
+      "thread_pitch_mm": 0.35,
+      "notch": {
+        "depth_mm": 1.4,
+        "opening_mm": 2.2
+      },
+      "edge_radius_mm": 0.3,
+      "length_mm": 134.5,
+      "extent_mm": 126.3211,
+      "flat_hole_x_mm": [
+        0.0,
+        7.5,
+        15.0,
+        22.5,
+        30.0,
+        37.5,
+        45.0,
+        52.5,
+        60.0,
+        67.5,
+        75.0,
+        82.5,
+        90.0,
+        97.5,
+        105.0,
+        112.5,
+        120.0,
+        127.5
+      ],
+      "hole_centres_mm": [
+        [
+          -59.322228,
+          24.294306,
+          0.0
+        ],
+        [
+          -53.576895,
+          19.473399,
+          0.0
+        ],
+        [
+          -47.831562,
+          14.652492,
+          0.0
+        ],
+        [
+          -42.086228,
+          9.831585,
+          0.0
+        ],
+        [
+          -36.344024,
+          5.01287,
+          0.0
+        ],
+        [
+          -29.863043,
+          1.283142,
+          0.0
+        ],
+        [
+          -22.496382,
+          -0.002396,
+          0.0
+        ],
+        [
+          -15.0,
+          0.0,
+          0.0
+        ],
+        [
+          -7.5,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          -0.0,
+          0.0
+        ],
+        [
+          30.0,
+          -0.0,
+          0.0
+        ],
+        [
+          37.5,
+          -0.0,
+          0.0
+        ],
+        [
+          45.0,
+          -0.0,
+          0.0
+        ],
+        [
+          52.5,
+          -0.0,
+          0.0
+        ],
+        [
+          60.0,
+          -0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -59.322228,
+          24.294306,
+          0.0
+        ],
+        [
+          -53.576895,
+          19.473399,
+          0.0
+        ],
+        [
+          -47.831562,
+          14.652492,
+          0.0
+        ],
+        [
+          -42.086228,
+          9.831585,
+          0.0
+        ],
+        [
+          -36.344024,
+          5.01287,
+          0.0
+        ],
+        [
+          -29.863043,
+          1.283142,
+          0.0
+        ],
+        [
+          -22.496382,
+          -0.002396,
+          0.0
+        ],
+        [
+          -15.0,
+          0.0,
+          0.0
+        ],
+        [
+          -7.5,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          -0.0,
+          0.0
+        ],
+        [
+          30.0,
+          -0.0,
+          0.0
+        ],
+        [
+          37.5,
+          -0.0,
+          0.0
+        ],
+        [
+          45.0,
+          -0.0,
+          0.0
+        ],
+        [
+          52.5,
+          -0.0,
+          0.0
+        ],
+        [
+          60.0,
+          -0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform": [
+        [
+          "turn",
+          4,
+          6,
+          40.0
+        ]
+      ],
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimension_sources": [
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
+      ],
+      "deformation": {
+        "min_bend_radius_mm": 12.0,
+        "max_bend_deg_per_node": 27.0,
+        "protected_radius_mm": 2.5,
+        "bendable": "at the notches between holes"
+      },
+      "marking": [
+        {
+          "text": "Ti4",
+          "origin": [
+            -61.183893,
+            21.842301,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            -0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "2.0",
+          "origin": [
+            -57.373278,
+            18.644816,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            -0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "AGL",
+          "origin": [
+            -55.43856,
+            17.021394,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            -0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "18H",
+          "origin": [
+            -51.627945,
+            13.823909,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            -0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        }
+      ],
+      "code": "AG20L-18H",
+      "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "audit": {
+        "watertight": true,
+        "outward": true,
+        "genus": 18,
+        "triangles": 28574,
+        "points": 14253,
+        "volume_mm3": 1428.3453
+      },
+      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (left side). Fit bending insets in locking holes before contouring."
+    },
+    {
+      "id": "generic-recon-2.0-angled-left-24h",
+      "name": "Locking reconstruction plate 2.0, angled, left, 24 holes",
+      "family": "generic-recon-2.0-angled-left",
+      "category": "mandibular angle and ramus",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.0-angled-left-24h.ply",
+      "mesh_format": "ply",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
+      "thickness_mm": 2.0,
+      "width_mm": 7.0,
+      "hole_count": 24,
+      "hole_pitch_mm": 7.5,
+      "hole_diameter_mm": 2.4,
+      "seat_diameter_mm": 4.0,
+      "locking": true,
+      "thread_pitch_mm": 0.35,
+      "notch": {
+        "depth_mm": 1.4,
+        "opening_mm": 2.2
+      },
+      "edge_radius_mm": 0.3,
+      "length_mm": 179.5,
+      "extent_mm": 171.3211,
+      "flat_hole_x_mm": [
+        0.0,
+        7.5,
+        15.0,
+        22.5,
+        30.0,
+        37.5,
+        45.0,
+        52.5,
+        60.0,
+        67.5,
+        75.0,
+        82.5,
+        90.0,
+        97.5,
+        105.0,
+        112.5,
+        120.0,
+        127.5,
+        135.0,
+        142.5,
+        150.0,
+        157.5,
+        165.0,
+        172.5
+      ],
+      "hole_centres_mm": [
+        [
+          -81.822228,
+          24.294306,
+          0.0
+        ],
+        [
+          -76.076895,
+          19.473399,
+          0.0
+        ],
+        [
+          -70.331562,
+          14.652492,
+          0.0
+        ],
+        [
+          -64.586228,
+          9.831585,
+          0.0
+        ],
+        [
+          -58.844024,
+          5.01287,
+          0.0
+        ],
+        [
+          -52.363043,
+          1.283142,
+          0.0
+        ],
+        [
+          -44.996382,
+          -0.002396,
+          0.0
+        ],
+        [
+          -37.5,
+          -0.0,
+          0.0
+        ],
+        [
+          -30.0,
+          -0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          -0.0,
+          0.0
+        ],
+        [
+          -15.0,
+          -0.0,
+          0.0
+        ],
+        [
+          -7.5,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          -0.0,
+          0.0
+        ],
+        [
+          15.0,
+          -0.0,
+          0.0
+        ],
+        [
+          22.5,
+          -0.0,
+          0.0
+        ],
+        [
+          30.0,
+          -0.0,
+          0.0
+        ],
+        [
+          37.5,
+          -0.0,
+          0.0
+        ],
+        [
+          45.0,
+          -0.0,
+          0.0
+        ],
+        [
+          52.5,
+          -0.0,
+          0.0
+        ],
+        [
+          60.0,
+          -0.0,
+          0.0
+        ],
+        [
+          67.5,
+          -0.0,
+          0.0
+        ],
+        [
+          75.0,
+          -0.0,
+          0.0
+        ],
+        [
+          82.5,
+          -0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -81.822228,
+          24.294306,
+          0.0
+        ],
+        [
+          -76.076895,
+          19.473399,
+          0.0
+        ],
+        [
+          -70.331562,
+          14.652492,
+          0.0
+        ],
+        [
+          -64.586228,
+          9.831585,
+          0.0
+        ],
+        [
+          -58.844024,
+          5.01287,
+          0.0
+        ],
+        [
+          -52.363043,
+          1.283142,
+          0.0
+        ],
+        [
+          -44.996382,
+          -0.002396,
+          0.0
+        ],
+        [
+          -37.5,
+          -0.0,
+          0.0
+        ],
+        [
+          -30.0,
+          -0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          -0.0,
+          0.0
+        ],
+        [
+          -15.0,
+          -0.0,
+          0.0
+        ],
+        [
+          -7.5,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          -0.0,
+          0.0
+        ],
+        [
+          15.0,
+          -0.0,
+          0.0
+        ],
+        [
+          22.5,
+          -0.0,
+          0.0
+        ],
+        [
+          30.0,
+          -0.0,
+          0.0
+        ],
+        [
+          37.5,
+          -0.0,
+          0.0
+        ],
+        [
+          45.0,
+          -0.0,
+          0.0
+        ],
+        [
+          52.5,
+          -0.0,
+          0.0
+        ],
+        [
+          60.0,
+          -0.0,
+          0.0
+        ],
+        [
+          67.5,
+          -0.0,
+          0.0
+        ],
+        [
+          75.0,
+          -0.0,
+          0.0
+        ],
+        [
+          82.5,
+          -0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform": [
+        [
+          "turn",
+          4,
+          6,
+          40.0
+        ]
+      ],
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimension_sources": [
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
+      ],
+      "deformation": {
+        "min_bend_radius_mm": 12.0,
+        "max_bend_deg_per_node": 27.0,
+        "protected_radius_mm": 2.5,
+        "bendable": "at the notches between holes"
+      },
+      "marking": [
+        {
+          "text": "Ti4",
+          "origin": [
+            -83.683893,
+            21.842301,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            -0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "2.0",
+          "origin": [
+            -79.873278,
+            18.644816,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            -0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "AGL",
+          "origin": [
+            -77.93856,
+            17.021394,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            -0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "24H",
+          "origin": [
+            -74.127945,
+            13.823909,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            -0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        }
+      ],
+      "code": "AG20L-24H",
+      "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "audit": {
+        "watertight": true,
+        "outward": true,
+        "genus": 24,
+        "triangles": 38108,
+        "points": 19008,
+        "volume_mm3": 1910.4139
+      },
+      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (left side). Fit bending insets in locking holes before contouring."
+    },
+    {
+      "id": "generic-recon-2.0-angled-right-18h",
+      "name": "Locking reconstruction plate 2.0, angled, right, 18 holes",
+      "family": "generic-recon-2.0-angled-right",
+      "category": "mandibular angle and ramus",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.0-angled-right-18h.ply",
+      "mesh_format": "ply",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
+      "thickness_mm": 2.0,
+      "width_mm": 7.0,
+      "hole_count": 18,
+      "hole_pitch_mm": 7.5,
+      "hole_diameter_mm": 2.4,
+      "seat_diameter_mm": 4.0,
+      "locking": true,
+      "thread_pitch_mm": 0.35,
+      "notch": {
+        "depth_mm": 1.4,
+        "opening_mm": 2.2
+      },
+      "edge_radius_mm": 0.3,
+      "length_mm": 134.5,
+      "extent_mm": 126.3211,
+      "flat_hole_x_mm": [
+        0.0,
+        7.5,
+        15.0,
+        22.5,
+        30.0,
+        37.5,
+        45.0,
+        52.5,
+        60.0,
+        67.5,
+        75.0,
+        82.5,
+        90.0,
+        97.5,
+        105.0,
+        112.5,
+        120.0,
+        127.5
+      ],
+      "hole_centres_mm": [
+        [
+          -59.322228,
+          -24.294306,
+          0.0
+        ],
+        [
+          -53.576895,
+          -19.473399,
+          0.0
+        ],
+        [
+          -47.831562,
+          -14.652492,
+          0.0
+        ],
+        [
+          -42.086228,
+          -9.831585,
+          0.0
+        ],
+        [
+          -36.344024,
+          -5.01287,
+          0.0
+        ],
+        [
+          -29.863043,
+          -1.283142,
+          0.0
+        ],
+        [
+          -22.496382,
+          0.002396,
+          0.0
+        ],
+        [
+          -15.0,
+          -0.0,
+          0.0
+        ],
+        [
+          -7.5,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          -0.0,
+          0.0
+        ],
+        [
+          15.0,
+          -0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          30.0,
+          0.0,
+          0.0
+        ],
+        [
+          37.5,
+          0.0,
+          0.0
+        ],
+        [
+          45.0,
+          0.0,
+          0.0
+        ],
+        [
+          52.5,
+          0.0,
+          0.0
+        ],
+        [
+          60.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -59.322228,
+          -24.294306,
+          0.0
+        ],
+        [
+          -53.576895,
+          -19.473399,
+          0.0
+        ],
+        [
+          -47.831562,
+          -14.652492,
+          0.0
+        ],
+        [
+          -42.086228,
+          -9.831585,
+          0.0
+        ],
+        [
+          -36.344024,
+          -5.01287,
+          0.0
+        ],
+        [
+          -29.863043,
+          -1.283142,
+          0.0
+        ],
+        [
+          -22.496382,
+          0.002396,
+          0.0
+        ],
+        [
+          -15.0,
+          -0.0,
+          0.0
+        ],
+        [
+          -7.5,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          -0.0,
+          0.0
+        ],
+        [
+          15.0,
+          -0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          30.0,
+          0.0,
+          0.0
+        ],
+        [
+          37.5,
+          0.0,
+          0.0
+        ],
+        [
+          45.0,
+          0.0,
+          0.0
+        ],
+        [
+          52.5,
+          0.0,
+          0.0
+        ],
+        [
+          60.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform": [
+        [
+          "turn",
+          4,
+          6,
+          -40.0
+        ]
+      ],
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimension_sources": [
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
+      ],
+      "deformation": {
+        "min_bend_radius_mm": 12.0,
+        "max_bend_deg_per_node": 27.0,
+        "protected_radius_mm": 2.5,
+        "bendable": "at the notches between holes"
+      },
+      "marking": [
+        {
+          "text": "Ti4",
+          "origin": [
+            -57.23075,
+            -26.553475,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "2.0",
+          "origin": [
+            -53.420135,
+            -23.355989,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "AGR",
+          "origin": [
+            -51.485416,
+            -21.732568,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "18H",
+          "origin": [
+            -47.674801,
+            -18.535082,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        }
+      ],
+      "code": "AG20R-18H",
+      "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "audit": {
+        "watertight": true,
+        "outward": true,
+        "genus": 18,
+        "triangles": 28574,
+        "points": 14253,
+        "volume_mm3": 1428.3453
+      },
+      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (right side). Fit bending insets in locking holes before contouring."
+    },
+    {
+      "id": "generic-recon-2.0-angled-right-24h",
+      "name": "Locking reconstruction plate 2.0, angled, right, 24 holes",
+      "family": "generic-recon-2.0-angled-right",
+      "category": "mandibular angle and ramus",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-2.0-angled-right-24h.ply",
+      "mesh_format": "ply",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
+      "thickness_mm": 2.0,
+      "width_mm": 7.0,
+      "hole_count": 24,
+      "hole_pitch_mm": 7.5,
+      "hole_diameter_mm": 2.4,
+      "seat_diameter_mm": 4.0,
+      "locking": true,
+      "thread_pitch_mm": 0.35,
+      "notch": {
+        "depth_mm": 1.4,
+        "opening_mm": 2.2
+      },
+      "edge_radius_mm": 0.3,
+      "length_mm": 179.5,
+      "extent_mm": 171.3211,
+      "flat_hole_x_mm": [
+        0.0,
+        7.5,
+        15.0,
+        22.5,
+        30.0,
+        37.5,
+        45.0,
+        52.5,
+        60.0,
+        67.5,
+        75.0,
+        82.5,
+        90.0,
+        97.5,
+        105.0,
+        112.5,
+        120.0,
+        127.5,
+        135.0,
+        142.5,
+        150.0,
+        157.5,
+        165.0,
+        172.5
+      ],
+      "hole_centres_mm": [
+        [
+          -81.822228,
+          -24.294306,
+          0.0
+        ],
+        [
+          -76.076895,
+          -19.473399,
+          0.0
+        ],
+        [
+          -70.331562,
+          -14.652492,
+          0.0
+        ],
+        [
+          -64.586228,
+          -9.831585,
+          0.0
+        ],
+        [
+          -58.844024,
+          -5.01287,
+          0.0
+        ],
+        [
+          -52.363043,
+          -1.283142,
+          0.0
+        ],
+        [
+          -44.996382,
+          0.002396,
+          0.0
+        ],
+        [
+          -37.5,
+          0.0,
+          0.0
+        ],
+        [
+          -30.0,
+          0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          0.0,
+          0.0
+        ],
+        [
+          -15.0,
+          0.0,
+          0.0
+        ],
+        [
+          -7.5,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          30.0,
+          0.0,
+          0.0
+        ],
+        [
+          37.5,
+          0.0,
+          0.0
+        ],
+        [
+          45.0,
+          0.0,
+          0.0
+        ],
+        [
+          52.5,
+          0.0,
+          0.0
+        ],
+        [
+          60.0,
+          0.0,
+          0.0
+        ],
+        [
+          67.5,
+          0.0,
+          0.0
+        ],
+        [
+          75.0,
+          0.0,
+          0.0
+        ],
+        [
+          82.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "hole_axes": [
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -81.822228,
+          -24.294306,
+          0.0
+        ],
+        [
+          -76.076895,
+          -19.473399,
+          0.0
+        ],
+        [
+          -70.331562,
+          -14.652492,
+          0.0
+        ],
+        [
+          -64.586228,
+          -9.831585,
+          0.0
+        ],
+        [
+          -58.844024,
+          -5.01287,
+          0.0
+        ],
+        [
+          -52.363043,
+          -1.283142,
+          0.0
+        ],
+        [
+          -44.996382,
+          0.002396,
+          0.0
+        ],
+        [
+          -37.5,
+          0.0,
+          0.0
+        ],
+        [
+          -30.0,
+          0.0,
+          0.0
+        ],
+        [
+          -22.5,
+          0.0,
+          0.0
+        ],
+        [
+          -15.0,
+          0.0,
+          0.0
+        ],
+        [
+          -7.5,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0
+        ],
+        [
+          30.0,
+          0.0,
+          0.0
+        ],
+        [
+          37.5,
+          0.0,
+          0.0
+        ],
+        [
+          45.0,
+          0.0,
+          0.0
+        ],
+        [
+          52.5,
+          0.0,
+          0.0
+        ],
+        [
+          60.0,
+          0.0,
+          0.0
+        ],
+        [
+          67.5,
+          0.0,
+          0.0
+        ],
+        [
+          75.0,
+          0.0,
+          0.0
+        ],
+        [
+          82.5,
+          0.0,
+          0.0
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform": [
+        [
+          "turn",
+          4,
+          6,
+          -40.0
+        ]
+      ],
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimension_sources": [
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
+      ],
+      "deformation": {
+        "min_bend_radius_mm": 12.0,
+        "max_bend_deg_per_node": 27.0,
+        "protected_radius_mm": 2.5,
+        "bendable": "at the notches between holes"
+      },
+      "marking": [
+        {
+          "text": "Ti4",
+          "origin": [
+            -79.73075,
+            -26.553475,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "2.0",
+          "origin": [
+            -75.920135,
+            -23.355989,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "AGR",
+          "origin": [
+            -73.985416,
+            -21.732568,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        },
+        {
+          "text": "24H",
+          "origin": [
+            -70.174801,
+            -18.535082,
+            1.0
+          ],
+          "along": [
+            0.766044443,
+            0.64278761,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.2256
+        }
+      ],
+      "code": "AG20R-24H",
+      "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "audit": {
+        "watertight": true,
+        "outward": true,
+        "genus": 24,
+        "triangles": 38108,
+        "points": 19008,
+        "volume_mm3": 1910.4139
+      },
+      "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (right side). Fit bending insets in locking holes before contouring."
+    },
+    {
+      "id": "generic-recon-3.0-angled-27h",
+      "name": "Locking reconstruction plate, 3.0 mm profile, angled, 27 holes",
+      "family": "generic-recon-3.0-angled",
+      "category": "mandibular angle and ramus",
+      "exact": false,
+      "generic": true,
+      "status_label": "Generic parametric approximation",
+      "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
+      "mesh": "generic-recon-3.0-angled-27h.ply",
+      "mesh_format": "ply",
+      "units": "mm",
+      "unit_scale": 1.0,
+      "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
+      "thickness_mm": 3.0,
+      "width_mm": 8.5,
+      "hole_count": 27,
+      "hole_pitch_mm": 8.0,
+      "hole_diameter_mm": 2.6,
+      "seat_diameter_mm": 4.6,
+      "locking": true,
+      "thread_pitch_mm": 0.35,
+      "notch": {
+        "depth_mm": 1.3,
+        "opening_mm": 3.6
+      },
+      "edge_radius_mm": 0.4,
+      "length_mm": 216.5,
+      "extent_mm": 192.56,
+      "flat_hole_x_mm": [
+        0.0,
+        8.0,
+        16.0,
+        24.0,
+        32.0,
+        40.0,
+        48.0,
+        56.0,
+        64.0,
+        72.0,
+        80.0,
+        88.0,
+        96.0,
+        104.0,
+        112.0,
+        120.0,
+        128.0,
+        136.0,
+        144.0,
+        152.0,
+        160.0,
+        168.0,
+        176.0,
+        184.0,
+        192.0,
+        200.0,
+        208.0
+      ],
+      "hole_centres_mm": [
+        [
+          -85.73266,
+          36.853737,
+          -13.140891
+        ],
+        [
+          -81.223573,
+          30.300521,
+          -12.29031
+        ],
+        [
+          -76.714486,
+          23.747305,
+          -11.439728
+        ],
+        [
+          -72.205399,
+          17.194088,
+          -10.589146
+        ],
+        [
+          -67.698457,
+          10.643514,
+          -9.738969
+        ],
+        [
+          -62.228262,
+          4.926009,
+          -8.707087
+        ],
+        [
+          -55.278758,
+          1.257513,
+          -7.396152
+        ],
+        [
+          -47.535187,
+          -0.002037,
+          -5.935426
+        ],
+        [
+          -39.67704,
+          0.0,
+          -4.453086
+        ],
+        [
+          -31.815711,
+          0.0,
+          -2.970416
+        ],
+        [
+          -23.922095,
+          0.0,
+          -1.672801
+        ],
+        [
+          -15.976905,
+          -0.0,
+          -0.74414
+        ],
+        [
+          -7.997113,
+          0.0,
+          -0.186137
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.997113,
+          0.0,
+          -0.186133
+        ],
+        [
+          15.976905,
+          0.0,
+          -0.744133
+        ],
+        [
+          23.922096,
+          0.0,
+          -1.672791
+        ],
+        [
+          31.815476,
+          -0.0,
+          -2.970096
+        ],
+        [
+          39.639951,
+          -0.0,
+          -4.633238
+        ],
+        [
+          47.378576,
+          0.0,
+          -6.658615
+        ],
+        [
+          55.014588,
+          0.0,
+          -9.04184
+        ],
+        [
+          62.531452,
+          -0.0,
+          -11.777753
+        ],
+        [
+          69.912886,
+          -0.0,
+          -14.860428
+        ],
+        [
+          77.142904,
+          -0.0,
+          -18.283189
+        ],
+        [
+          84.206232,
+          -0.0,
+          -22.038527
+        ],
+        [
+          91.181406,
+          -0.0,
+          -25.955903
+        ],
+        [
+          98.15677,
+          -0.0,
+          -29.873082
+        ]
+      ],
+      "hole_axes": [
+        [
+          -0.185367975,
+          -0.0,
+          0.982669178
+        ],
+        [
+          -0.185367975,
+          -0.0,
+          0.982669178
+        ],
+        [
+          -0.185367975,
+          -0.0,
+          0.982669178
+        ],
+        [
+          -0.185367975,
+          -0.0,
+          0.982669178
+        ],
+        [
+          -0.185367975,
+          -0.0,
+          0.982669178
+        ],
+        [
+          -0.185367975,
+          -0.0,
+          0.982669178
+        ],
+        [
+          -0.185367975,
+          -0.0,
+          0.982669178
+        ],
+        [
+          -0.185367975,
+          -0.0,
+          0.982669178
+        ],
+        [
+          -0.185438463,
+          -3e-09,
+          0.982655879
+        ],
+        [
+          -0.173861371,
+          0.0,
+          0.984770137
+        ],
+        [
+          -0.139179172,
+          -0.0,
+          0.990267215
+        ],
+        [
+          -0.092949866,
+          -0.0,
+          0.99567079
+        ],
+        [
+          -0.046525315,
+          -0.0,
+          0.998917111
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ],
+        [
+          0.046525315,
+          -0.0,
+          0.998917111
+        ],
+        [
+          0.092949866,
+          0.0,
+          0.99567079
+        ],
+        [
+          0.139173109,
+          0.0,
+          0.990268068
+        ],
+        [
+          0.185094933,
+          0.0,
+          0.982720645
+        ],
+        [
+          0.230615884,
+          0.0,
+          0.973044868
+        ],
+        [
+          0.275637371,
+          0.0,
+          0.961261692
+        ],
+        [
+          0.320061889,
+          -0.0,
+          0.947396637
+        ],
+        [
+          0.363793225,
+          -0.0,
+          0.931479731
+        ],
+        [
+          0.406736665,
+          0.0,
+          0.913545448
+        ],
+        [
+          0.44886366,
+          0.0,
+          0.893600254
+        ],
+        [
+          0.479659905,
+          0.0,
+          0.877454486
+        ],
+        [
+          0.489652675,
+          0.0,
+          0.871917575
+        ],
+        [
+          0.489647465,
+          0.0,
+          0.871920501
+        ]
+      ],
+      "centreline_mm": [
+        [
+          -85.73266,
+          36.853737,
+          -13.140891
+        ],
+        [
+          -81.223573,
+          30.300521,
+          -12.29031
+        ],
+        [
+          -76.714486,
+          23.747305,
+          -11.439728
+        ],
+        [
+          -72.205399,
+          17.194088,
+          -10.589146
+        ],
+        [
+          -67.698457,
+          10.643514,
+          -9.738969
+        ],
+        [
+          -62.228262,
+          4.926009,
+          -8.707087
+        ],
+        [
+          -55.278758,
+          1.257513,
+          -7.396152
+        ],
+        [
+          -47.535187,
+          -0.002037,
+          -5.935426
+        ],
+        [
+          -39.67704,
+          0.0,
+          -4.453086
+        ],
+        [
+          -31.815711,
+          0.0,
+          -2.970416
+        ],
+        [
+          -23.922095,
+          0.0,
+          -1.672801
+        ],
+        [
+          -15.976905,
+          -0.0,
+          -0.74414
+        ],
+        [
+          -7.997113,
+          0.0,
+          -0.186137
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.997113,
+          0.0,
+          -0.186133
+        ],
+        [
+          15.976905,
+          0.0,
+          -0.744133
+        ],
+        [
+          23.922096,
+          0.0,
+          -1.672791
+        ],
+        [
+          31.815476,
+          -0.0,
+          -2.970096
+        ],
+        [
+          39.639951,
+          -0.0,
+          -4.633238
+        ],
+        [
+          47.378576,
+          0.0,
+          -6.658615
+        ],
+        [
+          55.014588,
+          0.0,
+          -9.04184
+        ],
+        [
+          62.531452,
+          -0.0,
+          -11.777753
+        ],
+        [
+          69.912886,
+          -0.0,
+          -14.860428
+        ],
+        [
+          77.142904,
+          -0.0,
+          -18.283189
+        ],
+        [
+          84.206232,
+          -0.0,
+          -22.038527
+        ],
+        [
+          91.181406,
+          -0.0,
+          -25.955903
+        ],
+        [
+          98.15677,
+          -0.0,
+          -29.873082
+        ]
+      ],
+      "side": "universal",
+      "mirrorable": true,
+      "preform": [
+        [
+          "turn",
+          4,
+          7,
+          55.0
+        ],
+        [
+          "arch",
+          9,
+          24,
+          40.0
+        ]
+      ],
+      "material_id": "cp-ti-grade-4",
+      "load_bearing": true,
+      "dimension_sources": [
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
+      ],
+      "deformation": {
+        "min_bend_radius_mm": 15.0,
+        "max_bend_deg_per_node": 17.0,
+        "protected_radius_mm": 2.8,
+        "bendable": "at the notches between holes"
+      },
+      "marking": [
+        {
+          "text": "Ti4",
+          "origin": [
+            -88.783759,
+            34.694668,
+            -12.189987
+          ],
+          "along": [
+            0.563635885,
+            -0.819152044,
+            0.106322703
+          ],
+          "outward": [
+            -0.185367975,
+            -0.0,
+            0.982669178
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.0528
+        },
+        {
+          "text": "3.0",
+          "origin": [
+            -85.600791,
+            30.068748,
+            -11.589561
+          ],
+          "along": [
+            0.563635885,
+            -0.819152044,
+            0.106322703
+          ],
+          "outward": [
+            -0.185367975,
+            -0.0,
+            0.982669178
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.0528
+        },
+        {
+          "text": "AG",
+          "origin": [
+            -84.274671,
+            28.141452,
+            -11.339406
+          ],
+          "along": [
+            0.563635885,
+            -0.819152044,
+            0.106322703
+          ],
+          "outward": [
+            -0.185367975,
+            -0.0,
+            0.982669178
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.0528
+        },
+        {
+          "text": "27H",
+          "origin": [
+            -81.091704,
+            23.515532,
+            -10.738979
+          ],
+          "along": [
+            0.563635885,
+            -0.819152044,
+            0.106322703
+          ],
+          "outward": [
+            -0.185367975,
+            -0.0,
+            0.982669178
+          ],
+          "height_mm": 0.9,
+          "max_length_mm": 2.0528
+        }
+      ],
+      "code": "AG30-27H",
+      "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
+      "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
+      "audit": {
+        "watertight": true,
+        "outward": true,
+        "genus": 27,
+        "triangles": 48872,
+        "points": 24384,
+        "volume_mm3": 4230.8067
+      },
+      "notes": "Round lobes, threaded locking holes, 3.0 mm profile: a 6-hole ramus limb turned 55 degrees and a gently curved body. Mirror it for the other side. Shape any further by press."
     }
   ]
 }
