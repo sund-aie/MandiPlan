@@ -432,6 +432,9 @@ class DentateSpec:
     condyle_centre: tuple[float, float, float] = (46.0, 30.0, 57.0)
     field_mm: tuple[float, float] = (220.0, 220.0)
     z_range_mm: tuple[float, float] = (-90.0, 100.0)
+    #: The temporal wall of the cranium, rising from each zygomatic arch, as a
+    #: CBCT whose field of view reaches the vertex shows it.
+    temporal_wall: bool = False
 
     @property
     def molar_s(self) -> float:
@@ -541,6 +544,8 @@ def _bones(x, y, z, spec):
     arch_bar = (np.abs(x) >= 42.0) & (np.abs(x) <= 50.0) & (y >= -8.0) & (y <= 22.0) & (z >= cz + 0.5) & (z <= cz + 7.0)
     zygoma = (np.abs(x) >= 34.0) & (np.abs(x) <= 50.0) & (y >= -12.0) & (y <= -2.0) & (z >= bite + 12.0) & (z <= cz + 4.5)
     skull = maxilla | palate | pterygoid | base | arch_bar | zygoma | fossae
+    if spec.temporal_wall:
+        skull |= (np.abs(x) >= 50.0) & (np.abs(x) <= 54.0) & (y >= -8.0) & (y <= 45.0) & (z >= cz + 0.5) & (z <= cz + 40.0)
 
     spine = (np.hypot(x, y - 58.0) <= 8.0) & (z <= cz + 7.0)
     hyoid = (np.abs(np.hypot(x, y - 10.0) - 16.0) <= 2.5) & (y < 10.0) & (np.abs(z + 28.0) <= 2.5)

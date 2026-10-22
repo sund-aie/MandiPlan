@@ -787,7 +787,7 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
         )
         processes, joint_roofs = _processes(
             mandible, ramus & (above_plane > RAMUS_SEED_MM - 4.0), spacing, above_plane,
-            plate & ~inside_arch, inside_arch,
+            plate & ~inside_arch, inside_arch, braincase,
         )
         # The front of a ramus rises beside the last molar, ahead of where its
         # plate was fitted; in each axial slice it is still one small piece
@@ -987,9 +987,15 @@ PROCESS_ROOF_MM = 12.0
 #: where a coronoid rests against the tuberosity or a filling's streaks join
 #: the two in the axial slices.
 PROCESS_JOINT_MIN_MM = 20.0
+#: A process's section grows by less than this factor from one axial slice
+#: to the next (measured against what of it reached the piece, and no less
+#: than the floor below, cm²); joining a zygomatic arch or a skull wall,
+#: which a box round the jaws cuts into small arcs, multiplies it.
+PROCESS_GROWTH = 6.0
+PROCESS_GROWTH_FLOOR_CM2 = 0.25
 
 
-def _processes(mandible, start, spacing, above_plane=None, columns=None, inside=None):
+def _processes(mandible, start, spacing, above_plane=None, columns=None, inside=None, skull=None):
     """The condylar and coronoid processes, followed up from the ramus seeds.
 
     ``start`` is the top of the ramus seeds. Slice by slice upwards, the
@@ -1006,7 +1012,10 @@ def _processes(mandible, start, spacing, above_plane=None, columns=None, inside=
     by a pixel per slice only within ``columns`` (the ramus's plate), until
     it stands free again. Below that height an upper molar can touch a
     ramus, and is a small piece with it; the processes rise outside the
-    arch, so there nothing ``inside`` it (columns) is followed.
+    arch, so there nothing ``inside`` it (columns) is followed. A piece
+    holding any of ``skull`` (bone lining the brain) is the skull too, however
+    small: on a scan whose field of view cuts the cranium, or within the box
+    worked in, its wall is a thin arc in each axial section.
     Returns ``(seeds, roofs)``.
     """
     import SimpleITK as sitk
@@ -1020,6 +1029,7 @@ def _processes(mandible, start, spacing, above_plane=None, columns=None, inside=
     margin = max(int(round(PROCESS_MARGIN_MM / spacing[2])), 1)
     roof = max(int(round(PROCESS_ROOF_MM / spacing[2])), 1)
     reach = max(int(round(3.0 / min(spacing[0], spacing[1]))), 1)
+    growth_floor = max(int(round(PROCESS_GROWTH_FLOOR_CM2 / pixel_cm2)), 1)
     # Each ramus from the top of its own start: the two end at different
     # heights when the bite plane is tilted, and a trace begun lower, where
     # a ramus can touch the upper molars, would wander along the upper teeth.
@@ -1043,11 +1053,16 @@ def _processes(mandible, start, spacing, above_plane=None, columns=None, inside=
             following = np.zeros_like(current)
             for label in touching:
                 piece = labels == label
-                if sizes[label] * pixel_cm2 <= PROCESS_MAX_CM2:
+                skull_piece = skull is not None and bool((piece & skull[k]).any())
+                # A process grows slowly slice to slice; a piece several times
+                # what reached it is a zygomatic arch or a skull wall it ran into.
+                reached = int((current & _grow2d(piece, 1)).sum())
+                skull_piece |= sizes[label] > PROCESS_GROWTH * max(reached, growth_floor)
+                if sizes[label] * pixel_cm2 <= PROCESS_MAX_CM2 and not skull_piece:
                     following |= piece
                     continue
                 met = current & _grow2d(piece, reach)
-                if above_plane is not None and float(np.mean(above_plane[k][met])) < PROCESS_JOINT_MIN_MM:
+                if not skull_piece and above_plane is not None and float(np.mean(above_plane[k][met])) < PROCESS_JOINT_MIN_MM:
                     footprint = current if columns is None else current | (_grow2d(current, 1) & columns)
                     following |= piece & footprint
                 else:

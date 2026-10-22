@@ -370,3 +370,18 @@ def test_only_a_volume_made_from_thick_slices_is_drawn_smoothed():
     # The filter does not shrink the bone.
     assert mesh_volume_mm3(smooth) == pytest.approx(mesh_volume_mm3(plain), rel=0.02)
     assert mesh_volume_mm3(smooth) == pytest.approx(spec.volume_mm3, rel=0.03)
+
+
+def test_a_cranial_wall_rising_from_the_zygoma_stays_skull(tmp_path):
+    """A field of view up to the vertex: the coronoid touches the zygomatic
+    arch, and the temporal wall rises from it. Cut by the box worked in, the
+    wall is a thin arc in each axial section; the trace up the processes
+    must not follow the arch into it."""
+    spec = DentateSpec(temporal_wall=True, seed=5)
+    volume, truth = make_dentate_ct(spec)
+    write_dicom_series(volume, tmp_path)
+    jaws, threshold, isolation = _separate(tmp_path)
+    held = _score(jaws, threshold, isolation, truth)
+    assert held["skull"] < 0.002 and held["upper"] < 0.01 and held["mandible"] > 0.9
+    right, left = isolation.ramus_heights_mm
+    assert abs(right - left) < 5.0 and max(right, left) < 50.0 and not isolation.warnings

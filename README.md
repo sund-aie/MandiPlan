@@ -438,7 +438,11 @@ processes are followed up slice by slice, each ramus from the top of its own
 seeds, until they end or run into the skull base. Lower than any joint (20 mm
 above the bite plane) a large piece of bone met on the way is the maxilla,
 where a coronoid rests against it, and the process is followed through it;
-no upper molar inside the arch is followed. The bone lining the brain and the
+no upper molar inside the arch is followed. A piece that holds bone lining the brain, or that is several times the
+section of the process that reached it, is a zygomatic arch or the skull's
+wall, and the trace stops there: on a CBCT whose field of view reaches the
+vertex the temporal wall rises straight from the arch, and in the box worked
+in it is only a thin arc in each slice. The bone lining the brain and the
 spine seed the skull. Only the few millimetres round each joint are left to
 decide. The same holds for a jaw without teeth, or a mouth held open, whose
 condyles stand higher above the bite than a closed bite puts them. The bone
