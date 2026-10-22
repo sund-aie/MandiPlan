@@ -137,10 +137,12 @@ def evenly(count: int, pitch: float) -> tuple[float, ...]:
 LOCK_24 = Section(2.5, 8.0, 8.0, HoleSpec(2.5, 4.2, locking=True), NotchSpec(0.9, 2.9))
 LP_24 = Section(2.4, 8.0, 8.0, HoleSpec(2.5, 4.0), NotchSpec(0.9, 2.9))
 HEAVY_28 = Section(2.8, 10.0, 9.0, HoleSpec(2.8, 5.0, locking=True), NotchSpec(1.1, 3.4))
-#: A 2.0 mm locking plate whose square hole segments are joined by short
-#: notched bridges; and a 3.0 mm-profile locking plate of round lobes.
-SQUARE_20 = Section(2.0, 7.0, 7.5, HoleSpec(2.4, 4.0, locking=True), NotchSpec(1.4, 2.2), 0.3)
-LOBED_30 = Section(3.0, 8.5, 8.0, HoleSpec(2.6, 4.6, locking=True), NotchSpec(1.3, 3.6), 0.4)
+#: An angled locking plate of square hole segments on short notched bridges,
+#: 3.2 mm thick over a segment (caliper measurement of the plate in hand),
+#: for 2.4 mm screws; and a 3.0 mm-profile locking plate of round lobes for
+#: 2.7 mm screws (the published screw size and profile of that plate line).
+SQUARE_20 = Section(3.2, 7.5, 7.5, HoleSpec(2.6, 4.2, locking=True), NotchSpec(1.8, 2.0), 0.3)
+LOBED_30 = Section(3.0, 8.5, 8.0, HoleSpec(2.8, 4.8, locking=True), NotchSpec(1.3, 3.6), 0.4)
 PRIMARY_15 = Section(1.5, 6.0, 7.0, HoleSpec(2.1, 3.4, seat_depth_fraction=0.6), NotchSpec(0.8, 2.6), 0.25)
 MINI_20 = Section(1.0, 4.3, 6.0, HoleSpec(2.1, 3.1, seat_depth_fraction=0.6), NotchSpec(1.05, 4.4), 0.15)
 
@@ -339,16 +341,17 @@ FAMILIES: tuple[Family, ...] = (
 SRC_ANGLED = (
     "Modelled on angled mandibular reconstruction plates handled in clinic: a "
     "ramus limb of 6 holes turned in the plate's own plane from a body of 12 "
-    "or 18 holes, as left and right plates. Absolute dimensions are estimates "
-    "from photographs; check them against the specification of the plate you "
-    "hold and edit this file."
+    "or 18 holes, as left and right plates. Thickness of the square-segment "
+    "plate measured with a caliper at 3.2 mm; the lobed plate is a 3.0 mm "
+    "profile for 2.7 mm screws, as published for its plate line. Pitch and "
+    "width are estimated from photographs; check them and edit this file."
 )
 
 
 def _angled(side: str, sign: float) -> Family:
     return Family(
-        family=f"generic-recon-2.0-angled-{side}",
-        name=f"Locking reconstruction plate 2.0, angled, {side}",
+        family=f"generic-recon-3.2-angled-{side}",
+        name=f"Locking reconstruction plate, square segments, angled, {side}",
         category="mandibular angle and ramus",
         section=SQUARE_20,
         layouts=[(f"{6 + n}h", evenly(6 + n, 7.5)) for n in (12, 18)],
@@ -361,8 +364,8 @@ def _angled(side: str, sign: float) -> Family:
             f"limb turns 40 degrees in the plate's plane ({side} side). Fit "
             "bending insets in locking holes before contouring."
         ),
-        marking=("Ti4", "2.0", "AG" + side[0].upper()),
-        code="AG20" + side[0].upper(),
+        marking=("Ti4", "3.2", "AG" + side[0].upper()),
+        code="AG32" + side[0].upper(),
     )
 
 

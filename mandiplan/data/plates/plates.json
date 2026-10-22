@@ -7283,34 +7283,34 @@
       "notes": "Both rami, both angles and the whole arch, preformed: 6 + 13 + 6 holes with the arch curved through the thickness and each angle turned in the plate's own plane."
     },
     {
-      "id": "generic-recon-2.0-angled-left-18h",
-      "name": "Locking reconstruction plate 2.0, angled, left, 18 holes",
-      "family": "generic-recon-2.0-angled-left",
+      "id": "generic-recon-3.2-angled-left-18h",
+      "name": "Locking reconstruction plate, square segments, angled, left, 18 holes",
+      "family": "generic-recon-3.2-angled-left",
       "category": "mandibular angle and ramus",
       "exact": false,
       "generic": true,
       "status_label": "Generic parametric approximation",
       "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
-      "mesh": "generic-recon-2.0-angled-left-18h.ply",
+      "mesh": "generic-recon-3.2-angled-left-18h.ply",
       "mesh_format": "ply",
       "units": "mm",
       "unit_scale": 1.0,
       "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
-      "thickness_mm": 2.0,
-      "width_mm": 7.0,
+      "thickness_mm": 3.2,
+      "width_mm": 7.5,
       "hole_count": 18,
       "hole_pitch_mm": 7.5,
-      "hole_diameter_mm": 2.4,
-      "seat_diameter_mm": 4.0,
+      "hole_diameter_mm": 2.6,
+      "seat_diameter_mm": 4.2,
       "locking": true,
       "thread_pitch_mm": 0.35,
       "notch": {
-        "depth_mm": 1.4,
-        "opening_mm": 2.2
+        "depth_mm": 1.8,
+        "opening_mm": 2.0
       },
       "edge_radius_mm": 0.3,
-      "length_mm": 134.5,
-      "extent_mm": 126.3211,
+      "length_mm": 135.0,
+      "extent_mm": 126.8211,
       "flat_hole_x_mm": [
         0.0,
         7.5,
@@ -7620,22 +7620,22 @@
       "material_id": "cp-ti-grade-4",
       "load_bearing": true,
       "dimension_sources": [
-        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Thickness of the square-segment plate measured with a caliper at 3.2 mm; the lobed plate is a 3.0 mm profile for 2.7 mm screws, as published for its plate line. Pitch and width are estimated from photographs; check them and edit this file.",
         "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 27.0,
-        "protected_radius_mm": 2.5,
+        "max_bend_deg_per_node": 16.0,
+        "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
       "marking": [
         {
           "text": "Ti4",
           "origin": [
-            -61.183893,
-            21.842301,
-            1.0
+            -61.296381,
+            21.708244,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -7648,14 +7648,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
-          "text": "2.0",
+          "text": "3.2",
           "origin": [
-            -57.373278,
-            18.644816,
-            1.0
+            -57.461085,
+            18.490048,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -7668,14 +7668,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
           "text": "AGL",
           "origin": [
-            -55.43856,
-            17.021394,
-            1.0
+            -55.551048,
+            16.887336,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -7688,14 +7688,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
           "text": "18H",
           "origin": [
-            -51.627945,
-            13.823909,
-            1.0
+            -51.715752,
+            13.669141,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -7708,51 +7708,51 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         }
       ],
-      "code": "AG20L-18H",
+      "code": "AG32L-18H",
       "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "audit": {
         "watertight": true,
         "outward": true,
         "genus": 18,
-        "triangles": 28574,
-        "points": 14253,
-        "volume_mm3": 1428.3453
+        "triangles": 34088,
+        "points": 17010,
+        "volume_mm3": 2359.1153
       },
       "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (left side). Fit bending insets in locking holes before contouring."
     },
     {
-      "id": "generic-recon-2.0-angled-left-24h",
-      "name": "Locking reconstruction plate 2.0, angled, left, 24 holes",
-      "family": "generic-recon-2.0-angled-left",
+      "id": "generic-recon-3.2-angled-left-24h",
+      "name": "Locking reconstruction plate, square segments, angled, left, 24 holes",
+      "family": "generic-recon-3.2-angled-left",
       "category": "mandibular angle and ramus",
       "exact": false,
       "generic": true,
       "status_label": "Generic parametric approximation",
       "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
-      "mesh": "generic-recon-2.0-angled-left-24h.ply",
+      "mesh": "generic-recon-3.2-angled-left-24h.ply",
       "mesh_format": "ply",
       "units": "mm",
       "unit_scale": 1.0,
       "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
-      "thickness_mm": 2.0,
-      "width_mm": 7.0,
+      "thickness_mm": 3.2,
+      "width_mm": 7.5,
       "hole_count": 24,
       "hole_pitch_mm": 7.5,
-      "hole_diameter_mm": 2.4,
-      "seat_diameter_mm": 4.0,
+      "hole_diameter_mm": 2.6,
+      "seat_diameter_mm": 4.2,
       "locking": true,
       "thread_pitch_mm": 0.35,
       "notch": {
-        "depth_mm": 1.4,
-        "opening_mm": 2.2
+        "depth_mm": 1.8,
+        "opening_mm": 2.0
       },
       "edge_radius_mm": 0.3,
-      "length_mm": 179.5,
-      "extent_mm": 171.3211,
+      "length_mm": 180.0,
+      "extent_mm": 171.8211,
       "flat_hole_x_mm": [
         0.0,
         7.5,
@@ -8158,22 +8158,22 @@
       "material_id": "cp-ti-grade-4",
       "load_bearing": true,
       "dimension_sources": [
-        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Thickness of the square-segment plate measured with a caliper at 3.2 mm; the lobed plate is a 3.0 mm profile for 2.7 mm screws, as published for its plate line. Pitch and width are estimated from photographs; check them and edit this file.",
         "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 27.0,
-        "protected_radius_mm": 2.5,
+        "max_bend_deg_per_node": 16.0,
+        "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
       "marking": [
         {
           "text": "Ti4",
           "origin": [
-            -83.683893,
-            21.842301,
-            1.0
+            -83.796381,
+            21.708244,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -8186,14 +8186,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
-          "text": "2.0",
+          "text": "3.2",
           "origin": [
-            -79.873278,
-            18.644816,
-            1.0
+            -79.961085,
+            18.490048,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -8206,14 +8206,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
           "text": "AGL",
           "origin": [
-            -77.93856,
-            17.021394,
-            1.0
+            -78.051048,
+            16.887336,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -8226,14 +8226,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
           "text": "24H",
           "origin": [
-            -74.127945,
-            13.823909,
-            1.0
+            -74.215752,
+            13.669141,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -8246,51 +8246,51 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         }
       ],
-      "code": "AG20L-24H",
+      "code": "AG32L-24H",
       "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "audit": {
         "watertight": true,
         "outward": true,
         "genus": 24,
-        "triangles": 38108,
-        "points": 19008,
-        "volume_mm3": 1910.4139
+        "triangles": 45452,
+        "points": 22680,
+        "volume_mm3": 3150.9163
       },
       "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (left side). Fit bending insets in locking holes before contouring."
     },
     {
-      "id": "generic-recon-2.0-angled-right-18h",
-      "name": "Locking reconstruction plate 2.0, angled, right, 18 holes",
-      "family": "generic-recon-2.0-angled-right",
+      "id": "generic-recon-3.2-angled-right-18h",
+      "name": "Locking reconstruction plate, square segments, angled, right, 18 holes",
+      "family": "generic-recon-3.2-angled-right",
       "category": "mandibular angle and ramus",
       "exact": false,
       "generic": true,
       "status_label": "Generic parametric approximation",
       "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
-      "mesh": "generic-recon-2.0-angled-right-18h.ply",
+      "mesh": "generic-recon-3.2-angled-right-18h.ply",
       "mesh_format": "ply",
       "units": "mm",
       "unit_scale": 1.0,
       "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
-      "thickness_mm": 2.0,
-      "width_mm": 7.0,
+      "thickness_mm": 3.2,
+      "width_mm": 7.5,
       "hole_count": 18,
       "hole_pitch_mm": 7.5,
-      "hole_diameter_mm": 2.4,
-      "seat_diameter_mm": 4.0,
+      "hole_diameter_mm": 2.6,
+      "seat_diameter_mm": 4.2,
       "locking": true,
       "thread_pitch_mm": 0.35,
       "notch": {
-        "depth_mm": 1.4,
-        "opening_mm": 2.2
+        "depth_mm": 1.8,
+        "opening_mm": 2.0
       },
       "edge_radius_mm": 0.3,
-      "length_mm": 134.5,
-      "extent_mm": 126.3211,
+      "length_mm": 135.0,
+      "extent_mm": 126.8211,
       "flat_hole_x_mm": [
         0.0,
         7.5,
@@ -8600,22 +8600,22 @@
       "material_id": "cp-ti-grade-4",
       "load_bearing": true,
       "dimension_sources": [
-        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Thickness of the square-segment plate measured with a caliper at 3.2 mm; the lobed plate is a 3.0 mm profile for 2.7 mm screws, as published for its plate line. Pitch and width are estimated from photographs; check them and edit this file.",
         "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 27.0,
-        "protected_radius_mm": 2.5,
+        "max_bend_deg_per_node": 16.0,
+        "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
       "marking": [
         {
           "text": "Ti4",
           "origin": [
-            -57.23075,
-            -26.553475,
-            1.0
+            -57.118262,
+            -26.687532,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -8628,14 +8628,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
-          "text": "2.0",
+          "text": "3.2",
           "origin": [
-            -53.420135,
-            -23.355989,
-            1.0
+            -53.282966,
+            -23.469337,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -8648,14 +8648,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
           "text": "AGR",
           "origin": [
-            -51.485416,
-            -21.732568,
-            1.0
+            -51.372928,
+            -21.866625,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -8668,14 +8668,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
           "text": "18H",
           "origin": [
-            -47.674801,
-            -18.535082,
-            1.0
+            -47.537632,
+            -18.64843,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -8688,51 +8688,51 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         }
       ],
-      "code": "AG20R-18H",
+      "code": "AG32R-18H",
       "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "audit": {
         "watertight": true,
         "outward": true,
         "genus": 18,
-        "triangles": 28574,
-        "points": 14253,
-        "volume_mm3": 1428.3453
+        "triangles": 34088,
+        "points": 17010,
+        "volume_mm3": 2359.1153
       },
       "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (right side). Fit bending insets in locking holes before contouring."
     },
     {
-      "id": "generic-recon-2.0-angled-right-24h",
-      "name": "Locking reconstruction plate 2.0, angled, right, 24 holes",
-      "family": "generic-recon-2.0-angled-right",
+      "id": "generic-recon-3.2-angled-right-24h",
+      "name": "Locking reconstruction plate, square segments, angled, right, 24 holes",
+      "family": "generic-recon-3.2-angled-right",
       "category": "mandibular angle and ramus",
       "exact": false,
       "generic": true,
       "status_label": "Generic parametric approximation",
       "notice": "Generic parametric approximation - not manufacturer-specific and not for clinical device selection.",
-      "mesh": "generic-recon-2.0-angled-right-24h.ply",
+      "mesh": "generic-recon-3.2-angled-right-24h.ply",
       "mesh_format": "ply",
       "units": "mm",
       "unit_scale": 1.0,
       "coordinate_convention": "+z out of the outer face at the middle hole, the plate running along +x there; origin at the middle hole's centre",
-      "thickness_mm": 2.0,
-      "width_mm": 7.0,
+      "thickness_mm": 3.2,
+      "width_mm": 7.5,
       "hole_count": 24,
       "hole_pitch_mm": 7.5,
-      "hole_diameter_mm": 2.4,
-      "seat_diameter_mm": 4.0,
+      "hole_diameter_mm": 2.6,
+      "seat_diameter_mm": 4.2,
       "locking": true,
       "thread_pitch_mm": 0.35,
       "notch": {
-        "depth_mm": 1.4,
-        "opening_mm": 2.2
+        "depth_mm": 1.8,
+        "opening_mm": 2.0
       },
       "edge_radius_mm": 0.3,
-      "length_mm": 179.5,
-      "extent_mm": 171.3211,
+      "length_mm": 180.0,
+      "extent_mm": 171.8211,
       "flat_hole_x_mm": [
         0.0,
         7.5,
@@ -9138,22 +9138,22 @@
       "material_id": "cp-ti-grade-4",
       "load_bearing": true,
       "dimension_sources": [
-        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Thickness of the square-segment plate measured with a caliper at 3.2 mm; the lobed plate is a 3.0 mm profile for 2.7 mm screws, as published for its plate line. Pitch and width are estimated from photographs; check them and edit this file.",
         "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
       ],
       "deformation": {
         "min_bend_radius_mm": 12.0,
-        "max_bend_deg_per_node": 27.0,
-        "protected_radius_mm": 2.5,
+        "max_bend_deg_per_node": 16.0,
+        "protected_radius_mm": 2.6,
         "bendable": "at the notches between holes"
       },
       "marking": [
         {
           "text": "Ti4",
           "origin": [
-            -79.73075,
-            -26.553475,
-            1.0
+            -79.618262,
+            -26.687532,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -9166,14 +9166,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
-          "text": "2.0",
+          "text": "3.2",
           "origin": [
-            -75.920135,
-            -23.355989,
-            1.0
+            -75.782966,
+            -23.469337,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -9186,14 +9186,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
           "text": "AGR",
           "origin": [
-            -73.985416,
-            -21.732568,
-            1.0
+            -73.872928,
+            -21.866625,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -9206,14 +9206,14 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         },
         {
           "text": "24H",
           "origin": [
-            -70.174801,
-            -18.535082,
-            1.0
+            -70.037632,
+            -18.64843,
+            1.6
           ],
           "along": [
             0.766044443,
@@ -9226,19 +9226,19 @@
             1.0
           ],
           "height_mm": 0.9,
-          "max_length_mm": 2.2256
+          "max_length_mm": 2.1934
         }
       ],
-      "code": "AG20R-24H",
+      "code": "AG32R-24H",
       "provenance": "Generated by tools/make_plate_assets.py in this repository from published dimensional classes of reconstruction plates and miniplates (see dimension_sources). No manufacturer CAD, drawing or part geometry was used.",
       "licence": "CC0-1.0 (generated in-repo; no third-party rights)",
       "audit": {
         "watertight": true,
         "outward": true,
         "genus": 24,
-        "triangles": 38108,
-        "points": 19008,
-        "volume_mm3": 1910.4139
+        "triangles": 45452,
+        "points": 22680,
+        "volume_mm3": 3150.9163
       },
       "notes": "Square hole segments on short notched bridges; the 6-hole ramus limb turns 40 degrees in the plate's plane (right side). Fit bending insets in locking holes before contouring."
     },
@@ -9260,8 +9260,8 @@
       "width_mm": 8.5,
       "hole_count": 27,
       "hole_pitch_mm": 8.0,
-      "hole_diameter_mm": 2.6,
-      "seat_diameter_mm": 4.6,
+      "hole_diameter_mm": 2.8,
+      "seat_diameter_mm": 4.8,
       "locking": true,
       "thread_pitch_mm": 0.35,
       "notch": {
@@ -9730,22 +9730,22 @@
       "material_id": "cp-ti-grade-4",
       "load_bearing": true,
       "dimension_sources": [
-        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Absolute dimensions are estimates from photographs; check them against the specification of the plate you hold and edit this file.",
+        "Modelled on angled mandibular reconstruction plates handled in clinic: a ramus limb of 6 holes turned in the plate's own plane from a body of 12 or 18 holes, as left and right plates. Thickness of the square-segment plate measured with a caliper at 3.2 mm; the lobed plate is a 3.0 mm profile for 2.7 mm screws, as published for its plate line. Pitch and width are estimated from photographs; check them and edit this file.",
         "Reconstruction plates carry notches between screw holes so that they bend between holes rather than through them (AO technique teaching)."
       ],
       "deformation": {
         "min_bend_radius_mm": 15.0,
-        "max_bend_deg_per_node": 17.0,
-        "protected_radius_mm": 2.8,
+        "max_bend_deg_per_node": 16.0,
+        "protected_radius_mm": 2.9,
         "bendable": "at the notches between holes"
       },
       "marking": [
         {
           "text": "Ti4",
           "origin": [
-            -88.783759,
-            34.694668,
-            -12.189987
+            -88.824006,
+            34.665989,
+            -12.197579
           ],
           "along": [
             0.563635885,
@@ -9763,9 +9763,9 @@
         {
           "text": "3.0",
           "origin": [
-            -85.600791,
-            30.068748,
-            -11.589561
+            -85.641038,
+            30.040069,
+            -11.597153
           ],
           "along": [
             0.563635885,
@@ -9783,9 +9783,9 @@
         {
           "text": "AG",
           "origin": [
-            -84.274671,
-            28.141452,
-            -11.339406
+            -84.314919,
+            28.112773,
+            -11.346998
           ],
           "along": [
             0.563635885,
@@ -9803,9 +9803,9 @@
         {
           "text": "27H",
           "origin": [
-            -81.091704,
-            23.515532,
-            -10.738979
+            -81.131951,
+            23.486853,
+            -10.746572
           ],
           "along": [
             0.563635885,
@@ -9828,9 +9828,9 @@
         "watertight": true,
         "outward": true,
         "genus": 27,
-        "triangles": 48872,
-        "points": 24384,
-        "volume_mm3": 4230.8067
+        "triangles": 48530,
+        "points": 24213,
+        "volume_mm3": 4147.6718
       },
       "notes": "Round lobes, threaded locking holes, 3.0 mm profile: a 6-hole ramus limb turned 55 degrees and a gently curved body. Mirror it for the other side. Shape any further by press."
     }
