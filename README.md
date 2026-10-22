@@ -133,7 +133,7 @@ do publish is dimensions, and those are what these plates follow:
 | Primary reconstruction 1.5 | 1.5 × 6.0 mm | 7 mm | 1.5 mm plates for primary reconstruction, not load-bearing |
 | Miniplate 2.0 | 1.0 × 4.3 mm | 6 mm | FE studies: 2.0 4-hole miniplate, 26 × 4.3 × 1.0 mm |
 | Preformed body, angle, hemimandibular (5 + 17), full mandibular (6 + 13 + 6) | as their straight family | | published preformed configurations |
-| Angled locking reconstruction, square segments, left and right (6 + 12, 6 + 18 holes) | 3.2 × 7.5 mm, square segments on notched bridges, 2.4 mm screws | 7.5 mm | angled plates handled in clinic; thickness by caliper (3.2 mm), 40° ramus turn; pitch and width from photographs |
+| Angled locking reconstruction, square segments, left and right (6 + 12, 6 + 18 holes) | 2.5 × 7.5 mm, square segments on notched bridges, 2.4/2.9 mm locking screws | 7.5 mm | published 2.5 mm thickness and screws of its plate line; 40° ramus turn; pitch and width from photographs |
 | Angled locking reconstruction, 3.0 mm profile (6 + 21 holes) | 3.0 × 8.5 mm, round lobes, 2.7 mm screws | 8 mm | published 3.0 mm profile and 2.7 mm screws of its plate line; 55° ramus turn, curved body; pitch and width from photographs |
 
 Each is built the way real plates are: straight parallel edges with small
