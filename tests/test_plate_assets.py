@@ -224,14 +224,22 @@ def test_the_mesh_has_the_thickness_it_claims(catalogue):
 
 
 def test_hole_centres_are_a_pitch_apart(catalogue):
+    """Each pair of holes as far apart as on the flat plate: the pitch, or a
+    longer gap where the plate has one (a bar between holes, or the corner
+    of an angled plate as its maker draws it)."""
     for asset in catalogue:
-        if asset.hole_count < 3 or "bridged" in asset.name:
+        if asset.hole_count < 3:
             continue
         spacing = hole_spacings_mm(asset.hole_centres_mm)
+        flat = np.diff(np.asarray(asset.flat_hole_x_mm, dtype=float))
+        if not len(flat):
+            flat = np.full(len(spacing), asset.hole_pitch_mm)
+        if "bridged" not in asset.name and asset.brand == "Generic":
+            assert np.allclose(flat, asset.hole_pitch_mm, atol=1e-6), asset.id
         # Preformed plates measure a chord across each pitch of arc, so the
-        # straight-line spacing is a shade under the nominal pitch.
-        assert spacing.max() <= asset.hole_pitch_mm + 1e-6, asset.id
-        assert spacing.min() > asset.hole_pitch_mm * 0.99, asset.id
+        # straight-line spacing is a shade under the flat one.
+        assert np.all(spacing <= flat + 1e-6), asset.id
+        assert np.all(spacing > flat * 0.99), asset.id
 
 
 # -- units ----------------------------------------------------------------

@@ -141,13 +141,18 @@ their dimensions came from:
 
 | brand › shape | holes | section | pitch | measured from |
 | --- | --- | --- | --- | --- |
-| KLS Martin LevelOne › Reconstruction plate 2.7, angled, left / right (green) | 26: 6-hole ramus limb at 55°, 7 straight, then a further 28° | 3.0 mm profile, round lobes 7.6 mm, waist 4.7 mm, bore 3.2 mm, 2.7 mm locking screws | 7.95 mm | the catalogue's 1:1 drawings (LevelOne Fixation 2.0–2.7, 90-442-02-04) |
+| KLS Martin LevelOne › 32 shapes, 53 plates (green): miniplates 1.0, fracture plates 1.5 and 2.0, primary reconstruction plates 2.0 and 2.5, reconstruction plates 2.7 (3.0 mm profile); straight, angled (left / right), double-angled 6 + n + 6 and contoured | as the catalogue lists | 1.0–3.0 mm profiles, round lobes and waists as drawn, threaded holes | 4.0–8.0 mm | each plate's 1:1 drawing in the LevelOne Fixation 2.0–2.7 catalogue (90-442-02-04): hole centres, and so the shape, pitch, lobe, waist and bore, measured off it; data in `tools/data/kls_levelone.json` |
 | DePuy Synthes MatrixMANDIBLE › Angle reconstruction plate 2.8, left / right (gold) | 7 × 23, ramus limb at 55° | 2.8 mm, round lobes 8.5 mm, waist 6.0 mm, 2.9 mm locking screws | 8.5 mm | the technique guide's drawings (DSUSCMF04140034), scaled so the bore passes a 2.9 mm screw |
 | DePuy Synthes MatrixMANDIBLE › Reconstruction plate 2.8, straight (gold) | 12, 20 | as above | 8.5 mm | as above |
 | DePuy Synthes (plate in hand) › Angled reconstruction plate, square segments, left / right (gold) | 6 + 12, 6 + 18, ramus limb at 54° | raised square segments 3.2 mm (caliper) on 2.5 mm bridges (estimate), 7.4 mm wide | 8.4 mm | photographs of the plate, scaled by the KLS Martin plate beside it |
 
 None of these is the manufacturer's CAD; each is drawn from the figures its
-sources give, and the remaining estimates are named there.
+sources give, and the remaining estimates are named there. Not modelled from the KLS
+Martin catalogue: the ThreadLock TS smart 3-D preformed plates (drawn in
+perspective, so a flat drawing does not give their shape), the branched
+12-hole miniplates, two curved miniplates whose drawn hole count does not
+match their article number, and the temporary condylar attachments. The seat
+diameter of every KLS plate is estimated from its bore.
 
 Each is built the way real plates are: straight parallel edges with small
 notches between holes (where the plate is meant to bend), rounded ends,

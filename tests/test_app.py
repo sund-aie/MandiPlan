@@ -738,9 +738,15 @@ def test_plates_are_chosen_by_brand_then_shape_then_length(window):
     assert "DePuy Synthes MatrixMANDIBLE" in brands
     panel.brand_box.setCurrentIndex(panel.brand_box.findData("KLS Martin LevelOne"))
     shapes = [panel.family_box.itemText(i) for i in range(panel.family_box.count())]
-    assert shapes == ["Reconstruction plate 2.7, angled, left", "Reconstruction plate 2.7, angled, right"]
     assert window.session.plate_asset.brand == "KLS Martin LevelOne"
+    # The catalogue's range: miniplates to double-angled reconstruction plates.
+    assert any(s.startswith("Miniplate") for s in shapes)
+    wanted = "Reconstruction plate 2.7, angled 6 + 20, 56\u00b0, left, 3.0 mm profile"
+    assert wanted in shapes
+    panel.family_box.setCurrentIndex(shapes.index(wanted))
     assert window.session.plate_asset.hole_count == 26
+    lengths = [panel.model_box.itemText(i) for i in range(panel.model_box.count())]
+    assert lengths and lengths[0].startswith("26 holes")
     assert window.session.plate_asset.colour != window.session.plate_asset.__class__.colour
     # A plate chosen elsewhere brings its brand with it.
     window.session.set_plate_asset("generic-recon-2.4-lock-16h")

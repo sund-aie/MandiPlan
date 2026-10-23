@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import math
 import sys
 from dataclasses import dataclass, field
@@ -119,6 +120,10 @@ class Family:
     hole_elongation_mm: float = 0.0
     #: Height of the etched lettering, mm.
     marking_height_mm: float = 0.9
+    #: Per layout suffix, the heading of each gap between holes in the
+    #: plate's own plane, deg, relative to the first: an in-plane shape
+    #: measured off a drawing, used instead of ``preform``.
+    path_headings: dict = field(default_factory=dict)
     colour_rgb: tuple[float, float, float] = (0.722, 0.733, 0.757)
 
 
@@ -438,30 +443,117 @@ def _matrix_angle(side: str, sign: float) -> Family:
     )
 
 
-def _levelone_angled(side: str, sign: float) -> Family:
-    return Family(
-        family=f"levelone-2.7-angled-{side}",
-        name=f"Reconstruction plate 2.7, angled, {side}",
-        category="mandibular angle and ramus",
-        section=LEVELONE_27,
-        layouts=[("26h", evenly(26, 7.95))],
-        preform=(("turn", 5, 7, sign * 55.0), ("turn", 13, 18, sign * 28.0)),
-        material_id="cp-ti-grade-4",
-        load_bearing=True,
-        sources=(SRC_LEVELONE,),
-        min_bend_radius_mm=15.0,
-        notes=(
-            "Round lobes, threaded locking holes for 2.7 mm screws, 3.0 mm "
-            "profile: a 6-hole ramus limb turned 55 degrees, 7 holes of straight "
-            "body, then a further 28 degree turn toward the chin."
-        ),
-        marking=("Ti", "3.0"),
-        code="L027" + side[0].upper(),
-        brand="KLS Martin LevelOne",
-        shape=f"Reconstruction plate 2.7, angled, {side}",
-        colour_rgb=LEVELONE_GREEN,
-        lobe_waist_mm=4.7,
-    )
+KLS_DATA = Path(__file__).resolve().parent / "data" / "kls_levelone.json"
+KLS_CATEGORY = {  # catalogue page -> (plate line, category, load-bearing)
+    **{p: ("Miniplate", "miniplate", False) for p in (12, 13)},
+    **{p: ("Fracture plate", "fracture plate", False) for p in (14, 15)},
+    **{p: ("Primary reconstruction plate", "primary reconstruction", False) for p in range(16, 22)},
+    **{p: ("Reconstruction plate 2.7", "reconstruction bar", True) for p in range(30, 36)},
+}
+
+
+def _kls_kind(headings) -> tuple[str, list[int]]:
+    """``(kind, holes per straight run)`` of an in-plane shape from its gap
+    headings: a turn is a run of holes turning the same way by over 4 deg
+    each, 15 deg in all."""
+    h = np.asarray(headings, dtype=float)
+    turn = np.diff(np.concatenate([[0.0], h]))
+    runs, current = [], []
+    for i, t in enumerate(turn):
+        if abs(t) > 4.0 and (not current or np.sign(t) == np.sign(turn[current[-1]])):
+            current.append(i)
+            continue
+        if current:
+            runs.append(current)
+        current = [i] if abs(t) > 4.0 else []
+    if current:
+        runs.append(current)
+    splits = [r[0] + 1 for r in runs if abs(turn[r].sum()) >= 15.0]
+    counts = list(np.diff([0, *splits, len(h) + 1]).astype(int))
+    if not splits:
+        return ("straight" if abs(h[-1]) < 8.0 else "curved"), counts
+    return {1: "angled", 2: "double-angled"}.get(len(splits), "contoured"), counts
+
+
+def _kls_families() -> tuple[Family, ...]:
+    data = json.loads(KLS_DATA.read_text(encoding="utf-8"))
+    groups: dict[str, dict] = {}
+    for d in data["designs"]:
+        line, category, load = KLS_CATEGORY[d["page"]]
+        headings = np.asarray(d["headings"], dtype=float)
+        kind, counts = _kls_kind(headings)
+        total = abs(float(headings[-1]))
+        layout = counts
+        # One drawing, one side: the label sits beside only one of its articles.
+        design_side = next((a["side"] for a in d["articles"] if a["side"]), "")
+        for art in d["articles"]:
+            profile, side = float(art["profile"]), design_side
+            key = f"{line}|{profile}|{kind}|{len(counts)}|{round(total / 10.0)}|{side}"
+            g = groups.setdefault(key, {"line": line, "category": category, "load": load, "profile": profile,
+                                        "kind": kind, "side": side, "total": total, "designs": []})
+            if all(x[0]["holes"] != d["holes"] for x in g["designs"]):
+                g["designs"].append((d, headings, art["article"], layout))
+    families = []
+    for g in groups.values():
+        designs = sorted(g["designs"], key=lambda x: x[0]["holes"])
+        d0 = designs[0][0]
+        lobe = float(np.median([x[0]["lobe"] for x in designs]))
+        waist = float(np.median([x[0]["waist"] for x in designs]))
+        bore = float(np.median([x[0]["hole"] for x in designs]))
+        pitch = float(np.median([x[0]["pitch"] for x in designs]))
+        t = g["profile"]
+        edge = 0.15 if t <= 1.0 else 0.3 if t < 3.0 else 0.4
+        seat = min(bore + 1.6, lobe - 2.0 * (edge + 0.35))
+        section = Section(t, round(lobe, 2), round(pitch, 3), HoleSpec(round(bore, 2), round(seat, 2), locking=True),
+                          NotchSpec(0.8, 2.0), edge)
+        sides = f", {g['side']}" if g["side"] else ""
+        kind = g["kind"]
+        # Holes per straight run; a run that differs between lengths is "n".
+        runs = [x[3] for x in designs]
+        pattern = " + ".join(
+            str(col[0]) if len(set(col)) == 1 else "n" for col in zip(*runs)
+        ) if len({len(r) for r in runs}) == 1 else ""
+        detail = "" if kind == "straight" else f" {pattern}, {g['total']:.0f}\u00b0" if len(runs[0]) > 1 else f", {g['total']:.0f}\u00b0"
+        shape = f"{g['line']}, {kind}{detail}{sides}, {t:.1f} mm profile"
+        slug = re.sub(r"[^a-z0-9]+", "-", f"{g['line']} {t:g} {kind} {pattern} {g['total']:.0f} {g['side']}".lower()).strip("-")
+        layouts, path = [], {}
+        for d, headings, article, layout in designs:
+            gaps = np.asarray(d["gaps"], dtype=float)
+            even = np.abs(gaps - pitch) < 0.15 * pitch
+            # Gaps the drawing shows longer than the pitch (across a bend, or
+            # a bar between holes) are kept as drawn.
+            suffix = f"{d['holes']}h"
+            x = np.concatenate([[0.0], np.cumsum(np.where(even, pitch, gaps))])
+            layouts.append((suffix, tuple(float(v) for v in x)))
+            path[suffix] = tuple(float(v) for v in headings)
+        articles = ", ".join(f"{x[2]}-09 ({x[0]['holes']} holes)" for x in designs)
+        families.append(Family(
+            family=f"levelone-{slug}",
+            name=shape,
+            category=g["category"],
+            section=section,
+            layouts=layouts,
+            material_id="cp-ti-grade-2" if t <= 1.0 else "cp-ti-grade-4",
+            load_bearing=g["load"],
+            sources=(
+                f"{data['source']}: page {d0['page']}, articles {articles}. Hole centres, pitch, "
+                f"lobe ({lobe:.2f} mm), waist ({waist:.2f} mm), bore ({bore:.2f} mm) and the in-plane "
+                f"shape measured off the 1:1 drawing; plate profile {t:g} mm as listed. The seat "
+                f"diameter is estimated.",
+            ),
+            min_bend_radius_mm=15.0 if t >= 3.0 else 10.0 if t >= 2.0 else 6.0,
+            notes=(
+                f"KLS Martin LevelOne {g['line'].lower()}, {t:g} mm profile, {kind}{sides}. "
+                + ("Load-bearing." if g["load"] else "NOT load-bearing.")
+            ),
+            code=f"L1-{slug[:18].upper()}",
+            brand="KLS Martin LevelOne",
+            shape=shape,
+            colour_rgb=tuple(float(c) for c in d0["colour"]),
+            lobe_waist_mm=round(waist, 2),
+            path_headings=path,
+        ))
+    return tuple(families)
 
 
 FAMILIES = FAMILIES + (
@@ -487,9 +579,7 @@ FAMILIES = FAMILIES + (
         colour_rgb=GOLD,
         lobe_waist_mm=5.95,
     ),
-    _levelone_angled("left", 1.0),
-    _levelone_angled("right", -1.0),
-)
+) + _kls_families()
 
 # -- meshing ----------------------------------------------------------------
 
@@ -625,6 +715,16 @@ def _rotate(v, axis, angle):
     axis = axis / np.linalg.norm(axis)
     return (v * math.cos(angle) + np.cross(axis, v) * math.sin(angle)
             + axis * float(np.dot(axis, v)) * (1.0 - math.cos(angle)))
+
+
+def heading_stations(hole_x, headings_deg):
+    """Hole centres of a plate shaped in its own plane: each gap runs
+    straight at its heading, deg. Face normals stay +z."""
+    xs = np.asarray(hole_x, dtype=float)
+    h = np.radians(np.asarray(headings_deg, dtype=float))
+    steps = np.diff(xs)[:, None] * np.column_stack([np.cos(h), np.sin(h), np.zeros(len(h))])
+    stations = np.vstack([np.zeros(3), np.cumsum(steps, axis=0)])
+    return stations, np.tile([0.0, 0.0, 1.0], (len(xs), 1))
 
 
 def preform_stations(hole_x, program):
@@ -769,8 +869,12 @@ def build(family: Family, suffix: str, hole_x):
         family.marking + ((f"{len(xs)}H",) if family.brand == "Generic" else ()) if family.marking else (),
         family.marking_height_mm,
     )
-    if family.preform:
-        stations, normals = preform_stations(xs, family.preform)
+    headings = family.path_headings.get(suffix)
+    if family.preform or headings is not None:
+        if headings is not None:
+            stations, normals = heading_stations(xs, headings)
+        else:
+            stations, normals = preform_stations(xs, family.preform)
         extra = []
         for anchor in anchors:
             o = np.asarray(anchor["origin"])
