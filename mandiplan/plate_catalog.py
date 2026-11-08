@@ -68,6 +68,30 @@ class PlateSystem:
 
 
 @dataclass(frozen=True)
+class ToolHead:
+    """The working end of a bender, in millimetres, as the bending keys need it.
+
+    ``kind`` is "three_point" (a post on one side of the plate, two lobes on the
+    other, with an arch between them), "lever" (irons or forceps that grip the
+    plate either side of a bridge), or "none" (a template, with nothing to press).
+    """
+
+    kind: str = "three_point"
+    post_diameter_mm: float = 17.0
+    #: Between the lowest points of the two lobes.
+    lobe_spacing_mm: float = 32.0
+    lobe_radius_mm: float = 7.2
+    #: The arch's height above the lobes' lowest points, and its radius.
+    arch_rise_mm: float = 9.2
+    arch_radius_mm: float = 11.3
+    #: How deep the plate can go into the head, along the post.
+    pocket_depth_mm: float = 12.0
+    #: At its widest, how far below the lobes' lowest points the post's top falls.
+    opening_mm: float = 7.0
+    source: str = ""
+
+
+@dataclass(frozen=True)
 class BendingKit:
     id: str
     name: str
@@ -88,6 +112,7 @@ class BendingKit:
     hole_protection: float = 0.0
     #: What the plate looks like after this kit has been on it.
     signature: str = ""
+    head: ToolHead = ToolHead(kind="lever")
 
     def can_make(self, bend_kind: str) -> bool:
         return bend_kind in self.handles
@@ -164,6 +189,7 @@ def load_kits() -> tuple[BendingKit, ...]:
             grip_span_mm=float(entry["grip_span_mm"]),
             max_angle_per_pass_deg=float(entry["max_angle_per_pass_deg"]),
             can_twist=bool(entry["can_twist"]),
+            head=ToolHead(**entry.get("head", {"kind": "lever"})),
             marking=entry["marking"],
             notes=entry.get("notes", ""),
             bending_insets=bool(entry.get("bending_insets", False)),

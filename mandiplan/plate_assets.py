@@ -379,12 +379,22 @@ def load_asset_mesh(asset: PlateAsset) -> Mesh:
     return _cached_mesh(str(asset.mesh_path), asset.unit_scale, asset.extent_mm)
 
 
+#: What ``hole_length_mm`` has read, by asset: it only needs reading once.
+_HOLE_LENGTHS: dict[str, float] = {}
+
+
 def hole_length_mm(asset: PlateAsset) -> float:
     """How long the asset's screw holes are along the plate, mm, read off its mesh.
 
     An oval hole is longer along the plate than ``hole_diameter_mm``, its width.
     Measured at the bone face of the hole in the middle of the plate.
     """
+    if asset.id not in _HOLE_LENGTHS:
+        _HOLE_LENGTHS[asset.id] = _read_hole_length(asset)
+    return _HOLE_LENGTHS[asset.id]
+
+
+def _read_hole_length(asset: PlateAsset) -> float:
     middle = len(asset.hole_centres_mm) // 2
     centre = asset.hole_centres_mm[middle]
     axis = asset.hole_axes[middle] / np.linalg.norm(asset.hole_axes[middle])

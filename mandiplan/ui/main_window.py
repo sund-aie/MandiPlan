@@ -530,7 +530,8 @@ class MainWindow(QMainWindow):
             "the junctions or brush on the jaw (key 7).\n"
             "5  Plate: pick the plate; it places itself, and a sign says if it will do. Read the "
             "verdict.\n"
-            "6  Export: the jaw, the bent plate, the bending guide and the tables.\n\n"
+            "6  Export: the jaw in parts for your printer, the bent plate, a printed key for each bend, "
+            "and the tables.\n\n"
             "Mouse: left-drag rotates, right-drag zooms, middle-drag pans; in Refine "
             "jaw mode left-drag sculpts and right-drag rotates. Ctrl+Z undoes.",
         )
@@ -890,7 +891,9 @@ class MainWindow(QMainWindow):
         }[key]()
 
     def export_bending_guide(self) -> None:
-        """Export the comb bending guide and its bridge table."""
+        """Export the bend keys, ready to print, and their table."""
+        from .print_setup import KeysPrinterDialog
+
         try:
             guide = self.session.bending_guide()
         except ValueError as error:
@@ -898,21 +901,30 @@ class MainWindow(QMainWindow):
             return
         if guide is None:
             return
+        if not guide.keys:
+            self.show_message("This plate needs no bends here, so it needs no keys.")
+            return
+        setup = KeysPrinterDialog(self.session, self)
+        if not setup.exec():
+            return
+        setup.choice.remember(self.session)
         asset = self.session.active_plate_asset
-        default = f"{asset.id}-bending-guide.stl" if asset else "bending_guide.stl"
+        default = f"{asset.id}-bending-keys.stl" if asset else "bending_keys.stl"
         path = self._save_path("Export bending guide", "STL files (*.stl)", default)
         if not path:
             return
         self.set_busy(True)
         try:
-            stl, table = write_bending_guide(path, guide, asset)
+            stl, table = write_bending_guide(
+                path, guide, asset, bed=setup.choice.build_mm(), printer_name=setup.choice.printer.currentText()
+            )
         except (ValueError, OSError) as error:
             self.show_message(f"Could not export the guide: {error}")
             return
         finally:
             self.set_busy(False)
         self.session.note_export("bending guide")
-        self.show_message(f"Bending guide written to {stl}; bend-by-bend table in {table.name}")
+        self.show_message(f"Bend keys written to {stl}; the order and what to do with each in {table.name}")
 
     def export_plate_stl(self) -> None:
         """Export the fitted plate: the real asset mesh, as displayed."""
@@ -962,6 +974,7 @@ class MainWindow(QMainWindow):
         setup = PrintSetupDialog(session, self)
         if not setup.exec():
             return
+        setup.choice.remember(session)
         folder = QFileDialog.getExistingDirectory(self, "Save print kit inside folder")
         if not folder:
             return

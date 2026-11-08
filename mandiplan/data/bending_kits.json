@@ -14,6 +14,38 @@
   ],
   "kits": [
     {
+      "id": "synthes-329-142",
+      "name": "DePuy Synthes bending pliers with nose (329.142)",
+      "instruments": [
+        "bending pliers with nose (329.142)"
+      ],
+      "handles": [
+        "in_plane",
+        "out_of_plane"
+      ],
+      "grip_span_mm": 32.0,
+      "max_angle_per_pass_deg": 30.0,
+      "can_twist": false,
+      "marking": "Rest the arch over the key, the post under the plate.",
+      "notes": "Made by DePuy Synthes for pure titanium plates 2.4 and 2.7. Their guide bends in-plane first, then out-of-plane.",
+      "bending_insets": false,
+      "insets_available": true,
+      "bend_localisation_mm": 8.0,
+      "hole_protection": 0.0,
+      "signature": "A short even curve over the post, when the post sits on the bridge between two holes.",
+      "head": {
+        "kind": "three_point",
+        "post_diameter_mm": 17.0,
+        "lobe_spacing_mm": 32.0,
+        "lobe_radius_mm": 7.2,
+        "arch_rise_mm": 9.2,
+        "arch_radius_mm": 11.3,
+        "pocket_depth_mm": 12.0,
+        "opening_mm": 7.0,
+        "source": "estimated from one photograph, scaled by the plate engraved on the head; measure yours"
+      }
+    },
+    {
       "id": "bending-irons",
       "name": "Bending irons (two-handled pair)",
       "instruments": [
@@ -33,7 +65,10 @@
       "insets_available": true,
       "bend_localisation_mm": 9.0,
       "hole_protection": 0.0,
-      "signature": "A broad, even curve. The wide grip spreads the bend over roughly a screw-hole pitch, so no single point takes it all \u2014 but any hole inside the grip is strained with the bar unless insets are fitted."
+      "signature": "A broad, even curve. The wide grip spreads the bend over roughly a screw-hole pitch, so no single point takes it all — but any hole inside the grip is strained with the bar unless insets are fitted.",
+      "head": {
+        "kind": "lever"
+      }
     },
     {
       "id": "bending-pliers",
@@ -54,7 +89,18 @@
       "insets_available": true,
       "bend_localisation_mm": 5.0,
       "hole_protection": 0.0,
-      "signature": "A tight, local kink at the middle jaw. Precise between holes, and the worst offender through one: the bend is concentrated into a few millimetres."
+      "signature": "A tight, local kink at the middle jaw. Precise between holes, and the worst offender through one: the bend is concentrated into a few millimetres.",
+      "head": {
+        "kind": "three_point",
+        "post_diameter_mm": 8.0,
+        "lobe_spacing_mm": 14.0,
+        "lobe_radius_mm": 3.0,
+        "arch_rise_mm": 4.0,
+        "arch_radius_mm": 6.0,
+        "pocket_depth_mm": 12.0,
+        "opening_mm": 8.0,
+        "source": "typical proportions, not measured"
+      }
     },
     {
       "id": "bar-bending-press",
@@ -75,7 +121,18 @@
       "insets_available": true,
       "bend_localisation_mm": 12.0,
       "hole_protection": 0.92,
-      "signature": "A smooth, repeatable arc with the holes held by press insets. The most predictable result and the kindest to threaded holes; least able to make a fine local adjustment."
+      "signature": "A smooth, repeatable arc with the holes held by press insets. The most predictable result and the kindest to threaded holes; least able to make a fine local adjustment.",
+      "head": {
+        "kind": "three_point",
+        "post_diameter_mm": 10.0,
+        "lobe_spacing_mm": 26.0,
+        "lobe_radius_mm": 4.0,
+        "arch_rise_mm": 0.0,
+        "arch_radius_mm": 40.0,
+        "pocket_depth_mm": 20.0,
+        "opening_mm": 25.0,
+        "source": "typical proportions, not measured"
+      }
     },
     {
       "id": "twisting-forceps",
@@ -96,7 +153,10 @@
       "insets_available": false,
       "bend_localisation_mm": 18.0,
       "hole_protection": 0.0,
-      "signature": "A twist distributed along the gripped span. Holes inside the span are sheared rather than stretched, which skews them into a rhomboid instead of an oval."
+      "signature": "A twist distributed along the gripped span. Holes inside the span are sheared rather than stretched, which skews them into a rhomboid instead of an oval.",
+      "head": {
+        "kind": "lever"
+      }
     },
     {
       "id": "template-wire",
@@ -118,7 +178,10 @@
       "insets_available": false,
       "bend_localisation_mm": 25.0,
       "hole_protection": 0.0,
-      "signature": "Freehand. Very smooth, entirely operator-dependent, and the hardest to reproduce; the bend distributes over a long span so individual holes see little strain."
+      "signature": "Freehand. Very smooth, entirely operator-dependent, and the hardest to reproduce; the bend distributes over a long span so individual holes see little strain.",
+      "head": {
+        "kind": "none"
+      }
     }
   ]
 }

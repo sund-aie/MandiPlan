@@ -1,4 +1,4 @@
-"""The mandible as a set of printable parts that connect with pegs.
+"""The mandible as a set of printable parts, joined by plug and socket, ready to print.
 
 All inputs are patient millimetres. The jaw is split only if the chosen printer
 needs it, along the arch and not along a straight axis, so each part is a run of
@@ -7,21 +7,24 @@ and no cut comes near it: the working side and the resection on it, or, on a
 printer too small for a whole side, the resection and the bone either side of it
 that the plate is fixed to.
 
-A cut is flat, square to the jaw, and two parts join face to face. One part has
-two round pegs standing out of its face, the other two holes to take them: of
-different sizes, so they only go together one way. The pegs go on the part
-further from the working section, so a broken peg costs a small reprint.
+A cut is flat and two parts join face to face. One part runs on past its face as a
+long plug, the jaw's own section drawn in by a wall of bone; the other has the socket
+that plug fills. That is far more bone across the joint than any peg could be, and
+pressing on the assembled jaw bends the plug as a whole. It has only the one way in,
+and cannot turn. The plug goes on the part further from the working section, so a
+broken one costs a small reprint.
 
 An isosurface of real bone is hollow: thin cortex round a darker marrow, so
-there is nothing for a peg to stand in. The parts are therefore built from the
-jaw as a solid, filled on a grid and contoured again, and every vertex of the
-result is then moved back onto the scan's own surface. The outside of the part
+there is nothing for a plug or a socket to stand in. The parts are therefore built
+from the jaw as a solid, filled on a grid and contoured again, and every vertex of
+the result is then moved back onto the scan's own surface. The outside of the part
 is the scan's surface, to within the grid's facets, and its inside is solid.
 
 Each part is laid with the side to keep best facing up: on the resection's part,
 the outer face at the resection, which then never touches a support and is
-finished as a top surface. Stems meet it from below. They keep off the outer face
-of the working section altogether, and clear of the resection and of the cut
+finished as a top surface. The rods and raft that hold it are in the file with it
+(``render/supports.py``), ready for the printer. They keep off the outer face of the
+working section altogether, and clear of the resection and of the joints' mating
 faces. Nothing is written unless the whole kit checks.
 """
 
@@ -38,10 +41,19 @@ import vtk
 from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
 from .exporting import write_surface_stl
+from .render import supports as rods
+from .render.bending_guide_mesh import thinned
 
 #: Build volumes, mm, as published for each machine. "Custom" is always there
 #: too; check your own machine's usable volume.
 PRINTERS = {
+    "Asiga MAX": (119.0, 67.0, 75.0),
+    "Asiga MAX X35": (67.2, 37.8, 75.0),
+    "Asiga PRO 4K45": (122.0, 69.0, 200.0),
+    "Asiga PRO 4K65": (176.5, 99.0, 200.0),
+    "Asiga PRO 4K80": (217.0, 122.0, 200.0),
+    "Asiga ULTRA 32": (121.0, 68.0, 145.0),
+    "Asiga ULTRA 50": (192.0, 108.0, 145.0),
     "Original Prusa MINI+": (180.0, 180.0, 180.0),
     "Original Prusa MK4S": (250.0, 210.0, 220.0),
     "Bambu Lab A1 mini": (180.0, 180.0, 180.0),
@@ -57,8 +69,6 @@ PRINTERS = {
 BED_MARGIN = 2.0
 #: How far a seam keeps from the protected stretch, along the jaw, mm.
 PROTECT_MM = 6.0
-#: Height of the part above the bed on stems, mm.
-SUPPORT_LIFT = 3.0
 #: Grid the solid is built on, mm, and the smoothing of its surface, voxels. The
 #: part's outside is then put back on the scan's surface, so this sets the facets.
 GRID_MM = 0.3
@@ -71,26 +81,52 @@ MARROW_DEPTH_MM = 0.6
 #: it, on the far side of the arch that the same plane also crosses, only the
 #: position along the jaw does.
 SEAM_NEAR_MM = 40.0
-#: Stems keep this far from the resection, and from a cut face, mm.
-STEM_CLEAR_MM = 8.0
+#: Rods keep this far from the resection, mm, and this much clear of a joint's faces.
+ROD_CLEAR_OF_CUT_MM = 8.0
+ROD_CLEAR_OF_JOINT_MM = 1.5
+#: A surface facing this much along the jaw's outward direction is its outer face.
+OUTER_FACE_COS = 0.2
 #: Pieces shorter than this along the jaw are not worth having, mm.
 MIN_PIECE_MM = 14.0
 MAX_PIECES = 10
 #: Loose bits under this are dropped from a piece, mm3.
 MIN_FRAGMENT_MM3 = 5.0
-#: How far a peg reaches past the end of a part, along the jaw, at most, mm.
-JOINT_REACH_MM = 9.0
-#: The connectors. Radii of the large and small peg, largest that the bone there
-#: will take; how long they stand, how much deeper the hole, the chamfer on the
-#: tip that lets it find the hole, and the least bone left round a hole, mm.
-PEG_RADII_MM = ((2.0, 1.5), (1.5, 1.1), (1.1, 0.8))
-PEG_LENGTH_MM = 6.0
-HOLE_EXTRA_DEPTH_MM = 0.5
-PEG_LEAD_IN_MM = 0.4
-PEG_WALL_MM = 1.0
-#: The fit test print: clearances tried, and the size of its blocks, mm.
-FIT_TEST_CLEARANCES_MM = (0.1, 0.2, 0.3)
-FIT_TEST_LENGTH_MM = 10.0
+#: The joint: the jaw's own section carried on from one part as a long plug, into a
+#: socket in the next. How long a plug is tried, longest first, and how much bone is
+#: left round the socket, thickest first, mm.
+PLUG_LENGTHS_MM = (16.0, 12.0, 9.0)
+PLUG_WALLS_MM = (2.0, 1.5)
+#: A longer plug is taken if it keeps this share of the strength of the strongest, and
+#: a thicker wall if it keeps this share of the strength of a thinner one.
+PLUG_STRENGTH_SHARE = 0.85
+THICK_WALL_SHARE = 0.85
+#: How far a joint's axis may lean from the chord of the jaw, to find the strongest
+#: straight run through the bone: the tangents tried, each way.
+AXIS_LEAN_TANGENTS = tuple(float(np.tan(np.radians(a))) for a in (0.0, -7.0, 7.0, -14.0, 14.0))
+#: How much the plug's sides lean in, mm per mm: enough to find its way in and no more
+#: than to stay long and full.
+PLUG_TAPER = float(np.tan(np.radians(2.0)))
+#: The chamfer round its tip, how much deeper the socket is than the plug is long, the
+#: chamfer round the socket's mouth, and the bone left past its floor, mm.
+PLUG_TIP_CHAMFER_MM = 0.6
+SOCKET_EXTRA_DEPTH_MM = 0.6
+SOCKET_MOUTH_CHAMFER_MM = 0.4
+SOCKET_FLOOR_MM = 2.0
+#: The least a plug may be, at its base, across its narrowest and in area, mm, mm2.
+MIN_PLUG_HALF_WIDTH_MM = 1.5
+MIN_PLUG_AREA_MM2 = 20.0
+#: A place to split is preferred over the first that fits if it is this much stronger.
+#: How finely the jaw is searched for one, mm.
+PREFER_STRONGER_SHARE = 1.3
+STRONGER_SEARCH_STEP_MM = 4.0
+#: How far a plug reaches past the end of a part, along the jaw, at most, mm.
+JOINT_REACH_MM = max(PLUG_LENGTHS_MM) + 1.0
+#: The fit test print: clearances tried, how long its plugs stand, and how thick its
+#: bases and the floors of its sockets are, mm.
+FIT_TEST_CLEARANCES_MM = (0.1, 0.15, 0.2)
+FIT_TEST_PLUG_MM = 6.0
+FIT_TEST_BASE_MM = 2.5
+FIT_TEST_GRID_MM = 0.15
 #: On a printer too small for the whole working side, the resection and this much
 #: bone either side of it, along the jaw, stay in one part, mm.
 RESECTION_FIXATION_MM = 25.0
@@ -117,6 +153,9 @@ class _Route:
             out[i : i + chunk] = self.s[np.argmin(d2, axis=1)]
         return out
 
+    def at(self, s: float) -> np.ndarray:
+        return np.array([np.interp(s, self.s, self.points[:, c]) for c in range(3)])
+
     def tangent(self, s: float) -> np.ndarray:
         i = int(np.clip(np.searchsorted(self.s, s), 1, len(self.s) - 2))
         t = self.points[i + 1] - self.points[i - 1]
@@ -134,62 +173,112 @@ class _Route:
 
 @dataclass
 class _Seam:
-    """A flat cut across the jaw at arc position ``s``, with two pegs across it."""
+    """A flat cut across the jaw at arc position ``s``, one part running on as a plug.
+
+    The plug has the jaw's own section at the cut, drawn in by the wall of bone left
+    round it, so it is as big as this jaw allows there. The parts meet on the flat
+    face, the plug standing in its socket with ``clearance`` all round: the faces take
+    what presses them together, the plug what bends the joint, and its shape stops it
+    turning or going in any way but one.
+    """
 
     s: float
     centre: np.ndarray
-    along: np.ndarray  # along the jaw, towards higher s: the way the pegs point
+    along: np.ndarray  # along the jaw, towards higher s: square to the face
     height: np.ndarray  # the long way of the jaw's section
     across: np.ndarray  # the short way
-    pegs: list[tuple[float, float, float]]  # (along height, along across, radius), mm
     clearance: float
-    pegs_on_lower: bool = True  # the part at lower s carries the pegs
+    #: How far inside the socket's mouth, in the plane of the cut, on a raster starting
+    #: at ``(v0, w0)`` along ``height`` and ``across``; negative outside it, mm.
+    mouth: np.ndarray
+    v0: float
+    w0: float
+    raster: float
+    length: float  # how long the plug stands
+    wall: float  # the least bone left round the socket
+    plug_on_lower: bool = True  # the part at lower s carries the plug
+    area_mm2: float = 0.0  # of the plug's section at its base
+    #: The joint's strength: of whichever is weaker, plug or wall, for the worse way of
+    #: bending it across the jaw.
+    section_modulus_mm3: float = 0.0
+    whole_section_modulus_mm3: float = 0.0  # of the jaw there, whole, for the same
+
+    def inside_mouth(self, v: np.ndarray, w: np.ndarray) -> np.ndarray:
+        """``mouth`` at these places, read between the raster's points."""
+        at_v, at_w = (v - self.v0) / self.raster, (w - self.w0) / self.raster
+        rows, cols = self.mouth.shape
+        i = np.clip(np.floor(at_v).astype(int), 0, rows - 2)
+        j = np.clip(np.floor(at_w).astype(int), 0, cols - 2)
+        a, b = at_v - i, at_w - j
+        out = (
+            (1.0 - a) * (1.0 - b) * self.mouth[i, j]
+            + a * (1.0 - b) * self.mouth[i + 1, j]
+            + (1.0 - a) * b * self.mouth[i, j + 1]
+            + a * b * self.mouth[i + 1, j + 1]
+        )
+        off = (at_v < 0.0) | (at_v > rows - 1) | (at_w < 0.0) | (at_w > cols - 1)
+        out[off] = float(self.mouth.min())
+        return out
 
     def _fields(self, points: np.ndarray):
-        """``(t, pegs, holes)``: distance past the face towards the holes' part,
+        """``(t, plug, socket)``: distance past the face towards the socket's part,
         and the two solids, each negative inside."""
         rel = points - self.centre
         n = rel @ self.along
-        t = n if self.pegs_on_lower else -n
-        v, w = rel @ self.height, rel @ self.across
-        pegs, holes = np.full(len(t), np.inf), np.full(len(t), np.inf)
-        for pv, pw, radius in self.pegs:
-            radial = np.hypot(v - pv, w - pw)
-            taper = radius - np.maximum(t - (PEG_LENGTH_MM - PEG_LEAD_IN_MM), 0.0)
-            pegs = np.minimum(pegs, np.maximum.reduce((radial - taper, t - PEG_LENGTH_MM, -t - 1.0)))
-            holes = np.minimum(
-                holes,
-                np.maximum.reduce(
-                    (radial - (radius + self.clearance), t - (PEG_LENGTH_MM + HOLE_EXTRA_DEPTH_MM), -t - 1.0)
-                ),
-            )
-        return t, pegs, holes
+        t = n if self.plug_on_lower else -n
+        plug = np.full(len(t), np.inf, dtype=float)
+        socket = np.full(len(t), np.inf, dtype=float)
+        deep = self.length + SOCKET_EXTRA_DEPTH_MM
+        near = (t > -1.5) & (t < deep + 1.5)
+        if near.any():
+            here = t[near]
+            room = self.inside_mouth(rel[near] @ self.height, rel[near] @ self.across)
+            lean = PLUG_TAPER * np.maximum(here, 0.0)
+            tip = np.maximum(here - (self.length - PLUG_TIP_CHAMFER_MM), 0.0)
+            plug[near] = np.maximum.reduce((self.clearance + lean + tip - room, here - self.length, -here - 1.0))
+            opening = np.maximum(SOCKET_MOUTH_CHAMFER_MM - here, 0.0)
+            socket[near] = np.maximum.reduce((lean - opening - room, here - deep, -here - 1.0))
+        return t, plug, socket
 
     def lower_field(self, points: np.ndarray, s: np.ndarray) -> np.ndarray:
         """Negative in the part before the cut."""
-        t, pegs, holes = self._fields(points)
-        field = np.minimum(t, pegs) if self.pegs_on_lower else np.maximum(-t, -holes)
+        t, plug, socket = self._fields(points)
+        field = np.minimum(t, plug) if self.plug_on_lower else np.maximum(-t, -socket)
         far = np.linalg.norm(points - self.centre, axis=1) > SEAM_NEAR_MM
         field[far] = np.where(s[far] < self.s, -6.0, 6.0)
         return field.astype(np.float32)
 
     def upper_field(self, points: np.ndarray, s: np.ndarray) -> np.ndarray:
         """Negative in the part after the cut."""
-        t, pegs, holes = self._fields(points)
-        field = np.maximum(-t, -holes) if self.pegs_on_lower else np.minimum(t, pegs)
+        t, plug, socket = self._fields(points)
+        field = np.maximum(-t, -socket) if self.plug_on_lower else np.minimum(t, plug)
         far = np.linalg.norm(points - self.centre, axis=1) > SEAM_NEAR_MM
         field[far] = np.where(s[far] > self.s, -6.0, 6.0)
         return field.astype(np.float32)
+
+    def in_joint(self, points: np.ndarray, margin: float) -> np.ndarray:
+        """Which points are on the joint's mating surfaces, to within ``margin``."""
+        rel = points - self.centre
+        n = rel @ self.along
+        t = n if self.plug_on_lower else -n
+        near = np.linalg.norm(rel, axis=1) < SEAM_NEAR_MM
+        face = near & (np.abs(t) < margin)
+        through = (t > -margin) & (t < self.length + SOCKET_EXTRA_DEPTH_MM + margin)
+        room = self.inside_mouth(rel @ self.height, rel @ self.across)
+        return face | (near & through & (room > -min(margin, 0.5 * self.wall)))
 
     def report(self) -> dict:
         return {
             "arc_position_mm": float(self.s),
             "centre_mm": self.centre.tolist(),
             "cut_normal": self.along.tolist(),
-            "peg_diameters_mm": [2.0 * radius for _, _, radius in self.pegs],
-            "peg_length_mm": PEG_LENGTH_MM,
-            "hole_clearance_mm": self.clearance,
-            "pegs_on": "lower-numbered part" if self.pegs_on_lower else "higher-numbered part",
+            "plug_length_mm": float(self.length),
+            "plug_section_mm2": round(float(self.area_mm2), 1),
+            "joint_section_modulus_mm3": round(float(self.section_modulus_mm3), 1),
+            "whole_jaw_section_modulus_mm3": round(float(self.whole_section_modulus_mm3), 1),
+            "wall_round_socket_mm": float(self.wall),
+            "clearance_mm": float(self.clearance),
+            "plug_on": "lower-numbered part" if self.plug_on_lower else "higher-numbered part",
         }
 
 
@@ -261,73 +350,177 @@ def _coordinates(indices, origin, step) -> np.ndarray:
     return origin + np.column_stack([indices[2], indices[1], indices[0]]) * step
 
 
-def _make_seam(route, grid, solid_points, solid_s, s0: float, clearance: float) -> _Seam | None:
-    """A cut at ``s0`` with its two pegs, or None if the bone there cannot take them.
+def _section_moduli(vv: np.ndarray, ww: np.ndarray, region: np.ndarray, raster: float) -> np.ndarray:
+    """Section moduli of a region of the plane, for bending each way across it, mm3."""
+    area = raster * raster
+    out = []
+    for values in (vv[region], ww[region]):
+        off = values - values.mean()
+        inertia = float((off * off).sum()) * area
+        out.append(inertia / max(float(np.abs(off).max()), 1e-6))
+    return np.array(out)
 
-    ``grid`` is ``(solid, origin, step)``. The pegs stand in solid bone for their
-    whole length either way across the face, a wall of bone left round each.
-    """
-    import SimpleITK as sitk
 
+def _bone_right_through(grid, centre, height, across, axis, sign, depth, half, raster, t_step):
+    """Where bone runs unbroken from just behind the face to ``depth`` past it:
+    ``(vv, ww, mask)`` on a raster of the plane."""
     solid, origin, step = grid
-    near = np.abs(solid_s - s0) < 1.5
-    if near.sum() < 30:
-        return None
-    tangent = route.tangent(s0)
-    section = solid_points[near]
-    centre = section.mean(axis=0)
-    # Keep to the section the cut's own plane crosses, not a far part of the jaw.
-    section = section[np.abs((section - centre) @ tangent) < 2.0]
-    if len(section) < 30:
-        return None
-    centre = section.mean(axis=0)
-    flat = (section - centre) - np.outer((section - centre) @ tangent, tangent)
-    _, _, axes = np.linalg.svd(flat[:: max(len(flat) // 4000, 1)], full_matrices=False)
-    height = axes[0] - (axes[0] @ tangent) * tangent
-    height = height / np.linalg.norm(height)
-    across = np.cross(tangent, height)
-    extent = max(float(np.ptp(flat @ height)), float(np.ptp(flat @ across)))
-
-    # Where bone runs right through, from the depth of a hole on one side of the
-    # face to the depth of a hole on the other.
-    raster = 0.3
-    half = 0.5 * extent + 3.0
     vs = np.arange(-half, half + raster, raster)
-    ws = np.arange(-half, half + raster, raster)
-    vv, ww = np.meshgrid(vs, ws, indexing="ij")
+    vv, ww = np.meshgrid(vs, vs, indexing="ij")
     through = np.ones(vv.shape, dtype=bool)
-    depth = PEG_LENGTH_MM + HOLE_EXTRA_DEPTH_MM + PEG_WALL_MM
-    for n in np.arange(-depth, depth + 0.1, 1.0):
-        world = centre + vv[..., None] * height + ww[..., None] * across + n * tangent
+    plane = centre + vv[..., None] * height + ww[..., None] * across
+    for t in np.arange(-1.5, depth + 0.1, t_step):
+        world = plane + (sign * t) * axis
         index = np.round((world - origin) / step).astype(int)[..., ::-1]
         inside = np.all((index >= 0) & (index < np.array(solid.shape)), axis=-1)
         here = np.zeros(vv.shape, dtype=bool)
         here[inside] = solid[index[inside][:, 0], index[inside][:, 1], index[inside][:, 2]]
         through &= here
-    if not through.any():
-        return None
-    image = sitk.GetImageFromArray(through.astype(np.uint8))
-    room = -sitk.GetArrayFromImage(
-        sitk.SignedMaurerDistanceMap(image, insideIsPositive=False, squaredDistance=False, useImageSpacing=False)
+        if not through.any():
+            break
+    return vv, ww, through
+
+
+def _distance_inside(mask: np.ndarray, raster: float) -> np.ndarray:
+    """Signed distance to the edge of ``mask``, positive inside, mm."""
+    import SimpleITK as sitk
+
+    return -sitk.GetArrayFromImage(
+        sitk.SignedMaurerDistanceMap(
+            sitk.GetImageFromArray(mask.astype(np.uint8)), insideIsPositive=False,
+            squaredDistance=False, useImageSpacing=False,
+        )
     ) * raster
 
-    for large, small in PEG_RADII_MM:
-        fits_large = room >= large + clearance + PEG_WALL_MM
-        fits_small = room >= small + clearance + PEG_WALL_MM
-        if not fits_large.any() or not fits_small.any():
+
+def _largest_piece(mask: np.ndarray) -> np.ndarray:
+    import SimpleITK as sitk
+
+    labels = sitk.GetArrayFromImage(
+        sitk.RelabelComponent(sitk.ConnectedComponent(sitk.GetImageFromArray(mask.astype(np.uint8))))
+    )
+    return labels == 1
+
+
+def _section_axes(section: np.ndarray, axis: np.ndarray):
+    """The section's centre and long and short ways, seen along ``axis``."""
+    centre = section.mean(axis=0)
+    flat = (section - centre) - np.outer((section - centre) @ axis, axis)
+    _, _, axes = np.linalg.svd(flat[:: max(len(flat) // 4000, 1)], full_matrices=False)
+    height = axes[0] - (axes[0] @ axis) * axis
+    height = height / np.linalg.norm(height)
+    across = np.cross(axis, height)
+    extent = max(float(np.ptp(flat @ height)), float(np.ptp(flat @ across)))
+    return centre, height, across, extent
+
+
+def _make_seam(route, grid, solid_points, solid_s, s0: float, clearance: float, plug_on_lower: bool = True) -> _Seam | None:
+    """A cut at ``s0`` with its plug and socket, or None if the bone there cannot take them.
+
+    ``grid`` is ``(solid, origin, step)``. A jaw curves and twists, and a plug is
+    straight. So its axis starts along the chord of the jaw through the plug and leans
+    from there to wherever the straight run through the bone is strongest. Bone must
+    run right through the socket's whole depth, and a wall of it is left round the
+    socket. Of the plugs and walls tried, the joint's strength is that of whichever is
+    weaker, the plug or the wall round it, for bending each way across the jaw.
+    """
+    import SimpleITK as sitk
+
+    near = np.abs(solid_s - s0) < 1.5
+    if near.sum() < 30:
+        return None
+    raster = 0.3
+    sign = 1.0 if plug_on_lower else -1.0
+    found = []
+    for length in PLUG_LENGTHS_MM:
+        chord = route.at(s0 + sign * length) - route.at(s0)
+        if np.linalg.norm(chord) < 0.5 * length:
+            start_axis = route.tangent(s0)
+        else:
+            start_axis = sign * chord / np.linalg.norm(chord)
+        section = solid_points[near]
+        keep = np.abs((section - section.mean(axis=0)) @ start_axis) < 2.0
+        if keep.sum() < 30:
             continue
-        apart = large + small + 2.0 * clearance + PEG_WALL_MM
-        # As far apart as the bone allows, so they hold against turning: the large
-        # one where the section has most room, the small one furthest from it.
-        at = np.unravel_index(int(np.argmax(np.where(fits_large, room, -1.0))), room.shape)
-        separation = np.hypot(vv - vv[at], ww - ww[at])
-        candidates = fits_small & (separation >= apart)
-        if not candidates.any():
+        section = section[keep]
+        centre, height, across, extent = _section_axes(section, start_axis)
+        half = 0.5 * extent + 6.0
+        depth = length + SOCKET_EXTRA_DEPTH_MM + SOCKET_FLOOR_MM
+
+        # A coarse look at each lean of the axis for the strongest straight run.
+        best_axis, best_score = None, 0.0
+        for tilt_h in AXIS_LEAN_TANGENTS:
+            for tilt_a in AXIS_LEAN_TANGENTS:
+                axis = start_axis + tilt_h * height + tilt_a * across
+                axis = axis / np.linalg.norm(axis)
+                # Square to the leaning axis, or a lean would squash the section.
+                up = height - (height @ axis) * axis
+                up = up / np.linalg.norm(up)
+                vv, ww, through = _bone_right_through(grid, centre, up, np.cross(axis, up), axis, sign, depth, half, 0.6, 2.0)
+                if not through.any():
+                    continue
+                core = _distance_inside(through, 0.6) >= min(PLUG_WALLS_MM)
+                if core.sum() < 4:
+                    continue
+                score = float(_section_moduli(vv, ww, _largest_piece(core), 0.6).min())
+                # Other things equal, square to the jaw.
+                score /= 1.0 + 0.5 * (tilt_h * tilt_h + tilt_a * tilt_a)
+                if score > best_score:
+                    best_axis, best_score = axis, score
+        if best_axis is None:
             continue
-        other = np.unravel_index(int(np.argmax(np.where(candidates, separation, -1.0))), room.shape)
-        pegs = [(float(vv[at]), float(ww[at]), large), (float(vv[other]), float(ww[other]), small)]
-        return _Seam(float(s0), centre, tangent, height, across, pegs, float(clearance))
-    return None
+        keep = np.abs((section - section.mean(axis=0)) @ best_axis) < 2.0
+        if keep.sum() < 30:
+            continue
+        centre, height, across, extent = _section_axes(section[keep], best_axis)
+        half = 0.5 * extent + 6.0
+        vv, ww, through = _bone_right_through(grid, centre, height, across, best_axis, sign, depth, half, raster, 1.0)
+        if not through.any():
+            continue
+        room = _distance_inside(through, raster)
+        whole = _section_moduli(vv, ww, _largest_piece(through), raster)
+        options = []
+        for wall in PLUG_WALLS_MM:
+            core = room >= wall
+            if not core.any():
+                continue
+            # The largest piece of it: beside it, the plane may cross another process.
+            core = _largest_piece(core)
+            # Off the raster's stairs. Both surfaces are levels of this one field, so
+            # the gap between them is the clearance.
+            mouth = sitk.GetArrayFromImage(
+                sitk.SmoothingRecursiveGaussian(
+                    sitk.GetImageFromArray(_distance_inside(core, raster).astype(np.float32)), 1.0
+                )
+            ).astype(np.float32)
+            plug = mouth >= clearance
+            if not plug.any():
+                continue
+            area = float(plug.sum()) * raster * raster
+            spare = float(mouth.max()) - clearance
+            if area < MIN_PLUG_AREA_MM2 or spare < MIN_PLUG_HALF_WIDTH_MM:
+                continue
+            if spare - PLUG_TAPER * length - PLUG_TIP_CHAMFER_MM < 0.4:
+                continue  # it would run out to nothing before its tip
+            ring = through & (mouth < 0.0) & (mouth >= -(wall + 1.0))
+            moduli = _section_moduli(vv, ww, plug, raster)
+            if ring.any():
+                moduli = np.minimum(moduli, _section_moduli(vv, ww, ring, raster))
+            options.append(
+                _Seam(
+                    float(s0), centre, best_axis, height, across, float(clearance), mouth,
+                    float(vv[0, 0]), float(ww[0, 0]), raster, float(length), float(wall), bool(plug_on_lower),
+                    area, float(moduli.min()), float(whole.min()),
+                )
+            )
+        if options:
+            # A thicker wall, unless it costs real strength.
+            top = max(option.section_modulus_mm3 for option in options)
+            found.append(next(o for o in options if o.section_modulus_mm3 >= THICK_WALL_SHARE * top))
+    if not found:
+        return None
+    strongest = max(seam.section_modulus_mm3 for seam in found)
+    return next(seam for seam in found if seam.section_modulus_mm3 >= PLUG_STRENGTH_SHARE * strongest)
 
 
 def _pose_for(points: np.ndarray, bed: np.ndarray, ups, lifted: bool):
@@ -335,7 +528,7 @@ def _pose_for(points: np.ndarray, bed: np.ndarray, ups, lifted: bool):
 
     Rows of the rotation are the print x, y, z axes in patient space.
     """
-    limit = bed - np.array([2.0 * BED_MARGIN, 2.0 * BED_MARGIN, SUPPORT_LIFT if lifted else 0.0])
+    limit = bed - np.array([2.0 * BED_MARGIN, 2.0 * BED_MARGIN, rods.lift_mm() if lifted else 0.0])
     for up in ups:
         up = up / np.linalg.norm(up)
         helper = np.array([0.0, 0.0, 1.0]) if abs(up[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
@@ -370,8 +563,8 @@ def _plan_seams(route, sample, sample_s, grid, solid_points, solid_s, bed, guard
     lo, hi = float(route.s[0]) - 1.0, float(route.s[-1]) + 1.0
 
     def fits(a, b, reach=JOINT_REACH_MM):
-        # A part also holds the pegs reaching past its end. The working section's
-        # part has holes, not pegs, and ``reach`` 0.
+        # A part also holds the plug reaching past its end. The working section's
+        # part has sockets, not plugs, and ``reach`` 0.
         chosen = sample[(sample_s >= a - reach) & (sample_s <= b + reach)]
         if not len(chosen):
             return True
@@ -385,8 +578,26 @@ def _plan_seams(route, sample, sample_s, grid, solid_points, solid_s, bed, guard
     if not fits(*guard, reach=0.0):
         raise ValueError("The working section does not fit this printer in one part. Choose a larger printer.")
 
+    middle = 0.5 * (guard[0] + guard[1])
+
     def seam_at(s):
-        return _make_seam(route, grid, solid_points, solid_s, float(s), clearance)
+        # The plug points towards the working section: a plug breaks more easily than
+        # a socket, so it goes on the part that is cheaper to print again.
+        return _make_seam(route, grid, solid_points, solid_s, float(s), clearance, float(s) < middle)
+
+    def strongest_from(seam, sign, limit, rest_to):
+        """The strongest place to split on the way from ``seam`` towards ``limit``,
+        as long as what is left beyond it, out to ``rest_to``, still fits in one part.
+        A jaw is far stronger in its body than high on its thin ramus."""
+        best = seam
+        at = seam.s + sign * STRONGER_SEARCH_STEP_MM
+        while (limit - at) * sign >= 0.0:
+            if fits(min(at, rest_to), max(at, rest_to)):
+                other = seam_at(at)
+                if other is not None and other.section_modulus_mm3 > PREFER_STRONGER_SHARE * best.section_modulus_mm3:
+                    best = other
+            at += sign * STRONGER_SEARCH_STEP_MM
+        return best
 
     def out_to(here, end, sign, found):
         """Seams from ``here`` out to the end of the jaw, each piece fitting."""
@@ -402,24 +613,25 @@ def _plan_seams(route, sample, sample_s, grid, solid_points, solid_s, bed, guard
                         break
             if seam is None:
                 raise ValueError(
-                    "No place on the jaw can take a cut with pegs for a part this printer can hold. "
+                    "No place on the jaw can take a joint for a part this printer can hold. "
                     "Choose a larger printer."
                 )
+            seam = strongest_from(seam, -sign, here + sign * MIN_PIECE_MM, end)
             found.append(seam)
             here = seam.s
             if len(found) >= MAX_PIECES:
                 raise ValueError("This printer would need too many pieces. Choose a larger printer.")
         return found
 
-    def first_seam(s, sign, limit):
+    def first_seam(s, sign, limit, rest_to):
         # From the far edge of the guarded piece, back towards the guard, until
         # the bone can hold a joint.
         while (limit - s) * sign >= 0:
             seam = seam_at(s)
             if seam is not None:
-                return seam
+                return strongest_from(seam, sign, limit, rest_to)
             s += sign * 2.0
-        raise ValueError("No cut with pegs fits between the working section and the rest. Choose a larger printer.")
+        raise ValueError("No joint fits between the working section and the rest. Choose a larger printer.")
 
     # The guarded part grows as far as it can each way, to leave fewer seams.
     a, b = guard
@@ -429,10 +641,10 @@ def _plan_seams(route, sample, sample_s, grid, solid_points, solid_s, bed, guard
         b += 2.0
     plan = []
     if a > lo + MIN_PIECE_MM:
-        seam = first_seam(a, 1.0, guard[0])
+        seam = first_seam(a, 1.0, guard[0], lo)
         plan = out_to(seam.s, lo, -1.0, plan + [seam])
     if b < hi - MIN_PIECE_MM:
-        seam = first_seam(b, -1.0, guard[1])
+        seam = first_seam(b, -1.0, guard[1], hi)
         plan = out_to(seam.s, hi, 1.0, plan + [seam])
     return sorted(plan, key=lambda item: item.s)
 
@@ -523,87 +735,30 @@ def _transform(mesh, rotation, shift):
     return moved, matrix
 
 
-def _stem(cx, cy, height):
-    """A stem: flared foot on the bed, thin neck, a narrow tip that snaps off."""
-    n = 16
-    angle = np.arange(n) * 2.0 * np.pi / n
-    radii = [1.8, 1.8, 0.75, 0.75, 0.30]
-    zs = [0.0, 0.35, 0.8, max(height - 0.8, 0.9), height + 0.10]
-    rings = [np.column_stack((cx + r * np.cos(angle), cy + r * np.sin(angle), np.full(n, z))) for r, z in zip(radii, zs)]
-    faces = [tuple(range(n - 1, -1, -1)), tuple(range(4 * n, 5 * n))]
-    for k in range(4):
-        for i in range(n):
-            j = (i + 1) % n
-            faces.append((k * n + i, k * n + j, (k + 1) * n + j, (k + 1) * n + i))
-    mesh = vtk.vtkPolyData()
-    points = vtk.vtkPoints()
-    points.SetData(numpy_to_vtk(np.vstack(rings), deep=True))
-    mesh.SetPoints(points)
-    cells = vtk.vtkCellArray()
-    for ids in faces:
-        cells.InsertNextCell(len(ids), [int(i) for i in ids])
-    mesh.SetPolys(cells)
-    triangles = vtk.vtkTriangleFilter()
-    triangles.SetInputData(mesh)
-    triangles.Update()
-    return triangles.GetOutput()
+def _rod_rules(rotation, shift, route, centre, working, cut, seams):
+    """``keep_off`` for the rods of a part in its print pose.
 
-
-def _stems(part, rotation, shift, avoid, route, working, centre):
-    """Stems under ``part`` (in print pose), off the working surface.
-
-    A stem may touch only a face turned to the bed, clear of everything in
-    ``avoid``, and never the outer face of the jaw along the arc span ``working``:
-    the face a plate lies on and the site is judged by.
+    No rod touches the outer face of the jaw along the arc span ``working``, which is
+    the face a plate lies on and the site is judged by; none comes near the resection;
+    none touches the flat faces, plugs or sockets of a joint, which have to fit.
     """
-    locator = vtk.vtkOBBTree()
-    locator.SetDataSet(part)
-    locator.BuildLocator()
-    bounds = np.array(part.GetBounds()).reshape(3, 2)
-    lo, hi = bounds[:, 0], bounds[:, 1]
-    candidates = []
-    corners = vtk.vtkIdList()
-    for x in np.arange(lo[0] + 2.0, hi[0] - 1.0, 3.0):
-        for y in np.arange(lo[1] + 2.0, hi[1] - 1.0, 3.0):
-            hits = vtk.vtkPoints()
-            cells = vtk.vtkIdList()
-            locator.IntersectWithLine((x, y, -1.0), (x, y, hi[2] + 1.0), hits, cells)
-            if not hits.GetNumberOfPoints():
-                continue
-            heights = [hits.GetPoint(i)[2] for i in range(hits.GetNumberOfPoints())]
-            lowest = int(np.argmin(heights))
-            z = heights[lowest]
-            part.GetCellPoints(cells.GetId(lowest), corners)
-            a, b, c = (np.array(part.GetPoint(corners.GetId(i))) for i in range(3))
-            normal = np.cross(b - a, c - a)
-            length = float(np.linalg.norm(normal))
-            if length < 1e-12:
-                continue
-            normal /= length
-            if normal[2] > -0.2:
-                continue  # not a face turned to the bed
-            world = (np.array([x, y, z]) - shift) @ rotation
-            if len(avoid) and np.min(np.linalg.norm(avoid - world, axis=1)) < STEM_CLEAR_MM:
-                continue
-            if working is not None:
-                arc = float(route.along(world[None])[0])
-                if working[0] <= arc <= working[1] and normal @ rotation @ route.outward(arc, centre) > 0.0:
-                    continue  # the outer face of the working section
-            candidates.append((z, x, y))
-    picked = []
-    for z, x, y in sorted(candidates):
-        if all(np.hypot(x - xx, y - yy) >= 12.0 for _, xx, yy in picked):
-            picked.append((z, x, y))
-    if len(picked) < 3 or np.linalg.matrix_rank(np.array([[x, y, 1.0] for _, x, y in picked])) < 3:
-        raise ValueError(
-            "Too little safe underside for three stems on a part. Switch stems off and use the "
-            "slicer's supports on the underside, or use a larger printer."
-        )
-    out = vtk.vtkAppendPolyData()
-    for z, x, y in picked:
-        out.AddInputData(_stem(x, y, z))
-    out.Update()
-    return out.GetOutput(), len(picked)
+
+    def forbidden(points: np.ndarray, normals: np.ndarray) -> np.ndarray:
+        world = (points - shift) @ rotation
+        facing = normals @ rotation
+        out = np.zeros(len(world), dtype=bool)
+        if len(cut):
+            out |= np.min(np.linalg.norm(world[:, None, :] - cut[None, :, :], axis=2), axis=1) < ROD_CLEAR_OF_CUT_MM
+        if working is not None:
+            arcs = route.along(world)
+            for k in np.flatnonzero((arcs >= working[0]) & (arcs <= working[1])):
+                if facing[k] @ route.outward(float(arcs[k]), centre) > OUTER_FACE_COS:
+                    out[k] = True
+        for seam in seams:
+            out |= seam.in_joint(world, ROD_CLEAR_OF_JOINT_MM)
+        return out
+
+    return forbidden
 
 
 def _guard_span(route, working_side, cut_arcs, midline_x):
@@ -646,8 +801,8 @@ def _snapped_to_scan(part: vtk.vtkPolyData, surface: vtk.vtkPolyData, seams) -> 
     """``part`` with its outside moved onto the scan's own surface.
 
     The grid rounds the surface off by a fraction of its size. Each vertex near
-    the scan's surface goes back onto it along its normal. Cut faces, pegs and
-    holes are too far from that surface to move, and stay as they are built.
+    the scan's surface goes back onto it along its normal. Cut faces, plugs and
+    sockets are built to fit each other, and stay as they are built.
     """
     for _ in range(2):
         normals = vtk.vtkPolyDataNormals()
@@ -670,16 +825,7 @@ def _snapped_to_scan(part: vtk.vtkPolyData, surface: vtk.vtkPolyData, seams) -> 
         facing = vtk_to_numpy(with_normals.GetPointData().GetNormals()).astype(float)
         move = np.abs(away) < SNAP_REACH_MM
         for seam in seams:
-            rel = points - seam.centre
-            n = rel @ seam.along
-            move &= np.abs(n) > SNAP_CUT_CLEAR_MM
-            # Pegs and holes stand inside the bone, near the scan's inner surfaces.
-            v, w = rel @ seam.height, rel @ seam.across
-            for pv, pw, radius in seam.pegs:
-                move &= ~(
-                    (np.hypot(v - pv, w - pw) < radius + seam.clearance + SNAP_CUT_CLEAR_MM)
-                    & (np.abs(n) < PEG_LENGTH_MM + HOLE_EXTRA_DEPTH_MM + SNAP_CUT_CLEAR_MM)
-                )
+            move &= ~seam.in_joint(points, SNAP_CUT_CLEAR_MM)
         moved = points.copy()
         moved[move] -= away[move][:, None] * facing[move]
         result = vtk.vtkPolyData()
@@ -691,72 +837,149 @@ def _snapped_to_scan(part: vtk.vtkPolyData, surface: vtk.vtkPolyData, seams) -> 
     return part
 
 
-def _fit_test(seam: _Seam, clearances=FIT_TEST_CLEARANCES_MM) -> vtk.vtkPolyData:
-    """Small blocks with this kit's pegs and holes at each clearance, to print first.
+def _contoured(field: np.ndarray, origin, step: float) -> vtk.vtkPolyData:
+    """The surface of a solid given by its field on a grid, (z, y, x), negative inside."""
+    image = vtk.vtkImageData()
+    image.SetDimensions(field.shape[2], field.shape[1], field.shape[0])
+    image.SetSpacing(step, step, step)
+    image.SetOrigin(*(float(c) for c in origin))
+    image.GetPointData().SetScalars(numpy_to_vtk(field.ravel().astype(np.float32), deep=True))
+    contour = vtk.vtkFlyingEdges3D()
+    contour.SetInputData(image)
+    contour.SetValue(0, 0.0)
+    contour.ComputeNormalsOff()
+    contour.Update()
+    piece = vtk.vtkPolyData()
+    piece.DeepCopy(contour.GetOutput())
+    return piece
 
-    Each pair lies apart, ready to try. Notches on the back edge count them.
+
+def _fit_test(seam: _Seam, bed, clearances=FIT_TEST_CLEARANCES_MM):
+    """This kit's real joint, short, at each clearance, standing on the bed: print it first.
+
+    A pair for each clearance: a plug on a base, and a socket in a block, both of the
+    jaw's own section at a joint. Holes in a small tag count which is which. Returns
+    the mesh and the clearances it has: fewer, down to the middle one alone, if that
+    is all the bed holds, and ``(None, ())`` if it cannot hold even one pair.
     """
-    step = 0.1
-    large = max(radius for _, _, radius in seam.pegs)
-    small = min(radius for _, _, radius in seam.pegs)
-    length = FIT_TEST_LENGTH_MM
-    gap = large + small + 2.0 * PEG_WALL_MM + 1.0
-    width = gap + 2.0 * large + 6.0
-    thick = 2.0 * large + 3.0
-    meshes = vtk.vtkAppendPolyData()
-    for index, clearance in enumerate(clearances):
-        local = _Seam(
-            0.0, np.array([0.0, 0.0, 0.5 * thick]), np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]),
-            np.array([0.0, 0.0, 1.0]), [(-0.5 * gap, 0.0, large), (0.5 * gap, 0.0, small)], clearance,
-        )
+    step = FIT_TEST_GRID_MM
+    wall = seam.wall
+    rows, cols = seam.mouth.shape
+    vs = seam.v0 + np.arange(rows) * seam.raster
+    ws = seam.w0 + np.arange(cols) * seam.raster
+    outline = seam.mouth >= -wall
+    v_on = vs[outline.any(axis=1)]
+    w_on = ws[outline.any(axis=0)]
+    v_low, v_high = float(v_on.min()), float(v_on.max())
+    # The tag, at the end of the section along v.
+    tag_w = float(ws[outline[int(np.flatnonzero(outline.any(axis=1))[-1])].nonzero()[0]].mean())
+    w_low, w_high = min(float(w_on.min()), tag_w - 2.5), max(float(w_on.max()), tag_w + 2.5)
+    tag_reach = 8.0
+    v_top = v_high + tag_reach
+    length = FIT_TEST_PLUG_MM
+    deep = length + SOCKET_EXTRA_DEPTH_MM
+
+    def grid(height):
         # Off the round numbers: no flat face may fall exactly on a grid plane.
-        xs = np.arange(-length - 8.0, length + 8.0, step) + 0.0137
-        ys = np.arange(-0.5 * width - 0.5, 0.5 * width + 0.5, step) + 0.0137
-        zs = np.arange(-0.5, thick + 0.5, step) + 0.0137
+        xs = np.arange(v_low - 1.0, v_top + 1.0, step) + 0.0137
+        ys = np.arange(w_low - 1.0, w_high + 1.0, step) + 0.0137
+        zs = np.arange(-0.5, height + 0.5, step) + 0.0137
         zz, yy, xx = np.meshgrid(zs, ys, xs, indexing="ij")
-        points = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
-        arcs = np.zeros(len(points))
-        block = np.maximum.reduce((np.abs(xx.ravel()) - length, np.abs(yy.ravel()) - 0.5 * width, zz.ravel() - thick, -zz.ravel()))
-        for side, field in ((-1.0, local.lower_field(points, arcs)), (1.0, local.upper_field(points, arcs))):
-            solid = np.maximum(block, field)
-            # Count marks: a notch for each place in the row, on each block.
-            for mark in range(index + 1):
-                notch = np.maximum(
-                    np.abs(xx.ravel() - side * (0.5 * length + 1.6 * mark)) - 0.5,
-                    0.5 * width - 1.2 - yy.ravel(),
-                )
-                solid = np.maximum(solid, -notch)
-            image = vtk.vtkImageData()
-            image.SetDimensions(len(xs), len(ys), len(zs))
-            image.SetSpacing(step, step, step)
-            # Apart by more than a peg's length, or the pair would overlap.
-            image.SetOrigin(
-                float(xs[0]) + side * (0.5 * PEG_LENGTH_MM + 2.0), float(ys[0]) + index * (width + 4.0), float(zs[0])
-            )
-            image.GetPointData().SetScalars(numpy_to_vtk(solid.astype(np.float32), deep=True))
-            contour = vtk.vtkFlyingEdges3D()
-            contour.SetInputData(image)
-            contour.SetValue(0, 0.0)
-            contour.ComputeNormalsOff()
-            contour.Update()
-            piece = vtk.vtkPolyData()
-            piece.DeepCopy(contour.GetOutput())
+        return xx, yy, zz
+
+    def tag(xx, yy, zz, count):
+        centre_x = v_high + 0.5 * tag_reach - 0.5
+        body = np.maximum.reduce(
+            (np.abs(xx - centre_x) - (0.5 * tag_reach + 0.5), np.abs(yy - tag_w) - 2.5, -zz, zz - 1.5)
+        )
+        for k in range(count):
+            hole = np.hypot(xx - (v_high + 1.5 + 2.0 * k), yy - tag_w) - 0.6
+            body = np.maximum(body, -hole)
+        return body
+
+    def room_at(xx, yy):
+        return seam.inside_mouth(xx.ravel(), yy.ravel()).reshape(xx.shape)
+
+    def plug_piece(clearance, index):
+        height = FIT_TEST_BASE_MM + length
+        xx, yy, zz = grid(height)
+        room = room_at(xx, yy)
+        t = zz - FIT_TEST_BASE_MM
+        base = np.maximum.reduce((-(room + wall), -zz, zz - FIT_TEST_BASE_MM))
+        lean = PLUG_TAPER * np.maximum(t, 0.0)
+        tip = np.maximum(t - (length - PLUG_TIP_CHAMFER_MM), 0.0)
+        plug = np.maximum.reduce((clearance + lean + tip - room, t - length, -t - 1.0))
+        return np.minimum.reduce((base, plug, tag(xx, yy, zz, index + 1))), xx, yy, zz
+
+    def socket_piece(clearance, index):
+        height = FIT_TEST_BASE_MM + deep
+        xx, yy, zz = grid(height)
+        room = room_at(xx, yy)
+        t = height - zz
+        block = np.maximum.reduce((-(room + wall), -zz, zz - height))
+        lean = PLUG_TAPER * np.maximum(t, 0.0)
+        opening = np.maximum(SOCKET_MOUTH_CHAMFER_MM - t, 0.0)
+        socket = np.maximum.reduce((lean - opening - room, t - deep, -t - 1.0))
+        solid = np.maximum(block, -socket)
+        return np.minimum(solid, tag(xx, yy, zz, index + 1)), xx, yy, zz
+
+    gap = 3.0
+    size = np.array([v_top - v_low + gap, w_high - w_low + gap])
+    room_xy = np.asarray(bed[:2], dtype=float) - 2.0 * BED_MARGIN + gap
+    layouts = []
+    for chosen in (tuple(clearances), (clearances[len(clearances) // 2],)):
+        pieces = 2 * len(chosen)
+        for columns in range(pieces, 0, -1):
+            lines = int(np.ceil(pieces / columns))
+            for swap in (False, True):
+                cell = size[::-1] if swap else size
+                if columns * cell[0] <= room_xy[0] and lines * cell[1] <= room_xy[1]:
+                    layouts.append((chosen, columns, swap, cell))
+        if layouts:
+            break
+    if not layouts:
+        return None, ()
+    chosen, columns, swap, cell = min(layouts, key=lambda item: abs(item[3][0] * item[1] - item[3][1] * np.ceil(2 * len(item[0]) / item[1])))
+    meshes = vtk.vtkAppendPolyData()
+    place = 0
+    for clearance in chosen:
+        index = list(clearances).index(clearance)
+        for maker in (plug_piece, socket_piece):
+            field, xx, yy, zz = maker(clearance, index)
+            piece = _contoured(field, (xx[0, 0, 0], yy[0, 0, 0], zz[0, 0, 0]), step)
+            points = vtk_to_numpy(piece.GetPoints().GetData()).astype(float)
+            if swap:
+                points = points[:, [1, 0, 2]]
+            at = np.array([(place % columns) * cell[0] + BED_MARGIN, (place // columns) * cell[1] + BED_MARGIN, 0.0])
+            points = points - points.min(axis=0) + at
+            moved = vtk.vtkPoints()
+            moved.SetData(numpy_to_vtk(points, deep=True))
+            piece.SetPoints(moved)
+            if swap:
+                # A swap of two axes turns the solid inside out.
+                turned = vtk.vtkReverseSense()
+                turned.SetInputData(piece)
+                turned.ReverseCellsOn()
+                turned.ReverseNormalsOff()
+                turned.Update()
+                piece = vtk.vtkPolyData()
+                piece.DeepCopy(turned.GetOutput())
             meshes.AddInputData(piece)
+            place += 1
     meshes.Update()
-    return _tidy(meshes.GetOutput(), "The fit test")
+    return thinned(_tidy(meshes.GetOutput(), "The fit test")), chosen
 
 
-def _surface_change(pieces, surface, avoid) -> dict:
+def _surface_change(pieces, surface, seams) -> dict:
     """How far the pieces' surface lies from the jaw's own, mm, away from the joints."""
     distance = vtk.vtkImplicitPolyDataDistance()
     distance.SetInput(surface)
     found = []
-    for part, _, _ in pieces:
+    for part, *_ in pieces:
         points = vtk_to_numpy(part.GetPoints().GetData()).astype(float)
         sample = points[:: max(len(points) // 3000, 1)]
-        if len(avoid):
-            away = np.min(np.linalg.norm(sample[:, None, :] - avoid[None, :, :], axis=2), axis=1) > 15.0
-            sample = sample[away]
+        for seam in seams:
+            sample = sample[~seam.in_joint(sample, SNAP_CUT_CLEAR_MM)]
         found.extend(abs(distance.EvaluateFunction(tuple(p))) for p in sample)
     if not found:
         return {}
@@ -768,44 +991,51 @@ def _surface_change(pieces, surface, avoid) -> dict:
     }
 
 
-def _instructions(count: int, has_cut: bool, supports: bool, side_whole: bool) -> str:
+def _instructions(count: int, has_cut: bool, supports: bool, side_whole: bool, seams, tried=()) -> str:
     lines = ["Print at 100% scale, in millimetres, keeping each part's exported position and orientation."]
+    if supports:
+        lines.append(
+            "Each part-NN-ready-to-print.stl is the part on its rods and raft, all in one file, ready for the "
+            "printer's own software: place it on the build plate as it is, and add no more supports. Rods narrow "
+            "to a point that snaps off. part-NN.stl is the part alone, in the same position, for those who "
+            "prefer their slicer's supports."
+        )
     if has_cut:
         lines.append(
-            "The part holding the resection is laid with the outer face at the resection upward, so that "
-            "face is finished as a top surface and no support touches it. Do not re-orient it, and print it "
-            "at your machine's finest layer height. The other parts can be printed coarser."
+            "The part holding the resection is laid with the outer face at the resection upward, so that face is "
+            "finished as a top surface and no rod touches it. Do not re-orient it, and print it at your machine's "
+            "finest layer height. The other parts can be printed coarser."
         )
         if not side_whole:
             lines.append(
                 "This printer cannot hold the whole working side in one part. The resection and the bone "
                 "either side of it that the plate is fixed to are kept whole, and the cut lies beyond them."
             )
-    if supports:
-        lines.append(
-            "Import each piece-NN-stems.stl with its part as parts of one object, keeping their relative "
-            "positions; do not drop either to the bed separately. The stems have flared feet and narrow "
-            "tips that snap off, and none touches the outer face of the working section. If your slicer "
-            "asks for more supports, paint them off that face and keep them to the underside."
-        )
     if count > 1:
         lines.append(
-            f"The {count} parts are numbered along the jaw. Parts meet on a flat face: one has two pegs, the "
-            "other two holes, of different sizes so they go together only one way. Push them straight "
-            "together until the faces meet. A drop of glue once they fit is fine; never force them."
+            f"The {count} parts are numbered along the jaw. Where two meet, one carries the jaw's own section as a "
+            "long plug, and the other has the socket it fills, with bone left all round. There is one way in: "
+            "push them straight together, tip into mouth, until the flat faces meet. Wash and cure both first, "
+            "and take off any rod's stub. A drop of glue on the faces makes the joint permanent; do not force it. "
+            "Plugs: " + "; ".join(
+                f"{seam.length:.0f} mm long, {seam.area_mm2:.0f} mm2 in section" for seam in seams
+            ) + "."
         )
-        lines.append(
-            "Print fit-test.stl first. It has this kit's pegs and holes at clearances of "
-            + ", ".join(f"{c:.1f}" for c in FIT_TEST_CLEARANCES_MM)
-            + " mm, one pair per row, with one, two and three notches on the back edge. Use the tightest "
-            "that goes together by hand as the Peg clearance when you export the kit."
-        )
+        if tried:
+            words = {1: "one hole", 2: "two holes", 3: "three holes"}
+            marks = ", ".join(f"{words[list(FIT_TEST_CLEARANCES_MM).index(c) + 1]} for {c:.2f} mm" for c in tried)
+            lines.append(
+                "Print fit-test.stl first, flat on the plate with no supports. It has this kit's most slender joint, "
+                f"short, and the tag on each piece says its clearance: {marks}. Use the tightest pair that goes fully "
+                "home by hand as the Joint clearance when you export the kit. A socket lying on its side in a part "
+                "prints a little tighter than one standing up: if in doubt take the next one up."
+            )
     lines.append("assembly.json records where each part belongs in patient space.")
     return "\n".join(lines) + "\n"
 
 
 def export_print_kit(folder, surface, build_mm, *, working_side="auto", cut_points=(), midline_x=None,
-                     printer_name="Custom", supports=True, clearance_mm=0.2, frames=None):
+                     printer_name="Custom", supports=True, clearance_mm=0.15, frames=None):
     """Write a new, self-contained kit in ``folder`` and return its files.
 
     ``cut_points`` bound the resection, ``frames`` is the arch curve. No cut comes
@@ -822,7 +1052,7 @@ def export_print_kit(folder, surface, build_mm, *, working_side="auto", cut_poin
     if working_side not in ("auto", "left", "right"):
         raise ValueError("Choose Auto, Left or Right working side.")
     if not np.isfinite(clearance_mm) or not 0.05 <= clearance_mm <= 0.5:
-        raise ValueError("Choose a peg clearance between 0.05 and 0.5 mm.")
+        raise ValueError("Choose a joint clearance between 0.05 and 0.5 mm.")
     cut = np.asarray(cut_points, dtype=float).reshape(-1, 3)
     if not np.isfinite(cut).all():
         raise ValueError("Invalid resection coordinates.")
@@ -863,10 +1093,6 @@ def export_print_kit(folder, surface, build_mm, *, working_side="auto", cut_poin
         guard = guards[1]
         seams = _plan_seams(route, sample, sample_s, grid, solid_points, solid_s, bed, guard, supports, clearance_mm, centre)
     side_whole = guard is None or guard == guards[0]
-    # A peg breaks more easily than a hole: on the part that is cheaper to reprint.
-    if guard is not None:
-        for seam in seams:
-            seam.pegs_on_lower = seam.s < 0.5 * (guard[0] + guard[1])
 
     image = sitk.Cast(sitk.GetImageFromArray(solid.astype(np.uint8)), sitk.sitkFloat32)
     smooth = sitk.GetArrayFromImage(sitk.SmoothingRecursiveGaussian(image, SMOOTH_VOXELS)).astype(np.float32)
@@ -889,7 +1115,7 @@ def export_print_kit(folder, surface, build_mm, *, working_side="auto", cut_poin
         lower, upper = limits[i], limits[i + 1]
         lo_s = lower.s if lower else -np.inf
         hi_s = upper.s if upper else np.inf
-        # The box of this part, wide enough for its pegs and its neighbour's.
+        # The box of this part, wide enough for its plug and its neighbour's.
         occupied = (solid_s >= lo_s - JOINT_REACH_MM) & (solid_s <= hi_s + JOINT_REACH_MM)
         pad = 6
         box = tuple(
@@ -898,16 +1124,14 @@ def export_print_kit(folder, surface, build_mm, *, working_side="auto", cut_poin
         )
         mesh = _piece_mesh(smooth, along, origin, step, lower, upper, box)
         part = _snapped_to_scan(_tidy(mesh, f"Part {i + 1}"), surface, [t for t in (lower, upper) if t is not None])
-        pieces.append((part, lo_s, hi_s))
+        pieces.append((part, lo_s, hi_s, [item for item in (lower, upper) if item is not None]))
 
-    joints = np.array([seam.centre for seam in seams]).reshape(-1, 3)
-    avoid = np.vstack([cut, joints])
     working = None
     if guard is not None:
         working = (guard[0], guard[1])
 
     report = {
-        "surface_change_from_the_scan": _surface_change(pieces, surface, joints),
+        "surface_change_from_the_scan": _surface_change(pieces, surface, seams),
         "printer": printer_name,
         "build_mm": bed.tolist(),
         "bed_margin_mm": BED_MARGIN,
@@ -924,33 +1148,44 @@ def export_print_kit(folder, surface, build_mm, *, working_side="auto", cut_poin
     with tempfile.TemporaryDirectory(prefix=".mandiplan-", dir=target) as tmp:
         staged = Path(tmp) / "kit"
         staged.mkdir()
-        for i, (part, lo_s, hi_s) in enumerate(pieces, 1):
+        lift = rods.lift_mm() if supports else 0.0
+        for i, (part, lo_s, hi_s, own_seams) in enumerate(pieces, 1):
             points = vtk_to_numpy(part.GetPoints().GetData()).astype(float)
             at = 0.5 * (max(lo_s, float(route.s[0])) + min(hi_s, float(route.s[-1])))
             inside = (cut_arcs >= lo_s) & (cut_arcs <= hi_s)
             holds_cut = bool(inside.any())
             if holds_cut:
                 at = float(np.median(cut_arcs[inside]))
-            # A peg is printed better standing or lying than hanging down.
-            ups = _ups(route.outward(at, centre))
-            peg_ways = []
-            if i >= 2 and not seams[i - 2].pegs_on_lower:
-                peg_ways.append(-seams[i - 2].along)
-            if i - 1 < len(seams) and seams[i - 1].pegs_on_lower:
-                peg_ways.append(seams[i - 1].along)
-            rotation = _pose_for(points, bed, [u for u in ups if all(u @ w > -0.5 for w in peg_ways)], supports)
+            # A plug prints best standing up, with its underside no flatter than the
+            # printer builds unaided, and a socket best not opening straight down.
+            outward = route.outward(at, centre)
+            ups = _ups(outward)
+            plugs, sockets = [], []
+            if i >= 2:
+                (sockets if seams[i - 2].plug_on_lower else plugs).append(-seams[i - 2].along)
+            if i - 1 < len(seams):
+                (plugs if seams[i - 1].plug_on_lower else sockets).append(seams[i - 1].along)
+            if plugs:
+                ups = [outward + plugs[0], *ups]
+            rotation = _pose_for(
+                points, bed,
+                [u for u in ups
+                 if all(u @ way > 0.3 * np.linalg.norm(u) for way in plugs)
+                 and all(u @ way > -0.5 * np.linalg.norm(u) for way in sockets)],
+                supports,
+            )
             if rotation is None:
                 rotation = _pose_for(points, bed, ups, supports)
-            room = bed - np.array([2.0 * BED_MARGIN, 2.0 * BED_MARGIN, SUPPORT_LIFT if supports else 0.0])
+            room = bed - np.array([2.0 * BED_MARGIN, 2.0 * BED_MARGIN, lift])
             if rotation is None:
                 raise ValueError(f"Piece {i} does not fit this printer. Choose a larger printer.")
             oriented = points @ rotation.T
             low, high = oriented.min(axis=0), oriented.max(axis=0)
             if np.any(high - low > room + 0.05):
                 raise ValueError(f"Piece {i} does not fit this printer. Choose a larger printer.")
-            shift = np.r_[(bed[:2] - (high[:2] - low[:2])) / 2.0, SUPPORT_LIFT if supports else 0.0] - low
+            shift = np.r_[(bed[:2] - (high[:2] - low[:2])) / 2.0, lift] - low
             printed, matrix = _transform(part, rotation, shift)
-            name = f"piece-{i:02d}.stl"
+            name = f"part-{i:02d}.stl"
             write_surface_stl(staged / name, printed)
             spec = {
                 "file": name,
@@ -963,18 +1198,36 @@ def export_print_kit(folder, surface, build_mm, *, working_side="auto", cut_poin
                 "arc_to_mm": float(hi_s) if np.isfinite(hi_s) else None,
             }
             if supports:
-                stems, count = _stems(printed, rotation, shift, avoid, route, working, centre)
-                bounds = np.asarray(stems.GetBounds()).reshape(3, 2)
+                margin = np.full(2, 0.1)
+                held = rods.support_structure(
+                    printed,
+                    keep_off=_rod_rules(rotation, shift, route, centre, working, cut, own_seams),
+                    limits=(margin, bed[:2] - margin),
+                )
+                ready = rods.merged(printed, held)
+                bounds = np.asarray(ready.GetBounds()).reshape(3, 2)
                 if np.any(bounds[:, 0] < -1e-4) or np.any(bounds[:, 1] > bed + 1e-4):
-                    raise ValueError("Stems would leave the bed. Switch stems off or choose a larger printer.")
-                stem_name = f"piece-{i:02d}-stems.stl"
-                write_surface_stl(staged / stem_name, stems)
-                spec.update(stems_file=stem_name, breakaway_stems=count)
+                    raise ValueError("The rods would leave the bed. Switch them off or choose a larger printer.")
+                ready_name = f"part-{i:02d}-ready-to-print.stl"
+                write_surface_stl(staged / ready_name, ready)
+                spec.update(
+                    ready_to_print_file=ready_name,
+                    support_rods=held.rods,
+                    rods_standing_on_the_part=held.on_part,
+                    downward_surfaces_held_share=round(held.covered, 3),
+                    rod_contacts_print_mm=np.round(held.contacts, 2).tolist(),
+                )
             report["parts"].append(spec)
-        if seams:
-            write_surface_stl(staged / "fit-test.stl", _fit_test(seams[0]))
+        # The joint most in need of the right clearance is the most slender one.
+        slenderest = min(seams, key=lambda seam: seam.section_modulus_mm3) if seams else None
+        fit_test, tried = _fit_test(slenderest, bed) if seams else (None, ())
+        report["fit_test_clearances_mm"] = list(tried)
+        if fit_test is not None:
+            write_surface_stl(staged / "fit-test.stl", fit_test)
         (staged / "assembly.json").write_text(json.dumps(report, indent=2) + "\n")
-        (staged / "PRINT-AND-ASSEMBLE.txt").write_text(_instructions(len(pieces), bool(len(cut)), supports, side_whole))
+        (staged / "PRINT-AND-ASSEMBLE.txt").write_text(
+            _instructions(len(pieces), bool(len(cut)), supports, side_whole, seams, tried)
+        )
         # Publish only once everything is complete; never over an earlier kit.
         suffix = 1
         while True:

@@ -59,9 +59,11 @@ def dialogs(tmp_path_factory):
         "warn": QMessageBox.warning,
         "crit": QMessageBox.critical,
     }
-    from mandiplan.ui.print_setup import PrintSetupDialog
+    from mandiplan.ui.print_setup import KeysPrinterDialog, PrintSetupDialog
     saved_print_exec = PrintSetupDialog.exec
     PrintSetupDialog.exec = lambda self: 0
+    saved_keys_exec = KeysPrinterDialog.exec
+    KeysPrinterDialog.exec = lambda self: 1
     counter = {"n": 0}
 
     def save_name(*_a, **_k):
@@ -74,6 +76,7 @@ def dialogs(tmp_path_factory):
         setattr(QMessageBox, name, staticmethod(lambda *a, **k: None))
     yield out
     PrintSetupDialog.exec = saved_print_exec
+    KeysPrinterDialog.exec = saved_keys_exec
     QFileDialog.getExistingDirectory = saved["dir"]
     QFileDialog.getSaveFileName = saved["save"]
     QMessageBox.information = saved["info"]

@@ -61,18 +61,12 @@ def working_boundary(session, surface, side, cut_points):
     return side, float(half[:, 0].min() if sign == 1 else half[:, 0].max())
 
 
-class PrintSetupDialog(QDialog):
-    def __init__(self, session, parent=None):
+class PrinterChoice:
+    """The printer rows of a form: which machine, and its build volume."""
+
+    def __init__(self, session, form: QFormLayout):
         from ..printing import PRINTERS
-        super().__init__(parent)
-        self.setWindowTitle("Prepare mandible for printing")
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-        self.model = QComboBox()
-        if session.reconstructed_surface is not None:
-            self.model.addItem("Reconstructed mandible", "reconstructed")
-        self.model.addItem("Separated mandible", "original")
-        form.addRow("Model", self.model)
+
         self.printer = QComboBox()
         for name, size in PRINTERS.items():
             self.printer.addItem(name, tuple(size))
@@ -87,28 +81,83 @@ class PrintSetupDialog(QDialog):
             row.addWidget(QLabel(axis))
             row.addWidget(spin)
         form.addRow("Build volume", dims)
-        def select_printer():
-            size = self.printer.currentData()
-            for i, spin in enumerate(self.dims):
-                if size:
-                    spin.setValue(size[i])
-                spin.setEnabled(size is None)
-        self.printer.currentIndexChanged.connect(select_printer)
-        select_printer()
+        remembered = getattr(session, "printer_name", None)
+        index = self.printer.findText(remembered) if remembered else -1
+        if index >= 0:
+            self.printer.setCurrentIndex(index)
+        self.printer.currentIndexChanged.connect(self._selected)
+        self._selected()
+        if remembered == "Custom build volume" and getattr(session, "printer_build_mm", None):
+            for spin, value in zip(self.dims, session.printer_build_mm):
+                spin.setValue(value)
+
+    def _selected(self) -> None:
+        size = self.printer.currentData()
+        for i, spin in enumerate(self.dims):
+            if size:
+                spin.setValue(size[i])
+            spin.setEnabled(size is None)
+
+    def remember(self, session) -> None:
+        session.printer_name = self.printer.currentText()
+        session.printer_build_mm = self.build_mm()
+
+    def build_mm(self) -> tuple[float, float, float]:
+        return tuple(spin.value() for spin in self.dims)
+
+
+class KeysPrinterDialog(QDialog):
+    """Which printer the bend keys are laid out for."""
+
+    def __init__(self, session, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Print the bend keys")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.choice = PrinterChoice(session, form)
+        layout.addLayout(form)
+        note = QLabel(
+            "The keys are laid out on this printer's bed, each on its side, on rods and a raft, "
+            "ready to print. A fit test comes with them: print it first."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("Choose where to save…")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+
+class PrintSetupDialog(QDialog):
+    def __init__(self, session, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Prepare mandible for printing")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.model = QComboBox()
+        if session.reconstructed_surface is not None:
+            self.model.addItem("Reconstructed mandible", "reconstructed")
+        self.model.addItem("Separated mandible", "original")
+        form.addRow("Model", self.model)
+        self.choice = PrinterChoice(session, form)
+        self.printer, self.dims = self.choice.printer, self.choice.dims
         self.side = QComboBox()
         for label, key in [("From planned resection", "auto"),
                            ("Patient left", "left"), ("Patient right", "right")]:
             self.side.addItem(label, key)
         form.addRow("Protect working side", self.side)
-        self.clearance = _mm(0.05, 0.5, 0.2)
-        form.addRow("Peg clearance", self.clearance)
-        self.supports = QCheckBox("Add removable support stems")
+        self.clearance = _mm(0.05, 0.5, 0.15)
+        self.clearance.setSingleStep(0.05)
+        self.clearance.setToolTip("The gap all round a plug in its socket. The fit test shows which suits your printer.")
+        form.addRow("Joint clearance", self.clearance)
+        self.supports = QCheckBox("Add support rods and a raft: ready to print")
         self.supports.setChecked(True)
         form.addRow("", self.supports)
         layout.addLayout(form)
-        note = QLabel("Parts stay at actual size and connect with pegs on flat faces. The resected section "
-                      "stays whole in one part, laid with its outer face up and no support on that face. "
-                      "If no cut is planned, choose a side before a split is needed.")
+        note = QLabel("Parts stay at actual size. They join on a flat face, the jaw's own section carried on as a "
+                      "long plug into a socket. The resected section stays whole in one part, laid with its outer "
+                      "face up and no rod on that face. If no cut is planned, choose a side before a split is needed.")
         note.setWordWrap(True)
         layout.addWidget(note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)

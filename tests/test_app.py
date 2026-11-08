@@ -17,6 +17,8 @@ from make_phantom import PhantomSpec, make_phantom, write_dicom_series
 
 from mandiplan.constants import DISCLAIMER
 from mandiplan.exporting import write_bend_csv, write_bending_guide, write_template_stl
+from mandiplan.plate_assets import load_assets
+from mandiplan.plate_catalog import load_kits
 from mandiplan.ui.modes import Mode
 
 
@@ -404,15 +406,15 @@ def test_plate_path_bend_table_and_exports(window, phantom_folder, tmp_path):
     expected = session.plate.width_mm * session.plate.thickness_mm * plan.total_length_mm
     assert rel_error(mass.GetVolume(), expected) < 0.05
 
-    # The comb is laid out on the plate as finally seated.
+    # The keys are worked out for the plate as finally seated.
     guide = session.bending_guide()
     assert guide is not None
     np.testing.assert_allclose(guide.centres, session.bent_plate.hole_centres)
     assert len(guide.joints) == len(session.bent_plate.hole_centres) - 1
-    assert any(joint.angle_deg > 0.5 for joint in guide.joints)
+    assert any(joint.angle_deg > 0.5 for joint in guide.joints) and guide.keys
     guide_stl, guide_table = write_bending_guide(tmp_path / "guide.stl", guide, session.plate_asset)
     assert guide_stl.stat().st_size > 10_000
-    assert "drops over its pin" in guide_table.read_text(encoding="utf-8")
+    assert "lies flat on the key" in guide_table.read_text(encoding="utf-8")
     window.set_mode(Mode.NAVIGATE)
 
 
@@ -818,28 +820,199 @@ def test_a_plate_that_will_not_do_shows_a_red_sign(window):
         session.clear_planes()
 
 
-def test_the_bends_can_be_rehearsed_on_the_guide_from_a_fresh_plate(window):
+def test_the_bends_can_be_rehearsed_on_the_keys_from_a_fresh_plate(window):
     session = _fresh_plate_session(window)
     panel = window.plate_panel
+    session.set_bending_kit("synthes-329-142")
     session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
     panel.guide_toggle.setChecked(True)
     assert session.guide_view_on
-    assert window.view3d.guide_actor.GetVisibility() and not window.view3d.bone_actor.GetVisibility()
-    assert "Fresh plate" in panel.guide_text.text()
+    assert not window.view3d.bone_actor.GetVisibility()
+    assert "fresh plate" in panel.guide_text.text()
     assert not window.view3d.arch_actor.GetVisibility()
     assert all(not widget.GetEnabled() for widget in window.view3d._plane_widgets)
     assert not panel.guide_back.isEnabled()
-    _, fresh, _ = session.guide_preview()
+    solid, head, fresh, _ = session.guide_preview()
+    assert solid is None and head is None, "no key yet: the plate as it comes"
+    assert not window.view3d.guide_actor.GetVisibility()
+    assert window.view3d.guide_plate_actor.GetVisibility()
+    panel.guide_next.click()
+    solid, head, on_key, _ = session.guide_preview()
+    assert solid is not None and solid.GetNumberOfCells() > 100
+    assert head is not None
+    assert window.view3d.guide_actor.GetVisibility() and window.view3d.guide_tool_actor.GetVisibility()
+    assert "Key " in panel.guide_text.text()
     for _ in range(session.guide_step_count):
         panel.guide_next.click()
-    assert "every hole" in panel.guide_text.text()
+    assert "All the bends are made" in panel.guide_text.text()
     assert not panel.guide_next.isEnabled()
-    _, finished, _ = session.guide_preview()
-    # The plate came from straight to the shape it has on the jaw.
-    placed = session.plate_mesh()
-    assert np.linalg.norm(finished - placed.points, axis=1).max() < 1.0
-    assert np.linalg.norm(fresh - placed.points, axis=1).max() > 1.0
+    solid, _, finished, _ = session.guide_preview()
+    assert solid is None
+    # The plate came from straight to the shape it has on the jaw: the same plate,
+    # wherever each is. Between any two of its points the distances agree.
+    placed = session.plate_mesh().points
+    take = np.linspace(0, len(placed) - 1, 60).astype(int)
+    made = np.linalg.norm(finished[take][:, None] - finished[take][None, :], axis=2)
+    wanted = np.linalg.norm(placed[take][:, None] - placed[take][None, :], axis=2)
+    assert np.abs(made - wanted).max() < 2.0
+    was = np.linalg.norm(fresh[take][:, None] - fresh[take][None, :], axis=2)
+    assert np.abs(was - wanted).max() > 1.0
     panel.guide_toggle.setChecked(False)
     assert not session.guide_view_on
     assert window.view3d.bone_actor.GetVisibility() and not window.view3d.guide_actor.GetVisibility()
 
+
+def _with_a_cut(session, at=0.3, wide=20.0):
+    """A resection a good way along the jaw."""
+    session.clear_planes()
+    frames = session.frames
+    for s, flip in ((at * frames.length_mm, False), (at * frames.length_mm + wide, True)):
+        i = frames.index_of(s)
+        session.add_plane(frames.points[i], (-1.0 if flip else 1.0) * frames.tangents[i])
+    return session._defect_span()
+
+
+def test_a_long_plate_runs_from_the_neck_and_its_excess_is_cut_off(window):
+    session = _fresh_plate_session(window)
+    panel = window.plate_panel
+    defect = _with_a_cut(session)
+    try:
+        assert defect is not None
+        stock = max(
+            (a for a in load_assets() if a.family == "generic-recon-2.4-lp"), key=lambda a: a.hole_count
+        )
+        session.set_plate_asset(stock.id, length_chosen=True)
+        active = session.active_plate_asset
+        verdict = session.plate_verdict
+        assert session.plate_course == "neck" and session.plate_auto
+        placement = session.plate_placement
+        assert placement.holes_after >= 3
+        route = session.plate_route
+        assert min(placement.arcs_mm[0], placement.arcs_mm[-1]) == pytest.approx(route.s[0], abs=0.5) or (
+            max(placement.arcs_mm[0], placement.arcs_mm[-1]) == pytest.approx(route.s[-1], abs=0.5)
+        )
+        if active.hole_count < stock.hole_count:
+            assert any("Cut off" in note for note in verdict.notes)
+            assert panel.retained.value() == active.hole_count
+            assert "Cut off" in panel.sign.text()
+            assert session.steps[0].kind == "cut"
+        assert any("holes past the cut" in note for note in verdict.notes)
+
+        # The operator's own count stands.
+        keep = stock.hole_count - 1
+        panel.retained.setValue(keep)
+        assert session.active_plate_asset.hole_count == keep
+        session._replace_plate()
+        assert session.active_plate_asset.hole_count == keep
+
+        # And centred on the resection is an option.
+        session.set_plate_asset(stock.id, length_chosen=True)
+        panel.course_box.setCurrentIndex(panel.course_box.findData("centred"))
+        assert session.plate_course == "centred"
+        assert session.active_plate_asset.hole_count == stock.hole_count
+        assert not any("holes past the cut" in note for note in session.plate_verdict.notes)
+    finally:
+        session.set_plate_course("neck")
+        session.clear_planes()
+
+
+def test_a_plate_that_cannot_reach_from_the_neck_says_so(window):
+    session = _fresh_plate_session(window)
+    _with_a_cut(session, at=0.45)
+    try:
+        session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
+        assert any("centred on the resection" in note for note in session.plate_verdict.notes)
+        assert session.active_plate_asset.hole_count == 10
+    finally:
+        session.clear_planes()
+
+
+def test_the_bender_can_be_measured_and_the_keys_follow(window):
+    session = _fresh_plate_session(window)
+    session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
+    panel = window.export_panel
+    session.set_bending_kit("synthes-329-142")
+    assert panel.head_spins["lobe_spacing_mm"].isEnabled()
+    assert panel.head_spins["lobe_spacing_mm"].value() == pytest.approx(32.0)
+    panel.head_spins["lobe_spacing_mm"].setValue(36.0)
+    guide = session.bending_guide()
+    assert guide.head.lobe_spacing_mm == pytest.approx(36.0) and "measured" in guide.head.source
+    session.set_bending_kit("bending-irons")
+    assert session.guide_head is None
+    assert not panel.head_spins["lobe_spacing_mm"].isEnabled()
+    session.set_bending_kit("synthes-329-142")
+
+
+def test_pin_play_and_extra_overbend_reach_the_keys(window):
+    session = _fresh_plate_session(window)
+    session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
+    session.set_bending_kit("synthes-329-142")
+    before = session.bending_guide()
+    session.set_guide_setting("guide_pin_play_mm", 0.2)
+    session.set_guide_setting("guide_extra_overbend_deg", 2.0)
+    try:
+        after = session.bending_guide()
+        assert after.pin_diameter_mm == pytest.approx(before.pin_diameter_mm - 0.2)
+        if before.keys:
+            assert after.keys[0].stop_angle_deg == pytest.approx(before.keys[0].stop_angle_deg + 2.0, abs=0.05)
+    finally:
+        session.set_guide_setting("guide_pin_play_mm", 0.1)
+        session.set_guide_setting("guide_extra_overbend_deg", 0.0)
+
+
+def test_a_kit_with_no_key_keeps_its_plain_bench_steps(window):
+    session = _fresh_plate_session(window)
+    session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
+    wire = next(kit for kit in load_kits() if kit.head.kind == "none")
+    session.set_bending_kit(wire.id)
+    try:
+        assert session.steps
+    finally:
+        session.set_bending_kit("synthes-329-142")
+
+
+def test_rehearsing_with_a_kit_that_has_no_keys_says_why(window):
+    session = _fresh_plate_session(window)
+    panel = window.plate_panel
+    session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
+    wire = next(kit for kit in load_kits() if kit.head.kind == "none")
+    session.set_bending_kit(wire.id)
+    said = []
+    session.message.connect(said.append)
+    try:
+        panel.guide_toggle.setChecked(True)
+        assert not session.guide_view_on and not panel.guide_toggle.isChecked()
+        assert any("by hand" in text for text in said)
+    finally:
+        session.message.disconnect(said.append)
+        session.set_bending_kit("synthes-329-142")
+
+
+def test_a_cut_plane_grows_to_cover_the_bone_it_cuts(window):
+    session = _fresh_plate_session(window)
+    view = window.view3d
+    session.clear_planes()
+    frames = session.frames
+    i = frames.index_of(0.5 * frames.length_mm)
+    session.add_plane(frames.points[i], frames.tangents[i])
+    try:
+        from mandiplan.ui.view3d import PLANE_DRAWN_SHARE, PLANE_HALF_SIZE_MM
+        from vtkmodules.util.numpy_support import vtk_to_numpy
+
+        plane = session.planes[0]
+        half = view._plane_half_size(plane.origin, plane.normal)
+        assert half >= PLANE_HALF_SIZE_MM
+        vertices = vtk_to_numpy(session.surface.GetPoints().GetData()).astype(float)
+        rel = vertices - np.asarray(plane.origin)
+        n = np.asarray(plane.normal) / np.linalg.norm(plane.normal)
+        off = rel @ n
+        flat = rel - off[:, None] * n
+        reach = np.linalg.norm(flat, axis=1)
+        section = reach[(np.abs(off) < 1.5) & (reach < 45.0)]
+        assert half * PLANE_DRAWN_SHARE >= section.max(), "the square covers the section"
+        # Out in the air it is its small self.
+        assert view._plane_half_size(np.array(plane.origin) + 500.0, plane.normal) == PLANE_HALF_SIZE_MM
+        bounds = view._plane_widgets[0].GetRepresentation().GetWidgetBounds()
+        assert 0.5 * (bounds[1] - bounds[0]) == pytest.approx(half, abs=0.01)
+    finally:
+        session.clear_planes()

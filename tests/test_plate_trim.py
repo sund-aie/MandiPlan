@@ -27,6 +27,27 @@ def test_cut_stock_retains_full_proximal_holes_and_is_closed(stock):
     assert len(load_asset_mesh(original).triangles) > len(mesh.triangles)
 
 
+def test_stock_can_be_cut_at_either_end_or_both():
+    original = asset_by_id("generic-recon-2.4-lp-12h")
+    for first, count in ((3, 9), (2, 6)):
+        active, mesh = trim_stock(original, count, first)
+        assert np.array_equal(active.hole_centres_mm, original.hole_centres_mm[first : first + count])
+        assert active.hole_count == count
+        edges = np.sort(np.vstack([mesh.triangles[:, [0, 1]], mesh.triangles[:, [1, 2]],
+                                   mesh.triangles[:, [2, 0]]]), axis=1)
+        unique, incidences = np.unique(edges, axis=0, return_counts=True)
+        assert np.all(incidences == 2), "still closed"
+        assert len(mesh.points) - len(unique) + len(mesh.triangles) == 2 - 2 * count
+        # Nothing of the cut holes is left.
+        for gone in np.vstack([original.hole_centres_mm[:first], original.hole_centres_mm[first + count :]]):
+            assert np.linalg.norm(mesh.points - gone, axis=1).min() > 0.5 * original.hole_pitch_mm - 0.5
+    cut_one_end = trim_stock(original, 6, 0)[0]
+    cut_both = trim_stock(original, 6, 2)[0]
+    assert cut_both.length_mm < cut_one_end.length_mm + 1e-6
+    with pytest.raises(ValueError):
+        trim_stock(original, 11, 3)
+
+
 def test_actual_jaw_projection_corrects_path_standoff_and_keeps_pitch():
     from mandiplan.geometry.plate_bend import seat_plate_chain
     from mandiplan.render.surface import SurfaceProjector

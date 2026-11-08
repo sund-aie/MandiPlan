@@ -751,7 +751,17 @@ class PlatePanel(QWidget):
         self.retained.setMinimum(2)
         self.retained.setKeyboardTracking(False)
         self.retained.setSuffix(" holes")
-        self.retained.setToolTip("Keep holes from the starting end. Decrease to cut the distal tail between holes; restore the full count to undo the cut.")
+        self.retained.setToolTip(
+            "How many holes of this plate stay. It cuts itself to what its course needs; a number set here "
+            "stands until another plate is chosen. The full count keeps the whole plate."
+        )
+        self.course_box = QComboBox()
+        self.course_box.addItem("From the condylar neck, past the far cut", "neck")
+        self.course_box.addItem("Centred on the resection", "centred")
+        self.course_box.setToolTip(
+            "From the neck: the plate starts at the condylar neck nearer the resection and runs along the lower "
+            "border to a few holes past the far cut; the rest of it is cut off. Centred: the same holes each side."
+        )
         self.status_badge = QLabel("")
         self.clearance = QDoubleSpinBox()
         self.clearance.setRange(0.0, 5.0)
@@ -804,7 +814,7 @@ class PlatePanel(QWidget):
         for kit in load_kits():
             self.kit_box.addItem(kit.name, kit.id)
 
-        self.guide_toggle = QPushButton("Rehearse the bends on the guide")
+        self.guide_toggle = QPushButton("Rehearse the bends on the keys")
         self.guide_toggle.setCheckable(True)
         self.guide_back = QPushButton("Back")
         self.guide_next = QPushButton("Next bend")
@@ -873,6 +883,7 @@ class PlatePanel(QWidget):
         library.addRow("Plate", self.family_box)
         library.addRow("Stock length", self.model_box)
         library.addRow("Holes to keep", self.retained)
+        library.addRow("Course", self.course_box)
         library.addRow("", self.status_badge)
         layout.addLayout(library)
         layout.addWidget(self.place_button)
@@ -924,7 +935,7 @@ class PlatePanel(QWidget):
         stepper.addWidget(self.guide_next)
         rehearsal_layout.addLayout(stepper)
         rehearsal_layout.addWidget(self.guide_text)
-        layout.addWidget(_Section("Bend a fresh plate on the guide", rehearsal, expanded=True))
+        layout.addWidget(_Section("Bend a fresh plate on its keys", rehearsal, expanded=True))
         layout.addWidget(
             _Section("Screw-hole options", _boxed(self.show_distortion, self.use_insets))
         )
@@ -943,6 +954,9 @@ class PlatePanel(QWidget):
         self.family_box.currentIndexChanged.connect(self._on_family)
         self.model_box.currentIndexChanged.connect(self._on_model)
         self.retained.valueChanged.connect(session.set_retained_holes)
+        self.course_box.currentIndexChanged.connect(
+            lambda i: session.set_plate_course(self.course_box.itemData(i))
+        )
         self.clearance.valueChanged.connect(session.set_plate_clearance)
         self.bend_plate.toggled.connect(session.set_plate_bending)
         self.show_distortion.toggled.connect(session.set_hole_distortion_shown)
@@ -1071,6 +1085,9 @@ class PlatePanel(QWidget):
             self.retained.setMaximum(self.session.plate_asset.hole_count)
             self.retained.setValue(asset.hole_count)
             self.retained.blockSignals(False)
+        self.course_box.blockSignals(True)
+        self.course_box.setCurrentIndex(self.course_box.findData(self.session.plate_course))
+        self.course_box.blockSignals(False)
         if asset is None:
             self.status_badge.setText("No plate selected")
             set_role(self.status_badge, "hint")
@@ -1228,7 +1245,7 @@ class PlatePanel(QWidget):
             )
         else:
             self.guide_text.setText(
-                "See the fresh plate on the printed comb, and each bend in order, "
+                "See the fresh plate, then each key in its order with the bender's head on it, "
                 "before touching the real one."
             )
 
@@ -1248,8 +1265,8 @@ class PlatePanel(QWidget):
             return
         colour, mark = self.SIGN_STYLES[verdict.level]
         text = f"<b>{mark} {verdict.headline}</b>"
-        if verdict.reasons:
-            text += "<br>" + "<br>".join(verdict.reasons)
+        if verdict.reasons or verdict.notes:
+            text += "<br>" + "<br>".join([*verdict.reasons, *verdict.notes])
         self.sign.setText(text)
         self.sign.setStyleSheet(
             f"QLabel {{ background: {colour}; color: white; padding: 8px; border-radius: 6px; }}"
@@ -1323,16 +1340,26 @@ class ExportPanel(QWidget):
 
     #: (key, button text, what it is for)
     ITEMS = (
-        ("print-kit", "Prepare mandible print kit", "Choose your printer and export pieces that fit together while preserving the working side."),
+        ("print-kit", "Prepare mandible print kit", "Choose your printer: parts that fit it, sparing the working side, joined by plug and socket, on rods and a raft ready to print."),
         ("mandible", "Mandible (STL)", "The patient's mandible on its own, separated from the skull."),
         ("jaw", "Reconstructed jaw (STL)", "The mandible as rebuilt, to print as a model."),
         ("segment", "Mirrored segment only (STL)", "Just the part that fills the defect."),
         ("fragment", "Resected segment (STL)", "The bone the cuts remove."),
         ("plate", "Bent plate (STL)", "The plate as planned, to print and bend against."),
-        ("guide", "Bending guide (STL + table)", "A thin comb to bend the plate on: a pin for each hole of the finished shape, made for this plate, its length as cut, and your bender."),
+        ("guide", "Bending guide (STL + table)", "One small key per bend, made for this plate as cut and your bender: seat its pins in the two holes, rest the bender on it, and press until the plate lies flat on it. Ready to print on rods and a raft."),
         ("bends", "Bend table (CSV)", "Angle at every screw hole."),
         ("steps", "Bench steps (CSV)", "The bending steps for the chosen kit, in order."),
         ("resection", "Resection summary (CSV)", "Cut positions, angles and margins."),
+    )
+    #: (what it is called, its name on the head, least, most)
+    HEAD_FIELDS = (
+        ("Post diameter", "post_diameter_mm", 2.0, 40.0),
+        ("Lobes apart, centre to centre", "lobe_spacing_mm", 5.0, 60.0),
+        ("Lobe radius", "lobe_radius_mm", 1.0, 20.0),
+        ("Arch rise above the lobes", "arch_rise_mm", 0.0, 30.0),
+        ("Arch radius", "arch_radius_mm", 2.0, 80.0),
+        ("Widest opening", "opening_mm", 1.0, 40.0),
+        ("Head depth along the post", "pocket_depth_mm", 4.0, 40.0),
     )
     export_requested = pyqtSignal(str)
 
@@ -1358,17 +1385,45 @@ class ExportPanel(QWidget):
             if key == "guide":
                 options = QWidget()
                 form = QFormLayout(options)
-                for title, attr, lo, hi in (("Tooth thickness", "guide_wall_mm", 0.8, 2.4),
-                                             ("Pin play per side", "guide_clearance_mm", 0.05, 0.8)):
+                for title, attr, lo, hi, suffix, tip in (
+                    ("Pin play per side", "guide_pin_play_mm", 0.0, 0.4, " mm",
+                     "How snugly the keys' pins sit in the plate's holes: the tightest of the fit test's pins that goes in by hand."),
+                    ("Extra overbend", "guide_extra_overbend_deg", 0.0, 8.0, "\u00b0",
+                     "Added to every key's stop, if the fit test's plate stays short of its gauge after release."),
+                ):
                     spin = QDoubleSpinBox()
                     spin.setDecimals(2)
                     spin.setRange(lo, hi)
                     spin.setSingleStep(0.05)
-                    spin.setSuffix(" mm")
+                    spin.setSuffix(suffix)
+                    spin.setKeyboardTracking(False)
+                    spin.setToolTip(tip)
                     spin.setValue(getattr(session, attr))
-                    spin.valueChanged.connect(lambda value, name=attr: setattr(session, name, value))
+                    spin.valueChanged.connect(lambda value, name=attr: session.set_guide_setting(name, value))
                     form.addRow(title, spin)
-                layout.addWidget(_Section("Guide dimensions", options))
+                layout.addWidget(_Section("Fit of the keys", options))
+                measured = QWidget()
+                head_form = QFormLayout(measured)
+                head_form.addRow(
+                    _hint(
+                        "A key nests in the bender's head, so measure yours. Its pins and faces do not depend on "
+                        "these; how it sits in the head does."
+                    )
+                )
+                self.head_spins: dict[str, QDoubleSpinBox] = {}
+                for title, attr, lo, hi in self.HEAD_FIELDS:
+                    spin = QDoubleSpinBox()
+                    spin.setDecimals(1)
+                    spin.setRange(lo, hi)
+                    spin.setSingleStep(0.5)
+                    spin.setSuffix(" mm")
+                    spin.setKeyboardTracking(False)
+                    spin.valueChanged.connect(lambda value, name=attr: session.set_guide_head_value(name, value))
+                    head_form.addRow(title, spin)
+                    self.head_spins[attr] = spin
+                self.head_source = _hint("")
+                head_form.addRow(self.head_source)
+                layout.addWidget(_Section("Your bender's head", measured))
         layout.addStretch(1)
         for signal in (
             session.reconstruction_changed,
@@ -1396,3 +1451,14 @@ class ExportPanel(QWidget):
         }
         for key, button in self.buttons.items():
             button.setEnabled(ready[key])
+        head = session.guide_head or session.bending_kit.head
+        three_point = head.kind == "three_point"
+        for name, spin in self.head_spins.items():
+            spin.blockSignals(True)
+            spin.setValue(float(getattr(head, name)))
+            spin.blockSignals(False)
+            spin.setEnabled(three_point)
+        if three_point:
+            self.head_source.setText(f"These figures: {head.source or 'as the maker gives them'}.")
+        else:
+            self.head_source.setText(f"{session.bending_kit.name} has no head to measure.")

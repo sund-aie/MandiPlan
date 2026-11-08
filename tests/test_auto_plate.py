@@ -16,7 +16,9 @@ from mandiplan.geometry.auto_plate import (
     SCREW,
     SKIP,
     SPARE,
+    SCREWS_PER_SIDE,
     advise_holes,
+    course_from_neck,
     jaw_route,
     judge_plate,
     place_chain,
@@ -239,3 +241,175 @@ def test_a_plate_wider_than_the_bone_it_lies_on_is_not_applicable(route):
     placed = place_chain(route, *_straight(len(arcs)), None)
     verdict = _verdict(arcs=arcs, placement=placed, route=route, plate_width_mm=40.0)
     assert verdict.level == BAD and any("hang over" in r for r in verdict.reasons)
+
+
+def _necked_jaw():
+    """A body running into a ramus that narrows to a neck and widens to a head, as rings
+    round a curve: the frame's ``up`` comes round the angle to point forward, as in life.
+    Returns the frames, the vertices, and the arc position of the neck."""
+    from mandiplan.geometry.spline import ArchCurve
+
+    seeds = np.array(
+        [[40.0, -70.0, 0.0], [40.0, -50.0, 0.0], [40.0, -30.0, 0.0], [40.0, -12.0, 3.0], [40.0, -2.0, 14.0],
+         [40.0, 0.0, 30.0], [40.0, 0.0, 50.0], [40.0, 0.0, 65.0], [40.0, 0.0, 80.0]]
+    )
+    frames = cpr.build_frames(ArchCurve(seeds), 0.5)
+    points = []
+    for s in np.arange(0.0, frames.length_mm, 1.0):
+        at = frames.point_at(float(s))
+        _, up, side = frames.frame_at(float(s))
+        z = at[2]
+        # Top of the head at 80, the neck at 62 its narrowest.
+        tall = 15.0 - 7.0 * np.clip((z - 30.0) / 32.0, 0.0, 1.0) + 7.0 * np.exp(-(((z - 73.0) / 6.0) ** 2))
+        for a in np.linspace(0.0, 2.0 * np.pi, 72, endpoint=False):
+            points.append(at + tall * np.cos(a) * up + 6.0 * np.sin(a) * side)
+    neck = float(frames.s[int(np.argmin(np.abs(frames.points[:, 2] - 62.0)))])
+    return frames, np.array(points), neck
+
+
+def test_the_route_stops_at_the_condylar_neck():
+    frames, vertices, neck = _necked_jaw()
+    route = jaw_route(vertices, frames, 8.0)
+    assert route is not None
+    assert route.necks_mm[1] is not None and abs(route.necks_mm[1] - neck) < 6.0, "the narrowest place below the head"
+    assert route.s[-1] <= route.necks_mm[1] + 0.5, "and a plate does not lie on the head"
+    # Up the ramus, it is near the back: at the lower border's margin, the plate's width in.
+    i = int(np.argmin(np.abs(route.s - (neck - 25.0))))
+    at = frames.point_at(float(route.s[i]))
+    _, up, _ = frames.frame_at(float(route.s[i]))
+    level = float((route.points[i] - at) @ up)
+    assert level < 0.0, "behind the middle of the ramus"
+
+
+def test_a_plate_wider_than_the_neck_stops_where_the_bone_is_as_wide_as_it():
+    frames, vertices, neck = _necked_jaw()
+    narrow = jaw_route(vertices, frames, 6.0)
+    wide = jaw_route(vertices, frames, 20.0)
+    assert wide.s[-1] < narrow.s[-1]
+    assert wide.bone_height_mm[-1] >= 19.0
+
+
+def test_no_neck_to_read_stops_short_of_the_end_of_the_curve(jaw, route):
+    frames, _ = jaw
+    assert route.necks_mm == (None, None)
+    assert frames.length_mm - route.s[-1] == pytest.approx(14.0, abs=1.5)
+    assert route.s[0] == pytest.approx(14.0, abs=1.5)
+
+
+def test_the_section_above_the_notch_is_the_neck_alone():
+    frames, vertices, neck = _necked_jaw()
+    # A coronoid process in front of the neck, across a gap: no part of the plate's bone.
+    at = int(np.argmin(np.abs(frames.points[:, 2] - 58.0)))
+    _, up, side = frames.frame_at(float(frames.s[at]))
+    extra = []
+    for z in np.arange(52.0, 66.0, 1.0):
+        for a in np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False):
+            extra.append(np.array([40.0, 0.0, z]) + (22.0 + 4.0 * np.cos(a)) * up + 4.0 * np.sin(a) * side)
+    alone = jaw_route(vertices, frames, 6.0)
+    both = jaw_route(np.vstack([vertices, np.array(extra)]), frames, 6.0)
+    assert both.necks_mm[1] == pytest.approx(alone.necks_mm[1], abs=3.0)
+    i = int(np.argmin(np.abs(alone.s - float(frames.s[at]))))
+    j = int(np.argmin(np.abs(both.s - float(frames.s[at]))))
+    assert both.bone_height_mm[j] == pytest.approx(alone.bone_height_mm[i], abs=2.0)
+
+
+def test_a_plate_runs_from_the_nearer_neck_to_a_little_past_the_far_cut(jaw, route):
+    frames, _ = jaw
+    # A resection in the first half of the jaw.
+    defect = (route.s[0] + 50.0, route.s[0] + 80.0)
+    spacings, turns = _straight(24)
+    course = course_from_neck(route, spacings, turns, defect)
+    assert course is not None and course.first == 0
+    assert not course.neck_at_route_end
+    placed = course.placement
+    assert placed.arcs_mm[0] == pytest.approx(route.s[0], abs=0.01), "hole 1 at the neck"
+    assert course.holes_past == SCREWS_PER_SIDE
+    assert placed.holes_after == SCREWS_PER_SIDE, "enough past the far cut, and no more"
+    assert placed.holes_before >= SCREWS_PER_SIDE
+    assert course.count < 24
+    assert len(placed.points) == course.count
+    # On the other side, it runs from the other neck.
+    far = (route.s[-1] - 80.0, route.s[-1] - 50.0)
+    course = course_from_neck(route, spacings, turns, far)
+    assert course.neck_at_route_end
+    assert course.placement.arcs_mm[0] == pytest.approx(route.s[-1], abs=0.01)
+    assert course.placement.holes_before == SCREWS_PER_SIDE
+
+
+def test_a_plate_too_short_to_get_past_the_cut_has_no_course(jaw, route):
+    defect = (route.s[0] + 60.0, route.s[0] + 100.0)
+    assert course_from_neck(route, *_straight(8), defect) is None
+
+
+def test_a_plate_that_just_reaches_keeps_every_hole_it_has(jaw, route):
+    defect = (route.s[0] + 40.0, route.s[0] + 60.0)
+    spacings, turns = _straight(14)
+    course = course_from_neck(route, spacings, turns, defect)
+    needed = course.count
+    exact = course_from_neck(route, *_straight(needed), defect)
+    assert exact.count == needed and exact.holes_past == SCREWS_PER_SIDE
+
+
+def test_holes_kept_by_hand_all_stay_on_the_course(jaw, route):
+    defect = (route.s[0] + 40.0, route.s[0] + 60.0)
+    course = course_from_neck(route, *_straight(20), defect, keep_all=True)
+    assert course.count == 20 and len(course.placement.points) == 20
+    assert course.holes_past > SCREWS_PER_SIDE
+
+
+def test_the_shortest_plate_that_reaches_from_the_neck_is_recommended(jaw, route):
+    defect = (route.s[0] + 40.0, route.s[0] + 60.0)
+    plates = [(*_straight(h), h) for h in (4, 8, 12, 16, 20, 24)]
+    chosen = recommend_length(route, plates, defect, from_neck=True)
+    course = course_from_neck(route, *_straight(chosen), defect)
+    assert course is not None and course.holes_past == SCREWS_PER_SIDE
+    shorter = course_from_neck(route, *_straight(chosen - 4), defect)
+    assert shorter is None or shorter.holes_past < SCREWS_PER_SIDE
+    # It holds more than the same plate centred would need: that is the point.
+    assert chosen >= recommend_length(route, plates, defect)
+
+
+def test_a_plate_longer_than_the_route_is_centred_with_its_ends_running_past(jaw, route):
+    holes = int((route.s[-1] - route.s[0]) / PITCH) + 8
+    placed = place_chain(route, *_straight(holes), None)
+    assert placed.off_route > 0, "and the verdict can say so"
+    gaps = np.linalg.norm(np.diff(placed.points, axis=0), axis=1)
+    # Round the curve the chords are shorter than the arc; past its ends they are straight.
+    assert gaps.max() == pytest.approx(PITCH, abs=0.5) and gaps.min() > 0.8 * PITCH
+    assert abs(float(placed.positions[0] + placed.positions[-1]) - (len(route.s) - 1)) < 2.0
+
+
+def test_a_preformed_plate_lands_with_its_bend_where_the_jaw_has_it():
+    theta = np.linspace(0.0, np.pi / 2.0, 40)
+    corner = np.column_stack([np.zeros(60), np.zeros(60), np.linspace(60.0, 1.0, 60)])
+    bend = np.column_stack([8.0 * (1.0 - np.cos(theta)), np.zeros(40), 8.0 * (1.0 - np.sin(theta))]) * 0.0
+    body = np.column_stack([np.linspace(1.0, 120.0, 120), np.zeros(120), np.zeros(120)])
+    points = np.vstack([corner, body])
+    s = np.arange(len(points), dtype=float)
+    faces = np.tile([0.0, -1.0, 0.0], (len(points), 1))
+    from mandiplan.geometry.auto_plate import JawRoute
+
+    route = JawRoute(s, points, faces, np.full(len(s), 25.0), np.ones(len(s), dtype=bool))
+    # A plate with a right angle at its 8th hole of 24.
+    holes = []
+    for i in range(24):
+        holes.append([0.0, 0.0, (7 - i) * 8.0] if i <= 7 else [(i - 7) * 8.0, 0.0, 0.0])
+    holes = np.array(holes, dtype=float)
+    axes = np.tile([0.0, -1.0, 0.0], (24, 1))
+    spacings = np.linalg.norm(np.diff(holes, axis=0), axis=1)
+    own = plate_turns(holes, axes)
+    assert np.abs(own).max() > 80.0
+    course = course_from_neck(route, spacings, own, (90.0, 110.0))
+    assert course is not None
+    assert course.placement.turn_needed_deg < 30.0, "its corner on the jaw's corner"
+    assert bend is not None
+
+
+def test_notes_say_what_was_done_with_the_plate():
+    holes = [hole for hole in advise_holes(
+        np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]) - 5.0,
+        np.zeros(10), np.zeros(10), np.full(10, 12.0), None,
+    )]
+    verdict = judge_plate(holes, np.arange(10) * 10.0, None, None, notes=["Cut off 4 holes."])
+    assert verdict.level == GOOD and verdict.notes == ["Cut off 4 holes."]
+    assert "Cut off 4 holes." not in verdict.reasons

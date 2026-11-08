@@ -202,14 +202,42 @@ the bone most, height off it less, the face's turn in between), then lifted onto
 any prominence it would pass through, then the holes are walked along it at the
 plate's exact spacing.
 
-## The bending guide is a comb with pins
+## The bending guide is a key for each bend
 
-Replaces the clip-on saddles and the fork-and-rail checking form. A pin in each
-hole of the finished shape answers position and turn together with no reading
-of angles; the bridges are left open on all sides so the bender can reach them
-with the plate in place. It is sized from the plate (holes, spacing, bore,
-width, thickness) and the kit (how far the base stands back, and whether the
-jaws land on a tooth at this pitch).
+Replaces the comb with pins, which the owner found odd and hard to use. A comb only checks
+a bend after the fact: the hand decides when to stop. A key stops the bend. It lies
+between the plate and the bender's head with the plate's finished shape on its faces, so the
+plate goes no further once flat on it, however hard the handles are pressed, and neither
+the angle nor the bender's exact kinematics come into it. Only two lobes of the plate touch
+its faces, which lift away beyond them, so earlier and later bends do not matter. Pins in the
+two holes locate it and are conical, so they stay engaged while the hole turns. It is
+printed on its side so those faces are upright.
+
+Order and force are from the maker: in-plane first, per the DePuy Synthes sternal guide for
+the 329.142. The bridge's plastic moment is about 4.5 N·m on a 2.4 plate, so about 1000 N
+on the key at a 9 mm reach, about 40-60 MPa in the key: a calculation, to be checked on the
+fit test. A printed bending form is not new: Song et al. (J Korean Assoc Oral Maxillofac
+Surg 2021;47:233) printed upper and lower supports for a press, with a rod to locate the
+plate and rounded edges against stress. That is one case report.
+
+The plan's small turns are gathered, since a key per bridge per direction came to 34 keys
+for an 18-hole plate. In-plane error only moves a hole along the bone, so it gets 0.8 mm;
+out-of-plane error lifts the plate off it, so it gets 0.25 mm. The plate in the app is the
+plan; the plate the keys make is within what the table states, and the rehearsal draws the latter.
+
+## A plate runs from the condylar neck
+
+The owner's practice: a long plate goes up the neck, along the inferior border on the facial
+surface, to a little past the cut, its excess cut off. Asked to check, not to take this on
+trust. The AO Surgery Reference supports the inferior and posterior borders, the lateral
+surface, and three or preferably four screws per side, all for fractures. Nothing found says
+a plate must start at the neck. So it is the default because the owner asked, the option
+to centre it stays, and the README says what is and is not supported.
+
+The neck is read rather than assumed: a section's run of bone from its lower border,
+ignoring what lies past a 3 mm gap (the coronoid above the notch), is followed up the ramus
+to where it narrows before the head. A height-times-breadth product finds it where height
+alone would not, since the head is wider across the jaw than along it.
 
 ## The print kit is built from a solid, on a grid
 
@@ -218,29 +246,42 @@ earlier approach of keying the mesh failed on every real scan. The surface is
 filled and contoured again at 0.3 mm, then every vertex near the scan's surface is
 put back on it, so the working surface loses nothing to the grid.
 
-## Parts connect with pegs on flat faces
+## Parts connect by the jaw's own section, plug in socket
 
-An interlocking jigsaw joint was tried and dropped at the owner's request: the
-parts are meant simply to connect. Flat faces keep the jaw's length exact, two
-pegs of different sizes fix the position and allow one way together, and the
-kit carries a small print to calibrate their clearance.
+Pegs of 4 and 3 mm were too small: the owner feared the jaw would break under pressure, and a
+4 mm peg's section modulus of 6.3 mm3 gives about 0.4 N·m in a 60 MPa resin, about what
+pressing a plate 40 mm from the joint asks for. The plug is the section itself, drawn in by a
+wall, and strength is taken as the weaker of plug and wall for bending each way, not as the
+plug's alone: a thin wall would only move the failure. On the slim jaws tried it comes to 27 to
+50 mm3, against 150 to 190 for the whole section there: a useful step, not parity, and the
+kit reports it rather than claim otherwise. An interlocking jigsaw joint was tried earlier and
+dropped at the owner's request. A half-lap was considered and is weaker than this for any
+section. Flat faces keep the jaw's length exact.
+
+## Support rods are in the part's own file
+
+The owner asked for files ready for the printer. A resin printer needs a rod under each
+lowest point before anything else, or that layer starts from nothing, so those are placed
+first, by reading the part along vertical rays. Rods are simple closed shells overlapping the
+part, which printers' software accepts, not one watertight union: slicing them is not a problem
+and a boolean of hundreds of rods on a scan's mesh would be slow and fragile. The model alone
+is exported too, at the same coordinates.
 
 ## The plate places itself
 
 Choosing a plate is the whole input. The route runs just above the lower border
 because that keeps screws clear of tooth roots and the nerve on any jaw, and
-needs no segmentation of either, which the scans could not support. Position is
-chosen by scoring, not by rules per plate: holes balanced round the resection and
-least bending in the plate's own plane, which puts a preformed plate at the angle
-without knowing it is an angle plate. The verdict's red is kept for what cannot
+needs no segmentation of either, which the scans could not support. Where a course
+from the neck does not apply, position is chosen by scoring, not by rules per plate:
+holes balanced round the resection and least bending in the plate's own plane, which
+puts a preformed plate at the angle without knowing it is an angle plate. The verdict's red is kept for what cannot
 be bent or trimmed away, so it means something when it shows.
 
-## The guide starts from a fresh plate
+## The rehearsal starts from a fresh plate
 
-A plate out of the packet is straight, so only hole 1 can sit on its pin at first.
-The comb is meant for that: the plate wraps round it from one end, each bend
-bringing one more hole onto its pin. A ledge keeps it level until then, and the
-rehearsal in the app draws the plate at every step.
+A plate out of the packet is straight, and each key's bend is made on a plate holding all the
+bends before it, released. So the rehearsal runs the bends forward as hinges at the bridges, in the
+key's own frame at each stop, and draws the plate, the key and the bender's head at that step.
 
 ## Negative slice spacing and CT padding
 

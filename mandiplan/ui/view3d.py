@@ -48,6 +48,16 @@ GRAFT_COLOUR = (0.600, 0.792, 0.776)     # pale teal: the mirrored segment
 NO_DONOR_COLOUR = (0.839, 0.706, 0.478)  # muted sand: no mirror donor there
 #: Half the side of the box a cut plane is drawn in, mm: a jaw's height.
 PLANE_HALF_SIZE_MM = 11.0
+#: The bone a cut goes through is read within this of its plane, out to this far from
+#: its centre, which keeps it from taking in the far side of the arch, mm.
+PLANE_SECTION_SLAB_MM = 1.5
+PLANE_SECTION_REACH_MM = 45.0
+PLANE_SECTION_GAP_MM = 4.0
+#: How far the drawn plane runs past the bone, mm; the half-edge of the drawn square as
+#: a share of the half-size of its box; and how much the size must change to be redone.
+PLANE_MARGIN_MM = 3.0
+PLANE_DRAWN_SHARE = 1.025
+PLANE_RESIZE_STEP_MM = 1.0
 GUIDE_COLOUR = (0.45, 0.6, 0.8)
 #: The screw plan's hole markers: size, and what their colours mean.
 ADVICE_MARKER_MM = 1.3
@@ -305,7 +315,8 @@ class View3D(QWidget):
         self.verdict_actor.VisibilityOff()
         self.renderer.AddViewProp(self.verdict_actor)
 
-        # Rehearsing the bends: the printed comb, and the plate at this step on it.
+        # Rehearsing the bends: the printed key, the bender's head, and the plate
+        # at this step between them.
         self.guide_mapper = vtk.vtkPolyDataMapper()
         self.guide_mapper.SetInputData(empty_polydata())
         self.guide_mapper.ScalarVisibilityOff()
@@ -314,6 +325,15 @@ class View3D(QWidget):
         self.guide_actor.GetProperty().SetColor(*GUIDE_COLOUR)
         self.guide_actor.VisibilityOff()
         self.renderer.AddActor(self.guide_actor)
+        self.guide_tool_mapper = vtk.vtkPolyDataMapper()
+        self.guide_tool_mapper.SetInputData(empty_polydata())
+        self.guide_tool_mapper.ScalarVisibilityOff()
+        self.guide_tool_actor = vtk.vtkActor()
+        self.guide_tool_actor.SetMapper(self.guide_tool_mapper)
+        self.guide_tool_actor.GetProperty().SetColor(0.62, 0.64, 0.68)
+        self.guide_tool_actor.GetProperty().SetOpacity(0.35)
+        self.guide_tool_actor.VisibilityOff()
+        self.renderer.AddActor(self.guide_tool_actor)
         self.guide_plate_normals = vtk.vtkPolyDataNormals()
         self.guide_plate_normals.SplittingOn()
         self.guide_plate_normals.ConsistencyOff()
@@ -327,6 +347,9 @@ class View3D(QWidget):
         self.guide_plate_actor.VisibilityOff()
         self.renderer.AddActor(self.guide_plate_actor)
         self._guide_view_shown = False
+        self._guide_view_step = None
+        self._plane_surface = None
+        self._plane_vertices = None
         self._saved_visibility: list[tuple] = []
 
         self.mark_glyph = vtk.vtkGlyph3D()
@@ -558,7 +581,7 @@ class View3D(QWidget):
         self.render()
 
     def refresh_guide_view(self) -> None:
-        """Swap the jaw for the comb and the plate at this step, or back again."""
+        """Swap the jaw for the key, the bender and the plate at this step, or back again."""
         from ..render.convert import triangles_to_polydata
 
         preview = self.session.guide_preview()
@@ -569,6 +592,7 @@ class View3D(QWidget):
         ]
         if preview is None:
             self.guide_actor.VisibilityOff()
+            self.guide_tool_actor.VisibilityOff()
             self.guide_plate_actor.VisibilityOff()
             if self._guide_view_shown:
                 for actor, visibility in self._saved_visibility:
@@ -588,15 +612,22 @@ class View3D(QWidget):
             entering = True
         else:
             entering = False
-        mesh, points, triangles = preview
-        self.guide_mapper.SetInputData(mesh)
-        self.guide_plate_normals.SetInputData(triangles_to_polydata(points, triangles))
+        solid, head, points, triangles = preview
+        self.guide_mapper.SetInputData(solid if solid is not None else empty_polydata())
+        self.guide_tool_mapper.SetInputData(head if head is not None else empty_polydata())
+        plate = triangles_to_polydata(points, triangles)
+        self.guide_plate_normals.SetInputData(plate)
         asset = self.session.plate_asset
         self.guide_plate_actor.GetProperty().SetColor(*(asset.colour if asset is not None else PLATE_COLOUR))
-        self.guide_actor.VisibilityOn()
+        self.guide_actor.SetVisibility(solid is not None)
+        self.guide_tool_actor.SetVisibility(head is not None)
         self.guide_plate_actor.VisibilityOn()
-        if entering:
-            self.renderer.ResetCamera(mesh.GetBounds())
+        # Each step is a different pose of the plate: show what it is about.
+        focus = solid if solid is not None else plate
+        step = (solid is not None, self.session.guide_step)
+        if entering or step != self._guide_view_step:
+            self.renderer.ResetCamera(focus.GetBounds())
+        self._guide_view_step = step
         self.renderer.ResetCameraClippingRange()
         self.render()
 
@@ -734,11 +765,9 @@ class View3D(QWidget):
                 # on the cut, whatever its angle, and is free to leave the box
                 # during a drag. (Cropped to the box, an oblique plane is a
                 # hexagon, and it stops following the mouse at the box's walls.)
-                box = [
-                    float(c) + sign * PLANE_HALF_SIZE_MM
-                    for c in plane.origin
-                    for sign in (-1.0, 1.0)
-                ]
+                # It grows to cover the bone it cuts.
+                half = self._plane_half_size(plane.origin, plane.normal)
+                box = [float(c) + sign * half for c in plane.origin for sign in (-1.0, 1.0)]
                 if index >= len(self._plane_widgets):
                     self._plane_widgets.append(self._make_plane_widget(index, box))
                 rep = self._plane_widgets[index].GetRepresentation()
@@ -752,6 +781,34 @@ class View3D(QWidget):
                 self._plane_widgets[index].SetEnabled(not self.session.cut_applied)
         finally:
             self._syncing = False
+
+    def _plane_half_size(self, origin, normal) -> float:
+        """The box half-size whose square covers the bone this cut goes through."""
+        surface = self.session.surface
+        if surface is None or not surface.GetNumberOfPoints():
+            return PLANE_HALF_SIZE_MM
+        if self._plane_surface is not surface:
+            from vtkmodules.util.numpy_support import vtk_to_numpy
+
+            self._plane_surface = surface
+            self._plane_vertices = vtk_to_numpy(surface.GetPoints().GetData()).astype(float)
+        rel = self._plane_vertices - np.asarray(origin, dtype=float)
+        n = np.asarray(normal, dtype=float)
+        n = n / max(float(np.linalg.norm(n)), 1e-9)
+        off = rel @ n
+        flat = rel - off[:, None] * n
+        reach = np.einsum("ij,ij->i", flat, flat)
+        near = (np.abs(off) < PLANE_SECTION_SLAB_MM) & (reach < PLANE_SECTION_REACH_MM**2)
+        if not near.any():
+            return PLANE_HALF_SIZE_MM
+        # Out from the cut's centre until there is a gap: past it, another part of the
+        # jaw is merely in the same plane, as the far side of the arch can be.
+        radii = np.sqrt(np.sort(reach[near]))
+        gaps = np.flatnonzero(np.diff(radii) > PLANE_SECTION_GAP_MM)
+        section = float(radii[gaps[0]]) if len(gaps) else float(radii[-1])
+        # A square of any turn covers this circle, the margin being what shows round it.
+        radius = section + PLANE_MARGIN_MM
+        return max(PLANE_HALF_SIZE_MM, radius / PLANE_DRAWN_SHARE)
 
     def _make_plane_widget(self, index: int, bounds) -> vtk.vtkImplicitPlaneWidget2:
         rep = vtk.vtkImplicitPlaneRepresentation()
@@ -802,6 +859,15 @@ class View3D(QWidget):
         self._syncing = True
         try:
             self.plane_translated.emit(index, origin)
+            if index < len(self.session.planes):
+                # Grow or shrink with the bone it is passing over, as it moves.
+                half = self._plane_half_size(origin, self.session.planes[index].normal)
+                bounds = rep.GetWidgetBounds()
+                if abs(0.5 * (bounds[1] - bounds[0]) - half) > PLANE_RESIZE_STEP_MM:
+                    normal = rep.GetNormal()
+                    rep.PlaceWidget([float(c) + sign * half for c in origin for sign in (-1.0, 1.0)])
+                    rep.SetOrigin(*origin)
+                    rep.SetNormal(*normal)
         finally:
             self._syncing = False
 

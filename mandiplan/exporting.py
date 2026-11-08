@@ -292,84 +292,97 @@ def _num(value: float) -> str:
     return "" if not np.isfinite(value) else f"{value:.3f}"
 
 
-def write_bending_guide(path: str | Path, guide, asset=None) -> tuple[Path, Path]:
-    """Write the bending guide as a binary STL, and its table as CSV.
+def write_bending_guide(path: str | Path, guide, asset=None, bed=None, printer_name: str = "") -> tuple[Path, Path]:
+    """Write the bend keys, ready to print, and their table as CSV.
 
-    The CSV sits next to the STL with the same name. It says, bridge by
-    bridge, which way to bend, and how the guide is printed and used.
+    ``path`` is the first bed, every key lying on its side on rods and a raft, as the
+    printer needs it; further beds are ``-bed-2`` and so on. Beside it: ``-fit-test``,
+    to print first, a folder ``-keys`` of each key's solid alone, for a slicer's own
+    supports, and the table with the same name as ``path``.
     """
-    from .render.bending_guide_mesh import guide_polydata, pin_test_polydata
+    from .render.bending_guide_mesh import fit_test_ready_to_print, key_solids, keys_on_beds
 
     path = Path(path)
-    writer = vtk.vtkSTLWriter()
-    writer.SetFileName(str(path))
-    writer.SetFileTypeToBinary()
-    writer.SetInputData(guide_polydata(guide))
-    writer.Write()
-    stamp_stl(path)
+    bed = np.asarray(bed if bed is not None else (119.0, 67.0, 75.0), dtype=float)
+    written = []
 
-    test_piece = path.with_name(path.stem + "-pin-test.stl")
-    writer = vtk.vtkSTLWriter()
-    writer.SetFileName(str(test_piece))
-    writer.SetFileTypeToBinary()
-    triangles = vtk.vtkTriangleFilter()
-    triangles.SetInputData(pin_test_polydata(guide))
-    triangles.Update()
-    writer.SetInputData(triangles.GetOutput())
-    writer.Write()
-    stamp_stl(test_piece)
+    def save(target: Path, mesh) -> None:
+        triangles = vtk.vtkTriangleFilter()
+        triangles.SetInputData(mesh)
+        triangles.Update()
+        writer = vtk.vtkSTLWriter()
+        writer.SetFileName(str(target))
+        writer.SetFileTypeToBinary()
+        writer.SetInputData(triangles.GetOutput())
+        writer.Write()
+        stamp_stl(target)
+        written.append(target)
 
+    solids = key_solids(guide)
+    if solids:
+        for number, plate in enumerate(keys_on_beds([solid for _, solid in solids], bed), 1):
+            save(path if number == 1 else path.with_name(f"{path.stem}-bed-{number}{path.suffix}"), plate)
+        folder = path.with_name(path.stem + "-keys")
+        folder.mkdir(exist_ok=True)
+        for name, solid in solids:
+            save(folder / f"key-{name}.stl", solid)
+    test_print = path.with_name(path.stem + "-fit-test.stl")
+    save(test_print, fit_test_ready_to_print(guide, bed))
+
+    beds = sum(1 for item in written if item == path or item.stem.startswith(f"{path.stem}-bed-"))
     table = path.with_suffix(".csv")
-    tool = guide.kit.name
-    if guide.jaws_meet_teeth:
-        access = (f"{tool}: at this plate's hole pitch the jaws land on the teeth, so lift the "
-                  "plate off the pins for each bend and set it back to check")
-    else:
-        access = (f"{tool}: the jaws fit between the teeth at this plate's hole pitch, so the "
-                  "plate can stay on its pins while you bend")
+    head = guide.head
+    pin = f"{guide.pin_diameter_mm:.2f}"
+    if guide.hole_stretch_mm:
+        pin += f" x {guide.pin_diameter_mm + guide.hole_stretch_mm:.2f}"
     lines = [
-        "MandiPlan bending guide",
+        "MandiPlan bend keys",
         f"plate: {asset.name} ({asset.status_label}); {len(guide.centres)} holes"
         if asset is not None else f"plate: {len(guide.centres)} holes",
-        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick; pins "
-        f"{guide.pin_diameter_mm:.2f}" + (f" x {guide.pin_diameter_mm + guide.hole_stretch_mm:.2f}" if guide.hole_stretch_mm else "")
-        + " mm for this plate's bore",
-        f"teeth {guide.tooth_mm:.2f} mm thick; the base stands {guide.setback_mm:.1f} mm behind "
-        "the plate, the room this bender needs",
-        "print: base flat on the bed as exported, 100% scale, in a rigid material; no supports "
-        "beyond what the slicer asks under the pins",
-        f"first print {test_piece.name}: pins 1, 2 and 3 have "
+        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick; pins {pin} mm at the base for this plate's bore",
+        f"bender: {guide.kit.name}"
+        + (f"; head {head.source}" if head.source else ""),
+        f"print: {path.name}" + (f" and {beds - 1} more bed(s)" if beds > 1 else "")
+        + (f" for {printer_name}" if printer_name else "")
+        + " has every key on rods and a raft: do not re-orient or add supports. 100% scale, a rigid resin. "
+        f"The folder {path.stem}-keys has each key alone, for your slicer's own supports",
+        f"print {test_print.name} first. Bend a spare plate on its key, and lay the gauge on it: flush means the "
+        "springback allowance is right. If it stays short of the gauge, raise Extra overbend by the angle missing "
+        "and export again. Its tab has pins of "
         + ", ".join(f"{p:.2f}" for p in PIN_TEST_PLAYS_MM)
-        + " mm of play per side. Try them in a real hole of this plate, and set Pin play to the "
-        "tightest that slides in without forcing",
-        "use: stand the guide on the bench and take the plate as it comes from the packet, cut to "
-        "length if the table says so. Hang hole 1 on the tooth with the raised flag, bone face to "
-        "the teeth, lower edge on the ledge. Bend the next bridge until the next hole drops over "
-        "its pin and the plate lies flat on the pad; release, check, and go on to the next. Hole "
-        "numbers are on the base",
-        access,
-        "the pads and pins are the finished shape: a hole on its pin after release is right. "
-        "Springback figures are model estimates; the pin decides",
+        + " mm play per side, marked 1, 2 and 3: set Pin play to the tightest that goes into a hole of the plate by hand",
+        "use: one key per bend, in the order below, each with its name raised on it. Seat its pins in the two holes "
+        "it names, from the face it says. Rest the bender on it as it says, and press until the plate lies flat on "
+        "the key: there it stops, however hard you press. Let go, and go on to the next key",
+        "the faces of a key are the plate's finished shape plus an allowance for springback. Springback figures are "
+        "model estimates; the plate on the printed jaw decides",
         f"alloy for the springback estimate: {guide.alloy_name or 'none'}",
+        f"shape: the plan's small turns are gathered into {len(guide.keys)} bends; every hole of the plate these "
+        f"keys make is within {guide.deviation_mm:.1f} mm of the plan",
         "angles follow the bend table: in-plane positive counter-clockwise seen from the outer "
         "face, out-of-plane positive away from the bone, twist right-handed along the plate",
     ]
+    lines.extend(f"warning: {warning}" for warning in guide.warnings)
     with table.open("w", newline="", encoding="utf-8") as handle:
         _write_header(handle, lines)
         out = csv.writer(handle)
-        out.writerow(["bridge (holes)", "from hole 1 (mm)", "bend (deg)", "in-plane (deg)",
-                      "out-of-plane (deg)", "twist (deg)", "instruction"])
-        for joint in guide.joints:
-            position = 0.5 * (guide.stock_distances[joint.index] + guide.stock_distances[joint.index + 1])
+        out.writerow(["order", "key", "holes", "from hole 1 (mm)", "bend (deg)", "stop angle (deg)",
+                      "in-plane (deg)", "out-of-plane (deg)", "twist (deg)", "instruction"])
+        for key in guide.keys:
+            joint = guide.joints[key.bridge]
+            position = 0.5 * (guide.stock_distances[key.bridge] + guide.stock_distances[key.bridge + 1])
             out.writerow(
                 [
-                    f"{joint.index + 1}-{joint.index + 2}",
+                    key.number,
+                    key.name,
+                    f"{key.bridge + 1}-{key.bridge + 2}",
                     f"{position:.2f}",
-                    f"{joint.angle_deg:.2f}",
-                    f"{joint.in_plane_deg:.2f}",
-                    f"{joint.out_of_plane_deg:.2f}",
-                    f"{joint.twist_deg:.2f}",
-                    guide.instruction(joint),
+                    f"{key.angle_deg:.2f}",
+                    f"{key.stop_angle_deg:.2f}",
+                    f"{joint.in_plane_made_deg if key.kind == 'in_plane' else 0.0:.2f}",
+                    f"{joint.out_of_plane_made_deg if key.kind != 'in_plane' else 0.0:.2f}",
+                    f"{joint.twist_made_deg if key.kind != 'in_plane' else 0.0:.2f}",
+                    guide.instruction(key),
                 ]
             )
     return path, table

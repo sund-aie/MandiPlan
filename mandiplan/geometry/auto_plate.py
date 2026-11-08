@@ -6,15 +6,21 @@ the plate is applicable at all.
 
 **The route.** A reconstruction plate runs along the outer face of the jaw just
 above its lower border, clear of the tooth roots and the nerve above it, and up
-the posterior border of the ramus. At each station of the arch curve the bone's
-section is read for its lower border and its outer face at that height.
+the posterior border of the ramus to the condylar neck. At each station of the
+arch curve the bone's section is read for its lower border and its outer face at
+that height. The route stops at each neck: a plate does not lie on a condylar head.
 
-**The position.** The plate's holes are walked along the route at the plate's
-own spacing, sliding it along the jaw and trying it each way round. A position
-is scored on how evenly it holds the bone either side of the resection, on how
-little bending in the plane of the plate it asks for (which is what finds the
-angle of the jaw for a preformed angle plate, and the right side for a left or
-right one), and on keeping every hole on the jaw.
+**The course.** With a resection, the plate starts at the neck nearer the resection
+and runs along the route, across the gap, to a few holes past the far cut: enough
+screws in sound bone there and no more. What is left of the stock is cut off. A
+plate that cannot reach that far is centred on the resection instead, and says so.
+
+**The position.** With no resection, or if asked for, the plate's holes are walked
+along the route at the plate's own spacing, sliding it along the jaw and trying it
+each way round. A position is scored on how evenly it holds the bone either side
+of the resection, on how little bending in the plane of the plate it asks for
+(which is what finds the angle of the jaw for a preformed angle plate, and the
+right side for a left or right one), and on keeping every hole on the jaw.
 
 **The screws.** Next to a cut, a screw needs bone round it: holes too close to
 the cut, over the gap, off the bone or facing it badly get none. Of the rest,
@@ -44,6 +50,22 @@ SECTION_HALF_MM = 1.2
 SECTION_REACH_MM = (28.0, 50.0)
 #: Smoothing of the route, mm: a plate does not follow a bump this short.
 ROUTE_SMOOTH_MM = 5.0
+#: A gap this wide in a section of the jaw parts two pieces of bone, as the notch
+#: parts the neck from the coronoid process, mm.
+SECTION_GAP_MM = 3.0
+#: How deep into the ramus from each end of the curve the search for the neck
+#: starts, and how near the end it stops, mm.
+NECK_SEARCH_MM = (36.0, 3.0)
+#: Smoothing of the sections read for the neck, mm.
+NECK_SMOOTH_MM = 1.5
+#: The neck is narrower than the ramus below it by at least this share, and the head
+#: above it wider by at least this share.
+NECK_NARROWING = 0.25
+NECK_HEAD_RISE = 0.08
+#: Where no neck can be read, the route stops this far from the end of the curve, mm.
+NECK_FALLBACK_MM = 14.0
+#: How far below the neck a plate wider than it may have to stop, mm.
+NECK_WALK_MM = 14.0
 #: A screw needs this much bone between it and a cut, along the jaw, mm.
 MIN_CUT_MARGIN_MM = 5.0
 #: Screws recommended on each side of a resection, and the fewest acceptable.
@@ -71,6 +93,10 @@ PREFORM_MISMATCH_DEG = 25.0
 MIN_BONE_HEIGHT_SHARE = 0.9
 #: With no resection, the length recommended is at least this, mm.
 DEFAULT_LENGTH_MM = 60.0
+#: A plate turning more than this in its own plane has a preformed shape, degrees.
+PREFORM_MIN_DEG = 8.0
+#: How far along the route, and how, a preformed plate is tried from the neck, mm.
+PREFORM_SLIDE_MM = 30.0
 
 GOOD, CAUTION, BAD = "good", "caution", "bad"
 SCREW, SPARE, SKIP, NO_BONE = "screw", "spare", "skip", "no bone"
@@ -83,8 +109,11 @@ class JawRoute:
     s: np.ndarray  # arc positions on the arch curve, mm
     points: np.ndarray  # on the outer face of the bone
     outward: np.ndarray  # away from the bone
-    bone_height_mm: np.ndarray  # lower border to top of the section there
+    bone_height_mm: np.ndarray  # lower border to top of that run of bone there
     valid: np.ndarray  # whether the section at this station was read
+    #: Arc positions of the narrowest part of each condylar neck, where they could
+    #: be read: the route itself stops at or below them.
+    necks_mm: tuple[float | None, float | None] = (None, None)
 
 
 @dataclass
@@ -104,6 +133,17 @@ class Placement:
 
 
 @dataclass
+class Course:
+    """A plate's run from the neck: which holes of the stock stay, and where they land."""
+
+    placement: Placement
+    first: int  # the first hole of the stock kept, from 0
+    count: int  # how many holes are kept
+    holes_past: int  # sound holes past the far cut
+    neck_at_route_end: bool  # the neck it starts from is at the end of the route
+
+
+@dataclass
 class HoleAdvice:
     index: int  # 0-based, in the plate's own hole order
     state: str  # SCREW, SPARE, SKIP or NO_BONE
@@ -120,6 +160,8 @@ class PlateVerdict:
     holes: list[HoleAdvice] = field(default_factory=list)
     #: Suggested other length, in holes, when that would answer it.
     suggested_holes: int | None = None
+    #: What was done with the plate that is worth knowing, good or bad.
+    notes: list[str] = field(default_factory=list)
 
 
 def jaw_route(vertices: np.ndarray, frames, plate_width_mm: float) -> JawRoute | None:
@@ -132,6 +174,7 @@ def jaw_route(vertices: np.ndarray, frames, plate_width_mm: float) -> JawRoute |
     points = np.zeros((len(stations), 3))
     outward = np.zeros((len(stations), 3))
     height = np.zeros(len(stations))
+    breadth = np.zeros(len(stations))
     valid = np.zeros(len(stations), dtype=bool)
     previous = None
     for i, s in enumerate(stations):
@@ -153,6 +196,12 @@ def jaw_route(vertices: np.ndarray, frames, plate_width_mm: float) -> JawRoute |
             continue
         u, b = u[near], b[near]
         low, high = float(np.percentile(u, 1.0)), float(np.percentile(u, 99.0))
+        # The run of bone up from the lower border. Above the notch the coronoid
+        # process is in the same slab, across a gap, and is no part of it.
+        ordered = np.sort(u[u >= low])
+        gaps = np.flatnonzero(np.diff(ordered) > SECTION_GAP_MM)
+        if len(gaps):
+            high = min(high, float(ordered[gaps[0]]))
         level = low + LOWER_BORDER_MARGIN_MM + 0.5 * float(plate_width_mm)
         level = min(level, 0.5 * (low + high) if high - low < float(plate_width_mm) else level)
         band = np.abs(u - level) < 1.5
@@ -162,6 +211,8 @@ def jaw_route(vertices: np.ndarray, frames, plate_width_mm: float) -> JawRoute |
         points[i] = at + level * up + face * side
         outward[i] = side
         height[i] = high - low
+        inside = (u >= low) & (u <= high)
+        breadth[i] = float(np.ptp(b[inside])) if inside.any() else 0.0
         valid[i] = True
     if valid.sum() < 10:
         return None
@@ -172,11 +223,58 @@ def jaw_route(vertices: np.ndarray, frames, plate_width_mm: float) -> JawRoute |
         points[:, c] = np.interp(np.arange(len(stations)), known, points[known, c])
         outward[:, c] = np.interp(np.arange(len(stations)), known, outward[known, c])
     height = np.interp(np.arange(len(stations)), known, height[known])
+    breadth = np.interp(np.arange(len(stations)), known, breadth[known])
     sigma = ROUTE_SMOOTH_MM / ROUTE_STEP_MM
     smooth = _gaussian(points[keep], sigma)
     faces = _gaussian(outward[keep], sigma)
     faces = faces / np.maximum(np.linalg.norm(faces, axis=1, keepdims=True), 1e-9)
-    return JawRoute(stations[keep], smooth, faces, height[keep], valid[keep])
+    s_kept, height_kept = stations[keep], height[keep]
+    size = _gaussian((height_kept * breadth[keep])[:, None], NECK_SMOOTH_MM / ROUTE_STEP_MM).ravel()
+    lo, neck_lo = _neck_end(s_kept, height_kept, size, float(plate_width_mm), False)
+    hi, neck_hi = _neck_end(s_kept, height_kept, size, float(plate_width_mm), True)
+    if hi - lo < 10:
+        # A jaw too short to read: it is all route.
+        lo, hi, neck_lo, neck_hi = 0, len(s_kept) - 1, None, None
+    span = np.arange(lo, hi + 1)
+    return JawRoute(s_kept[span], smooth[span], faces[span], height_kept[span], valid[keep][span], (neck_lo, neck_hi))
+
+
+def _neck_end(s: np.ndarray, height: np.ndarray, size: np.ndarray, plate_width: float, at_high_end: bool):
+    """Where the route stops at one end, ``(index, arc of the neck or None)``.
+
+    Coming up the ramus the section narrows to the neck and widens again into the
+    head: the neck is the first narrowest place on that way up. A plate wider than
+    the neck stops a little below it, where the bone is as wide as the plate.
+    """
+    count = len(s)
+    index = np.arange(count)
+    # Station numbers from deep in the ramus towards the end of the curve.
+    distance = (s[-1] - s) if at_high_end else (s - s[0])
+    way = index[(distance <= NECK_SEARCH_MM[0]) & (distance >= NECK_SEARCH_MM[1])]
+    way = way if at_high_end else way[::-1]
+    neck = None
+    if len(way):
+        best = int(way[0])
+        for k in way:
+            k = int(k)
+            if size[k] < size[best]:
+                best = k
+            elif size[k] > (1.0 + NECK_HEAD_RISE) * size[best]:
+                if size[way[0]] > (1.0 + NECK_NARROWING) * size[best]:
+                    neck = best
+                    break
+    if neck is None:
+        fallback = int(np.argmin(np.abs(distance - NECK_FALLBACK_MM)))
+        return fallback, None
+    stop = neck
+    inward = -1 if at_high_end else 1
+    for _ in range(int(round(NECK_WALK_MM / ROUTE_STEP_MM))):
+        if height[stop] >= plate_width:
+            break
+        if not 0 <= stop + inward < count:
+            break
+        stop += inward
+    return stop, float(s[neck])
 
 
 def plate_turns(centres: np.ndarray, axes: np.ndarray) -> np.ndarray:
@@ -225,14 +323,27 @@ def place_chain(
         centre_wanted = samples - 1 - wanted if reverse else wanted
         # Slide through everywhere the plate lies wholly on the route, or, when
         # it is longer than the jaw, centred.
-        room = samples - 1 - length / ROUTE_STEP_MM
-        starts = np.arange(0.0, room + 1e-9, 2.0) if room > 0 else np.array([0.5 * room])
+        along = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(points, axis=0), axis=1))])
+        room = float(along[-1]) - length
+        last_start = float(np.interp(room, along, np.arange(samples))) if room > 0 else 0.0
+        starts = np.arange(0.0, last_start + 1e-9, 2.0) if room > 0 else np.array([0.5 * room])
         for start in starts:
-            positions = _walk_chain(points, max(float(start), 0.0), spacings, ROUTE_STEP_MM)
-            if room <= 0:
-                positions = positions + min(float(start), 0.0)
+            if room > 0:
+                positions = _walk_chain(points, float(start), spacings, ROUTE_STEP_MM)
+            else:
+                # Longer than the jaw: centred, its ends running straight on past the route's.
+                wanted_along = np.concatenate([[0.0], np.cumsum(spacings)]) + float(start)
+                positions = np.interp(wanted_along, along, np.arange(samples))
+                positions[wanted_along < 0.0] = wanted_along[wanted_along < 0.0] / ROUTE_STEP_MM
+                beyond = wanted_along > along[-1]
+                positions[beyond] = samples - 1 + (wanted_along[beyond] - along[-1]) / ROUTE_STEP_MM
             index = np.arange(samples)
             hole_points = np.column_stack([np.interp(positions, index, points[:, c]) for c in range(3)])
+            before_route, after_route = positions < 0.0, positions > samples - 1
+            step_back = (points[0] - points[1]) / max(float(np.linalg.norm(points[0] - points[1])), 1e-9)
+            step_on = (points[-1] - points[-2]) / max(float(np.linalg.norm(points[-1] - points[-2])), 1e-9)
+            hole_points[before_route] += -positions[before_route, None] * ROUTE_STEP_MM * step_back
+            hole_points[after_route] += (positions[after_route, None] - (samples - 1)) * ROUTE_STEP_MM * step_on
             hole_faces = np.column_stack([np.interp(positions, index, faces[:, c]) for c in range(3)])
             hole_faces = hole_faces / np.maximum(np.linalg.norm(hole_faces, axis=1, keepdims=True), 1e-9)
             hole_arcs = np.interp(positions, index, arcs)
@@ -266,12 +377,106 @@ def place_chain(
     return best
 
 
-def recommend_length(route, plates, defect, min_holes: int = MIN_SCREWS_PER_SIDE):
+def _is_preformed(own_turns: np.ndarray) -> bool:
+    return bool(len(own_turns) and float(np.abs(own_turns).max()) > PREFORM_MIN_DEG)
+
+
+def course_from_neck(
+    route: JawRoute,
+    spacings: np.ndarray,
+    own_turns: np.ndarray,
+    defect: tuple[float, float],
+    min_holes: int = MIN_SCREWS_PER_SIDE,
+    keep_all: bool = False,
+) -> Course | None:
+    """The plate from the neck nearer ``defect`` to a little past its far cut.
+
+    Holes are kept up to the ``SCREWS_PER_SIDE``th sound hole past the far cut; the
+    rest of the stock is for cutting off, unless ``keep_all``. A straight plate just
+    starts at the neck. A preformed one is tried either way round, starting at any of
+    its holes and sliding up to ``PREFORM_SLIDE_MM`` along the route, so its shape
+    lands where the jaw has that shape. None if the plate cannot get past the cut.
+    """
+    spacings = np.asarray(spacings, dtype=float).ravel()
+    own_turns = np.asarray(own_turns, dtype=float).ravel()
+    holes = len(spacings) + 1
+    samples = len(route.s)
+    neck_at_end = float(route.s[-1]) - float(defect[1]) < float(defect[0]) - float(route.s[0])
+    points = route.points[::-1] if neck_at_end else route.points
+    faces = route.outward[::-1] if neck_at_end else route.outward
+    arcs = route.s[::-1] if neck_at_end else route.s
+    index = np.arange(samples)
+    preformed = _is_preformed(own_turns)
+    if neck_at_end:
+        past_cut = lambda a: a < float(defect[0]) - MIN_CUT_MARGIN_MM  # noqa: E731
+    else:
+        past_cut = lambda a: a > float(defect[1]) + MIN_CUT_MARGIN_MM  # noqa: E731
+
+    best = None
+    slides = np.arange(0.0, PREFORM_SLIDE_MM + 1e-6, 2.0) / ROUTE_STEP_MM if preformed else np.zeros(1)
+    # (the hole at the neck, and which way round the holes run from it)
+    starts = [(i, 1) for i in range(holes)] + [(i, -1) for i in range(holes)] if preformed else [(0, 1)]
+    for at_neck, way in starts:
+        chain = spacings[at_neck:] if way > 0 else spacings[:at_neck][::-1]
+        if len(chain) < 1:
+            continue
+        if keep_all and at_neck != (0 if way > 0 else holes - 1):
+            continue
+        for slide in slides:
+            if slide >= samples - 1:
+                continue
+            walked = _walk_chain(points, float(slide), chain, ROUTE_STEP_MM)
+            on_route = int(np.count_nonzero(walked < samples - 1 - 1e-3)) if len(walked) else 0
+            walked = walked[: max(on_route, 1)]
+            hole_arcs = np.interp(walked, index, arcs)
+            past = np.flatnonzero(past_cut(hole_arcs))
+            if len(past) < min_holes:
+                continue
+            if keep_all:
+                if on_route < len(chain) + 1:
+                    continue
+                count, reached = len(walked), len(past)
+            else:
+                reached = min(len(past), SCREWS_PER_SIDE)
+                count = int(past[reached - 1]) + 1
+            walked = walked[:count]
+            hole_points = np.column_stack([np.interp(walked, index, points[:, c]) for c in range(3)])
+            hole_faces = np.column_stack([np.interp(walked, index, faces[:, c]) for c in range(3)])
+            hole_faces = hole_faces / np.maximum(np.linalg.norm(hole_faces, axis=1, keepdims=True), 1e-9)
+            hole_arcs = hole_arcs[:count]
+            if way < 0:
+                # The holes in the plate's own order, the last one at the neck.
+                walked, hole_points, hole_faces, hole_arcs = (a[::-1] for a in (walked, hole_points, hole_faces, hole_arcs))
+                first = at_neck - count + 1
+            else:
+                first = at_neck
+            turns = _signed_turns(hole_points, hole_faces)
+            wanted = own_turns[first : first + len(turns)] if len(turns) else own_turns[:0]
+            excess = np.abs(turns - wanted) if len(wanted) == len(turns) else np.abs(turns)
+            worst = float(excess.max()) if len(excess) else 0.0
+            cost = float((np.maximum(excess - TURN_FORGIVEN_DEG, 0.0) ** 2).sum())
+            cost += 2000.0 * (SCREWS_PER_SIDE - reached) + 0.2 * float(slide) ** 2 + (float(holes - count) if preformed else 0.0)
+            if best is None or cost < best.placement.score:
+                before = int(np.count_nonzero(hole_arcs < float(defect[0]) - MIN_CUT_MARGIN_MM))
+                after = int(np.count_nonzero(hole_arcs > float(defect[1]) + MIN_CUT_MARGIN_MM))
+                best = Course(
+                    Placement(walked, hole_arcs, hole_points, hole_faces, neck_at_end != (way < 0), before, after, worst, 0, cost),
+                    first,
+                    count,
+                    reached,
+                    neck_at_end,
+                )
+    return best
+
+
+def recommend_length(route, plates, defect, min_holes: int = MIN_SCREWS_PER_SIDE, from_neck: bool = False):
     """The plate to use of ``plates``: ``(spacings, own_turns, key)`` triples, shortest first.
 
     The shortest with ``SCREWS_PER_SIDE`` sound holes on each side of a
     resection, else the shortest with the minimum, else the longest. With no
     resection, the shortest of at least ``DEFAULT_LENGTH_MM``. Returns its key.
+    With ``from_neck``, those holes are counted past the far cut on a plate running
+    from the neck, and what lies beyond them is for cutting off.
     """
     if not plates:
         return None
@@ -281,6 +486,17 @@ def recommend_length(route, plates, defect, min_holes: int = MIN_SCREWS_PER_SIDE
                 return key
         return plates[-1][2]
     fallback = None
+    if from_neck:
+        for spacings, own, key in plates:
+            course = course_from_neck(route, spacings, own, defect, min_holes)
+            if course is None:
+                continue
+            if course.holes_past >= SCREWS_PER_SIDE:
+                return key
+            if fallback is None:
+                fallback = key
+        if fallback is not None:
+            return fallback
     for spacings, own, key in plates:
         placed = place_chain(route, spacings, own, defect, min_holes)
         if placed is None or placed.off_route:
@@ -363,6 +579,7 @@ def judge_plate(
     is_preformed: bool = False,
     hole_count: int = 0,
     longer_holes: int | None = None,
+    notes=(),
 ) -> PlateVerdict:
     """Whether this plate will do here, in plain words."""
     arcs = np.asarray(arcs_mm, dtype=float)
@@ -446,4 +663,4 @@ def judge_plate(
     else:
         headline = "Applicable"
         level = GOOD
-    return PlateVerdict(level, headline, fatal + caution, holes, suggested)
+    return PlateVerdict(level, headline, fatal + caution, holes, suggested, list(notes))

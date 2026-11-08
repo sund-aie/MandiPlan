@@ -7,7 +7,7 @@ what a widget looks like.
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
@@ -38,7 +38,16 @@ from ..geometry.sculpt import SurfaceSculptor, vertex_normals
 from ..geometry.mesh_io import Mesh, MeshLoadError
 from ..geometry.plate import PlatePlan, compute_plate_plan, fair_plate_path, plan_at_holes
 from ..geometry.hole_distortion import ovalise_mesh, predict_distortion
-from ..geometry.auto_plate import advise_holes, jaw_route, judge_plate, place_chain, plate_turns, recommend_length
+from ..geometry.auto_plate import (
+    PREFORM_MIN_DEG,
+    advise_holes,
+    course_from_neck,
+    jaw_route,
+    judge_plate,
+    place_chain,
+    plate_turns,
+    recommend_length,
+)
 from ..geometry.plate_bend import (
     BentPlate,
     ClearanceReport,
@@ -144,8 +153,6 @@ class VolumeInfo:
 BEND_FATAL_SHARE = 2.0
 #: A hole this far into the bone is within what a rough surface reads, mm.
 COLLISION_TOLERANCE_MM = 0.3
-#: A plate turning this much in its own plane somewhere was preformed, degrees.
-PREFORM_MIN_DEG = 8.0
 
 
 class Session(QObject):
@@ -269,6 +276,11 @@ class Session(QObject):
         self.plate_auto = False
         self.plate_placement = None
         self.plate_route = None
+        #: "neck": from the condylar neck past the far cut. "centred": on the resection.
+        self.plate_course = "neck"
+        self.plate_course_notes: list[str] = []
+        self._retained_by_hand = False
+        self._trim_first = 0
         #: Whether this plate will do here, hole by hole. See ``geometry/auto_plate``.
         self.plate_verdict = None
         self._guide = None
@@ -283,8 +295,16 @@ class Session(QObject):
         self.fitted_plate: FittedPlate | None = None
         self.bent_plate: BentPlate | None = None
         self.plate_contact: ClearanceReport | None = None
-        self.guide_wall_mm = 1.2
-        self.guide_clearance_mm = 0.25
+        #: How snugly a key's pins sit in the plate's holes, per side, mm.
+        self.guide_pin_play_mm = 0.1
+        #: Added to every key's stop, if the fit test shows this plate springs back
+        #: more than the estimate allows for, degrees.
+        self.guide_extra_overbend_deg = 0.0
+        #: The bender's head as measured, in place of what the kit says.
+        self.guide_head = None
+        #: The printer last chosen, for the keys as for the jaw.
+        self.printer_name = "Asiga MAX"
+        self.printer_build_mm = None
         self.plate_clearance_mm: float = 0.5
         self.plate_bending_enabled: bool = True
         #: Show the screw holes as bending would actually leave them, rather
@@ -337,6 +357,9 @@ class Session(QObject):
         self.plate_normals.clear()
         self.plate_plan = None
         self._trimmed_stock = None
+        self._retained_by_hand = False
+        self._trim_first = 0
+        self.plate_course_notes = []
         self.fitted_hole_plan = None
         self.fitted_plate = None
         self.bent_plate = None
@@ -1162,7 +1185,23 @@ class Session(QObject):
 
     def set_bending_kit(self, kit_id: str) -> None:
         self.bending_kit = kit_by_id(kit_id)
+        self.guide_head = None
         self.update_plate_plan()
+
+    def set_guide_head_value(self, name: str, value: float) -> None:
+        """One measurement of the bender's head, as taken from the bender in hand."""
+        head = self.guide_head or self.bending_kit.head
+        self.guide_head = replace(head, source="measured from the bender in hand", **{name: float(value)})
+        self._update_fit()
+        self.plate_changed.emit()
+
+    def set_guide_setting(self, name: str, value: float) -> None:
+        """Pin play or extra overbend, for the keys."""
+        if name not in ("guide_pin_play_mm", "guide_extra_overbend_deg"):
+            raise ValueError(name)
+        setattr(self, name, float(value))
+        self._update_fit()
+        self.plate_changed.emit()
 
     def _update_fit(self) -> None:
         self.fit = None
@@ -1196,9 +1235,15 @@ class Session(QObject):
         self.steps = generate_steps(plan, self.plate_system, self.bending_kit, self.fit)
         if self.bent_plate is not None and not self.plate_system.is_custom:
             from ..bending_steps import steps_from_guide
-            guide = self.bending_guide()
+            try:
+                guide = self.bending_guide()
+            except ValueError:
+                # A kit with nothing for a key to stop: the plain steps stand.
+                guide = None
             if guide is not None:
-                self.steps = steps_from_guide(guide, stock_holes=self.plate_asset.hole_count)
+                self.steps = steps_from_guide(
+                    guide, stock_holes=self.plate_asset.hole_count, first=self._trim_first if self._trimmed_stock else 0
+                )
 
     def add_plate_point(self, world_point) -> None:
         self.ensure_mandible()
@@ -1245,6 +1290,8 @@ class Session(QObject):
         follows the drawn path.
         """
         self._trimmed_stock = None
+        self._retained_by_hand = False
+        self._trim_first = 0
         self.plate_length_chosen = bool(length_chosen)
         self.plate_asset = None if asset_id is None else asset_by_id(asset_id)
         if self.plate_asset is not None:
@@ -1300,32 +1347,102 @@ class Session(QObject):
         defect = self._defect_span()
         system = system_for_asset(asset)
         minimum = max(int(system.min_holes_per_side), 1)
+        from_neck = self.plate_course == "neck" and defect is not None
 
         def describe(item):
             centres, axes = item.hole_centres_mm, item.hole_axes
             return np.linalg.norm(np.diff(centres, axis=0), axis=1), plate_turns(centres, axes)
 
-        if not self.plate_length_chosen and self._trimmed_stock is None:
+        if not self.plate_length_chosen and not self._retained_by_hand:
             family = sorted(assets_in_family(asset.family), key=lambda a: a.hole_count)
             choices = [(*describe(item), item.id) for item in family]
-            best = recommend_length(route, choices, defect, minimum)
+            best = recommend_length(route, choices, defect, minimum, from_neck=from_neck)
             if best is not None and best != asset.id:
                 self.plate_asset = asset = asset_by_id(best)
                 self._adopt_asset(asset)
+        notes: list[str] = []
+        course = None
+        if from_neck:
+            if self._retained_by_hand:
+                course = course_from_neck(route, *describe(self.active_plate_asset), defect, minimum, keep_all=True)
+            else:
+                course = course_from_neck(route, *describe(asset), defect, minimum)
+        if not self._retained_by_hand:
+            if course is not None:
+                if not self._cut_stock(asset, course.first, course.count):
+                    # Where the plate could not be cut, the whole of it, if that goes.
+                    course = course_from_neck(route, *describe(asset), defect, minimum, keep_all=True)
+            else:
+                self._cut_stock(asset, 0, asset.hole_count)
         active = self.active_plate_asset
-        spacings, turns = describe(active)
-        placement = place_chain(route, spacings, turns, defect, minimum)
+        if course is not None:
+            placement = course.placement
+            neck = route.necks_mm[1 if course.neck_at_route_end else 0]
+            start = "the condylar neck" if neck is not None else "the end of the jaw's run"
+            notes.append(f"Runs from {start} to {course.holes_past} holes past the cut.")
+            if not self._retained_by_hand and course.count < asset.hole_count:
+                off = asset.hole_count - course.count
+                notes.append(
+                    f"Cut off the {off} hole{'' if off == 1 else 's'} this plate does not need: "
+                    f"{course.count} of its {asset.hole_count} stay. Change it under Holes to keep."
+                )
+        else:
+            spacings, turns = describe(active)
+            placement = place_chain(route, spacings, turns, defect, minimum)
+            if from_neck:
+                notes.append(
+                    "This plate cannot reach from the condylar neck past the far cut, so it is centred on the "
+                    "resection instead. A longer plate could run from the neck."
+                )
         if placement is None:
             if not quiet:
                 self.message.emit("This plate could not be placed along this jaw.")
             return False
         self.plate_route = route
         self.plate_placement = placement
+        self.plate_course_notes = notes
         self.plate_auto = True
         self.plate_points = [np.asarray(p, dtype=float) for p in placement.points]
         self.plate_normals = [np.asarray(n, dtype=float) for n in placement.outward]
         self.update_plate_plan()
         return True
+
+    def _cut_stock(self, stock, first: int, count: int) -> bool:
+        """Keep these holes of the stock, unless that is what is already kept. Says
+        whether they are now what is kept; if not, the plate is left whole."""
+        from ..render.plate_trim import trim_stock
+
+        if count >= stock.hole_count:
+            if self._trimmed_stock is not None:
+                self._marking_cache.clear()
+            self._trimmed_stock = None
+            self._trim_first = 0
+            return True
+        current = self._trimmed_stock
+        if current is not None and current[0].hole_count == count and self._trim_first == first and (
+            current[0].id == stock.id
+        ):
+            return True
+        self._marking_cache.clear()
+        try:
+            self._trimmed_stock = trim_stock(stock, int(count), int(first))
+            self._trim_first = int(first)
+            return True
+        except (ValueError, MeshLoadError) as error:
+            self.message.emit(str(error))
+            self._trimmed_stock = None
+            self._trim_first = 0
+            return False
+
+    def set_plate_course(self, course: str) -> None:
+        """From the condylar neck past the far cut, or centred on the resection."""
+        if course not in ("neck", "centred"):
+            raise ValueError(course)
+        if course == self.plate_course:
+            return
+        self.plate_course = course
+        self._replace_plate()
+        self.plate_changed.emit()
 
     def _replace_plate(self) -> None:
         if self.plate_auto and self.plate_asset is not None:
@@ -1388,12 +1505,14 @@ class Session(QObject):
             is_preformed=bool(np.abs(own_turns).max() > PREFORM_MIN_DEG) if len(own_turns) else False,
             hole_count=asset.hole_count,
             longer_holes=longer,
+            notes=self.plate_course_notes if self.plate_auto else (),
         )
 
     def _longer_that_would_do(self, asset, defect) -> int | None:
         """The hole count of the shortest longer plate of this family that holds."""
         family = sorted(assets_in_family(asset.family), key=lambda a: a.hole_count)
-        longer = [item for item in family if item.hole_count > asset.hole_count]
+        # Longer than the stock itself: a plate cut short can simply be kept longer.
+        longer = [item for item in family if item.hole_count > max(asset.hole_count, self.plate_asset.hole_count)]
         if not longer:
             return None
         if self.plate_route is None or not self.plate_auto:
@@ -1407,7 +1526,10 @@ class Session(QObject):
             )
             for item in longer
         ]
-        return recommend_length(self.plate_route, choices, defect, max(int(system.min_holes_per_side), 1))
+        return recommend_length(
+            self.plate_route, choices, defect, max(int(system.min_holes_per_side), 1),
+            from_neck=self.plate_course == "neck" and defect is not None,
+        )
 
     def use_suggested_length(self) -> None:
         """Take the length the verdict suggests."""
@@ -1425,16 +1547,21 @@ class Session(QObject):
         return self._trimmed_stock[0] if self._trimmed_stock else self.plate_asset
 
     def set_retained_holes(self, count: int) -> None:
+        """How many holes of the stock stay, as the operator says: this overrides the
+        automatic cut until another plate is chosen."""
         from ..render.plate_trim import trim_stock
         stock = self.plate_asset
         if stock is None:
             return
+        first = min(self._trim_first, max(stock.hole_count - int(count), 0))
         try:
-            self._trimmed_stock = None if count == stock.hole_count else trim_stock(stock, int(count))
+            self._trimmed_stock = None if count == stock.hole_count else trim_stock(stock, int(count), first)
         except (ValueError, MeshLoadError) as error:
             self.message.emit(str(error))
             self.plate_changed.emit()
             return
+        self._trim_first = first if self._trimmed_stock else 0
+        self._retained_by_hand = True
         self.plate_length_chosen = True
         self._marking_cache.clear()
         if self.plate_auto and self.place_plate_automatically(quiet=True):
@@ -1535,15 +1662,15 @@ class Session(QObject):
 
     def _marking_for(self, asset):
         """The asset's etched mark in its own space, built once per asset."""
-        key = (asset.id, asset.hole_count)
+        key = (asset.id, asset.hole_count, self._trim_first if self._trimmed_stock else 0)
         if key not in self._marking_cache:
             from ..render.marking import marking_in_plate_space
 
             points, triangles = marking_in_plate_space(self.plate_asset)
             if self._trimmed_stock and len(triangles):
-                from ..render.plate_trim import keep_proximal
-                mark = keep_proximal(Mesh(points, triangles), self.plate_asset.hole_centres_mm,
-                                     asset.hole_count, cap=False)
+                from ..render.plate_trim import keep_section
+                mark = keep_section(Mesh(points, triangles), self.plate_asset.hole_centres_mm,
+                                    self._trim_first, asset.hole_count, cap=False)
                 points, triangles = mark.points, mark.triangles
             self._marking_cache[key] = points, triangles
         return self._marking_cache[key]
@@ -1658,18 +1785,18 @@ class Session(QObject):
         self.plate_changed.emit()  # the export step reads the list
 
     def bending_guide(self):
-        """The comb guide for this plate, its length as cut, and this bench kit."""
+        """The bend keys for this plate, as cut, and the bender chosen."""
         from ..geometry.bending_guide import plan_bending_guide
 
         asset, bent = self.active_plate_asset, self.bent_plate
         if asset is None or bent is None or bent.hole_tangents is None:
             self.message.emit(
-                "Draw a plate path with bending switched on before exporting a "
-                "bending guide."
+                "Choose a plate with bending switched on before exporting a bending guide."
             )
             return None
         alloy = self.plate_alloy()
         thickness = asset.thickness_mm
+        extra = self.guide_extra_overbend_deg
         # Plastic bending happens over the bridge between the rigid rings
         # round two holes; its radius sets how much the plate springs back.
         bridge = max(asset.hole_pitch_mm - 2.0 * asset.deformation.protected_radius_mm, 1.0)
@@ -1678,7 +1805,7 @@ class Session(QObject):
             if angle_deg <= 0.0:
                 return 0.0
             radius = max(bridge / np.radians(angle_deg), alloy.min_bend_radius_mm(thickness))
-            return alloy.overbend_deg(angle_deg, radius, thickness)
+            return alloy.overbend_deg(angle_deg, radius, thickness) + extra
 
         return plan_bending_guide(
             asset.hole_centres_mm,
@@ -1692,22 +1819,24 @@ class Session(QObject):
             self.bending_kit,
             overbend=overbend,
             alloy_name=alloy.name,
-            tooth_mm=self.guide_wall_mm,
-            play_mm=self.guide_clearance_mm,
-            hole_length_mm=hole_length_mm(asset),
+            play_mm=self.guide_pin_play_mm,
+            hole_length_mm=hole_length_mm(self.plate_asset),
+            head=self.guide_head,
         )
 
-    # -- rehearsing the bends on the guide ---------------------------------
+    # -- rehearsing the bends on the keys ----------------------------------
 
     def enter_guide_view(self) -> bool:
-        """Show the comb and the plate on it, as at the start of bending."""
-        guide = self.bending_guide()
+        """Show the plate as it comes, and step through the keys that bend it."""
+        try:
+            guide = self.bending_guide()
+        except ValueError as error:
+            self.message.emit(str(error))
+            return False
         if guide is None:
             return False
-        from ..render.bending_guide_mesh import guide_polydata
-
         self._guide = guide
-        self._guide_mesh = guide_polydata(guide, print_pose=False)
+        self._guide_mesh = {}
         self._guide_steps = guide.steps()
         self.guide_step = 0
         self.guide_view_changed.emit()
@@ -1735,20 +1864,24 @@ class Session(QObject):
     def guide_step_text(self) -> str:
         if self._guide is None:
             return ""
-        return self._guide_steps[self.guide_step][1]
+        return self._guide_steps[self.guide_step].text
 
     @property
     def guide_step_count(self) -> int:
         return len(self._guide_steps)
 
     def guide_preview(self):
-        """``(guide mesh, plate points, plate triangles)`` at the current step."""
+        """``(key mesh or None, head mesh or None, plate points, plate triangles)`` now."""
         if self._guide is None:
             return None
+        from ..render.bending_guide_mesh import key_polydata, tool_polydata
+
+        guide = self._guide
         asset = self.active_plate_asset
         mesh = self._trimmed_stock[1] if self._trimmed_stock else load_asset_mesh(asset)
-        bridges = self._guide_steps[self.guide_step][0]
-        centres, axes = self._guide.chain_after(asset.hole_centres_mm, asset.hole_axes, bridges)
+        last = self.guide_step == len(self._guide_steps) - 1
+        key = self._guide_steps[self.guide_step].key
+        centres, axes = guide.stage(key, done=key is None and last)
         plate = bend_to_path(
             mesh.points,
             mesh.triangles,
@@ -1760,7 +1893,12 @@ class Session(QObject):
             min_bend_radius_mm=asset.deformation.min_bend_radius_mm,
             max_bend_deg_per_node=asset.deformation.max_bend_deg_per_node,
         )
-        return self._guide_mesh, plate.points, plate.triangles
+        if key is None:
+            return None, None, plate.points, plate.triangles
+        if key.number not in self._guide_mesh:
+            self._guide_mesh[key.number] = (key_polydata(key, preview=True), tool_polydata(guide, key))
+        solid, head = self._guide_mesh[key.number]
+        return solid, head, plate.points, plate.triangles
 
     def plate_alloy(self) -> Alloy:
         """The alloy the selected plate is made of."""
