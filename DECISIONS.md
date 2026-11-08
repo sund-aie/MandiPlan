@@ -176,3 +176,44 @@ which the specification excludes.
   abort the interpreter under Qt's `offscreen` platform plugin, and skipping
   the widget tests would leave the interactive half of the application
   unexercised. macOS and desktop Linux need nothing.
+
+## One cut and two: resolved along the jaw, not by infinite planes
+
+A plane through one side of the body also crosses the other side, and a
+half-space takes or leaves the far ramus by accident. A saw cuts one place. So
+near a cut the plane decides, and elsewhere the position along the arch curve
+does: one cut takes the jaw from there to the far condyle, two take what lies
+between. The mesh is parted by each plane everywhere, each piece assigned along
+the jaw, and the walls left at the far crossings removed, so the result is closed.
+
+## Faint condylar heads
+
+The back of a condylar head is a thin plate over marrow and can fall below a
+threshold that suits the rest of the jaw. The head alone is read at a level
+between the soft tissue beside it and the threshold, both measured in the scan
+(CBCT gray values are not Hounsfield units), never entering the skull's side of
+the joint. The threshold stays the user's; the level moves with it.
+
+## A plate's course is faired as a whole
+
+Reading the bone hole by hole copies its surface texture into the plate, each
+lobe at its own angle. The route is faired along its length first (course across
+the bone most, height off it less, the face's turn in between), then lifted onto
+any prominence it would pass through, then the holes are walked along it at the
+plate's exact spacing.
+
+## The bending guide is a comb with pins
+
+Replaces the clip-on saddles and the fork-and-rail checking form. A pin in each
+hole of the finished shape answers position and turn together with no reading
+of angles; the bridges are left open on all sides so the bender can reach them
+with the plate in place. It is sized from the plate (holes, spacing, bore,
+width, thickness) and the kit (how far the base stands back, and whether the
+jaws land on a tooth at this pitch).
+
+## The print kit is built from a solid, on a grid
+
+A real jaw's isosurface is hollow, so a joint has nothing to bite into, and the
+earlier approach of keying the mesh failed on every real scan. The surface is
+filled and contoured again at 0.3 mm. The working side's surface moves by a small
+fraction of a millimetre in exchange, and comes out closed inside.

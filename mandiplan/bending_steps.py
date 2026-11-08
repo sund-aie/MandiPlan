@@ -30,11 +30,12 @@ _AXIS_LABELS = (
 class BendStep:
     order: int
     kind: str  # "cut", "bend", "twist", "check"
-    distance_mm: float  # from the proximal cut end of the plate, NaN when n/a
+    distance_mm: float  # from distance_origin, NaN when n/a
     node_index: int
     angle_deg: float
     instrument: str
     text: str
+    distance_origin: str = "cut end"
 
 
 def anatomical_direction(vector) -> str:
@@ -241,3 +242,29 @@ def steps_as_rows(steps: list[BendStep]) -> list[list[str]]:
             ]
         )
     return rows
+
+
+def steps_from_guide(guide, *, stock_holes=None):
+    """The steps of the bending guide, bridge by bridge from hole 1."""
+    count = len(guide.centres)
+    stock_holes = count if stock_holes is None else int(stock_holes)
+    cut = f"Retain holes 1–{count} of the selected {stock_holes}-hole plate."
+    if stock_holes > count:
+        cut += f" Cut off the {stock_holes-count} distal hole(s) at the end of the retained section."
+    steps = [BendStep(1, "cut" if stock_holes > count else "check",
+                      float("nan"), -1, float("nan"), "—", cut)]
+    for j in guide.joints:
+        if max(abs(j.in_plane_deg), abs(j.out_of_plane_deg), abs(j.twist_deg)) < NEGLIGIBLE_DEG:
+            continue
+        d = .5 * (guide.stock_distances[j.index] + guide.stock_distances[j.index+1])
+        twisting = abs(j.in_plane_deg) < .5 and abs(j.out_of_plane_deg) < .5
+        instrument = guide.kit.instruments[0]
+        if twisting and not guide.kit.can_twist:
+            instrument = "compatible twisting tool"
+        steps.append(BendStep(len(steps)+1, "twist" if twisting else "bend", float(d), j.index, j.angle_deg,
+                              instrument, f"{d:.1f} mm along hole centres from hole 1. " + guide.instruction(j)))
+    steps.append(BendStep(len(steps)+1, "check", float("nan"), -1, float("nan"), "—",
+                          "Every hole on its pin, lying flat on its pad, after release: the plate is done."))
+    for step in steps:
+        step.distance_origin = "hole 1"
+    return steps

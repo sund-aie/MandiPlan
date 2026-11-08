@@ -193,11 +193,16 @@ def write_steps_csv(
 ) -> Path:
     """Write the bench bending steps for one plate system and one kit."""
     path = Path(path)
+    references = {getattr(step, "distance_origin", "cut end") for step in steps}
+    if len(references) > 1:
+        raise ValueError("A bench table must use one distance reference.")
+    reference = next(iter(references), "cut end")
+    distance_column = "distance_from_hole_1_mm" if reference == "hole 1" else "distance_from_cut_end_mm"
     lines = [
         "MandiPlan plate bending steps",
         f"plate system: {system.name}",
         f"bending kit: {kit.name}",
-        "distances are measured from the proximal cut end of the plate",
+        f"distances are measured along hole centres from {reference}",
     ]
     if fit is not None:
         lines.append(f"fit: {fit.verdict}")
@@ -209,7 +214,7 @@ def write_steps_csv(
     with path.open("w", newline="", encoding="utf-8") as handle:
         _write_header(handle, lines)
         writer = csv.writer(handle)
-        writer.writerow(["step", "kind", "distance_from_cut_end_mm", "angle_deg",
+        writer.writerow(["step", "kind", distance_column, "angle_deg",
                          "instrument", "instruction"])
         for step in steps:
             writer.writerow([
@@ -287,11 +292,10 @@ def _num(value: float) -> str:
 
 
 def write_bending_guide(path: str | Path, guide, asset=None) -> tuple[Path, Path]:
-    """Write the clip-on bending guide as a binary STL, and its table as CSV.
+    """Write the bending guide as a binary STL, and its table as CSV.
 
     The CSV sits next to the STL with the same name. It says, bridge by
-    bridge, which way to bend and when to stop, and how the guide is meant to
-    be printed and used.
+    bridge, which way to bend, and how the guide is printed and used.
     """
     from .render.bending_guide_mesh import guide_polydata
 
@@ -304,48 +308,49 @@ def write_bending_guide(path: str | Path, guide, asset=None) -> tuple[Path, Path
     stamp_stl(path)
 
     table = path.with_suffix(".csv")
+    tool = guide.kit.name
+    if guide.jaws_meet_teeth:
+        access = (f"{tool}: at this plate's hole pitch the jaws land on the teeth, so lift the "
+                  "plate off the pins for each bend and set it back to check")
+    else:
+        access = (f"{tool}: the jaws fit between the teeth at this plate's hole pitch, so the "
+                  "plate can stay on its pins while you bend")
     lines = [
-        "MandiPlan clip-on bending guide",
-        *( [f"plate: {asset.name} ({asset.status_label})"] if asset is not None else [] ),
-        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick",
-        f"springback allowed for: {guide.alloy_name or 'none'}",
-        "print: TPU 95A (or PETG), 0.1-0.15 mm layers, 100% infill, as exported "
-        "(saddle tops on the bed); no supports needed",
-        "use: clip the guide onto the plate as supplied, saddle 1 on hole 1, numbers "
-        "on the outer side; bend each bridge the way its gap closes until the two "
-        "saddles touch, let go, and move to the next",
-        "the stop is the springback-corrected angle: the plate relaxes onto the "
-        "target after release; twist has no stop and is listed for checking by eye",
-        "angles follow the bend table: in-plane positive counter-clockwise seen from "
-        "the outer face, out-of-plane positive away from the bone, twist right-handed "
-        "along the plate",
+        "MandiPlan bending guide",
+        f"plate: {asset.name} ({asset.status_label}); {len(guide.centres)} holes"
+        if asset is not None else f"plate: {len(guide.centres)} holes",
+        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick; "
+        f"pins {guide.pin_diameter_mm:.2f} mm for this plate's bore",
+        f"teeth {guide.tooth_mm:.2f} mm thick; the base stands {guide.setback_mm:.1f} mm behind "
+        "the plate, the room this bender needs",
+        "print: base flat on the bed as exported, 100% scale, in a rigid material; no supports "
+        "beyond what the slicer asks under the pins. Check one pin in a real hole before relying on it",
+        "use: stand the guide on the bench with the plate's bone face towards the teeth. Hang "
+        "hole 1 on the tooth with the raised flag. Bend the next bridge until the next hole drops "
+        "over its pin and the plate lies flat on the pad; release, check, and go on to the next",
+        access,
+        "the pads and pins are the finished shape: a hole on its pin after release is right. "
+        "Springback figures are model estimates; the pin decides",
+        f"alloy for the springback estimate: {guide.alloy_name or 'none'}",
+        "angles follow the bend table: in-plane positive counter-clockwise seen from the outer "
+        "face, out-of-plane positive away from the bone, twist right-handed along the plate",
     ]
     with table.open("w", newline="", encoding="utf-8") as handle:
         _write_header(handle, lines)
         out = csv.writer(handle)
-        out.writerow(
-            [
-                "bridge (holes)",
-                "target bend (deg)",
-                "stop angle (deg)",
-                "in-plane (deg)",
-                "out-of-plane (deg)",
-                "twist (deg)",
-                "has stop",
-                "instruction",
-            ]
-        )
+        out.writerow(["bridge (holes)", "from hole 1 (mm)", "bend (deg)", "in-plane (deg)",
+                      "out-of-plane (deg)", "twist (deg)", "instruction"])
         for joint in guide.joints:
+            position = 0.5 * (guide.stock_distances[joint.index] + guide.stock_distances[joint.index + 1])
             out.writerow(
                 [
                     f"{joint.index + 1}-{joint.index + 2}",
+                    f"{position:.2f}",
                     f"{joint.angle_deg:.2f}",
-                    f"{joint.stop_angle_deg:.2f}",
                     f"{joint.in_plane_deg:.2f}",
                     f"{joint.out_of_plane_deg:.2f}",
                     f"{joint.twist_deg:.2f}",
-                    "yes" if joint.has_stop else "no",
-                    joint.instruction(),
+                    guide.instruction(joint),
                 ]
             )
     return path, table

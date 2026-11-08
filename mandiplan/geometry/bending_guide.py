@@ -1,58 +1,51 @@
-"""A printable guide that clips onto the plate and stops each bend at its angle.
+"""The bending guide: a thin comb the plate wraps round, made for one plate.
 
-The guide is a chain of saddles, one over each screw hole, printed in one
-piece from a stiff flexible filament (TPU 95A, or PETG). Each saddle clips
-over the plate's edges; a square window over the hole leaves it free for the
-bending irons; a thin strap over the plate's centreline links each saddle to
-the next.
+It stands on the bench (and on the print bed) on a flat base strip that runs
+inside the curve of the plate. One thin tooth rises from it at each screw hole
+of the finished plate. Each tooth ends in a pad exactly where the bone face of
+the plate lies at that hole, turned exactly as the plate is there, and a pin
+exactly where the hole's centre is, as thick as this plate's bore allows.
 
-Where two saddles meet, over the bridge between two holes, their facing ends
-are the stop. They are cut on the two halves of a mitre: the plane the ends
-would share if the plate were already bent to the target, taken back to the
-straight plate. On the side the bend closes, the ends then stand apart by a
-wedge that closes exactly when the bridge has turned through the stop angle,
-and the ends meet face to face. On the side the bend opens they are simply
-square, and move apart. So the bench procedure is: bend each bridge the way
-its gap closes until the two saddles touch, and let go.
+So the guide is used with the bender in hand and nothing clipped on. Hang
+hole 1 on the flagged tooth. Bend the next bridge until the next hole drops
+over the next pin and lies flat on its pad, let go, and move on. The plate is
+right when every hole is on its pin. A pin is an answer no angle reading can
+give: a hole on its pin has the right place and the right turn.
 
-The stop angle is the target angle overbent for springback (see
-``materials.Alloy.overbend_deg``), so the plate relaxes onto the target
-rather than short of it. Twist about the plate's axis closes no gap and has
-no stop; it is labelled, and listed in the guide table with the rest.
+Everything is the plate's own, and the kit's:
 
-The guide is designed on the plate as supplied, straight or preformed: each
-saddle sits on its hole in the supplied shape, and the bend at each bridge is
-the change from the supplied shape to the planned one.
+* hole count and spacing come from the plate (after any trimming), pin
+  diameter from its bore, tooth height from its width, pad position from its
+  thickness;
+* between the teeth the bridges are free on all sides. The base stands back
+  from the plate by the depth the chosen bender needs behind the bridge, and
+  the guide reports where that bender's jaws would meet a tooth at this
+  plate's pitch, so the plate is lifted off only then.
 
-Numpy only. The solid is an implicit function (each part the intersection of
-half-spaces, parts combined by min/max); ``render/bending_guide_mesh.py``
-contours it.
+Numpy only. The solid is a set of simple convex parts given as distance-like
+fields; ``render/bending_guide_mesh.py`` contours their union.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
-#: Fit between saddle and plate, per side, mm.
-FIT_CLEARANCE_MM = 0.15
-#: Saddle wall and top thickness, mm.
-WALL_MM = 1.2
-#: How far the walls reach past the plate's faces, mm. The stop is on the
-#: walls, and the further from the bend axis it is, the more a printing
-#: error of 0.1 mm is spread: about 1.3° at this reach.
-WALL_REACH_MM = 3.0
-#: Clearance between neighbouring saddles where the bend opens, mm.
-JOINT_GAP_MM = 0.4
-#: A bend smaller than this gets no stop: the wedge would be thinner than a
-#: printer can hold apart.
-MIN_STOP_DEG = 1.5
-#: The snap lips tuck this far under the plate's edges, mm.
-LIP_MM = 0.6
-#: Strap linking the saddles, mm.
-STRAP_WIDTH_MM = 2.4
-STRAP_THICKNESS_MM = 0.6
+#: Base strip under the teeth: thickness and width, mm.
+BASE_THICKNESS_MM = 1.6
+BASE_WIDTH_MM = 5.0
+#: Plate's lowest edge above the base, mm: room for the tool's jaw.
+EDGE_ABOVE_BASE_MM = 2.0
+#: Pin as a fraction of the plate's thickness: it locates without standing
+#: out of the outer face.
+PIN_HEIGHT_FRACTION = 0.75
+#: How far past the plate's edge the first tooth's flag stands, mm.
+FLAG_MM = 3.5
+#: Below this a bend is left alone, degrees.
+NEGLIGIBLE_DEG = 0.5
+#: How close a tool's jaw may come to a tooth and still clear it, mm.
+JAW_MARGIN_MM = 1.0
 
 
 def _unit(v) -> np.ndarray:
@@ -118,63 +111,90 @@ class GuideJoint:
     """The bridge between hole ``index`` and hole ``index + 1``."""
 
     index: int
-    origin: np.ndarray  # joint point, plate (supplied) frame, mm
-    frame: np.ndarray  # (3, 3) columns along / across / out, supplied frame
-    rotation: np.ndarray  # target bend of the next segment, joint frame
-    stop_rotation: np.ndarray  # the bend at which the saddles meet
     angle_deg: float
-    stop_angle_deg: float
+    stop_angle_deg: float  # loaded angle after the alloy's springback
     in_plane_deg: float
     out_of_plane_deg: float
     twist_deg: float
 
-    @property
-    def has_stop(self) -> bool:
-        return self.stop_angle_deg >= MIN_STOP_DEG
-
-    def instruction(self) -> str:
-        if not self.has_stop and abs(self.twist_deg) < MIN_STOP_DEG:
-            return f"Holes {self.index + 1}-{self.index + 2}: leave straight."
-        parts = []
-        if abs(self.out_of_plane_deg) >= 0.5:
-            way = "away from the bone" if self.out_of_plane_deg > 0 else "into the bone"
-            parts.append(f"curl {abs(self.out_of_plane_deg):.1f}° {way}")
-        if abs(self.in_plane_deg) >= 0.5:
-            way = "counter-clockwise" if self.in_plane_deg > 0 else "clockwise"
-            parts.append(f"turn {abs(self.in_plane_deg):.1f}° {way} seen from the outer face")
-        if abs(self.twist_deg) >= 0.5:
-            parts.append(f"twist {self.twist_deg:+.1f}° (no stop: check by eye)")
-        text = ", ".join(parts)
-        if self.has_stop:
-            text += f"; bend until the saddles meet ({self.stop_angle_deg:.1f}° with springback)"
-        return f"Holes {self.index + 1}-{self.index + 2}: {text}."
-
 
 @dataclass
-class GuideSaddle:
-    """The saddle over one hole, in that hole's supplied frame."""
+class GuidePart:
+    """One convex piece of the guide, in print coordinates."""
 
-    hole: int
-    centre: np.ndarray  # supplied frame, mm
-    frame: np.ndarray  # (3, 3)
-    start_x: float  # local extent along the plate, mm
-    end_x: float
-    start_joint: GuideJoint | None
-    end_joint: GuideJoint | None
+    centre: np.ndarray
+    frame: np.ndarray  # (3, 3) columns: the part's local axes
+    half: np.ndarray  # half sizes along them; for a pin (radius, radius, half height)
+    name: str
+
+    def field(self, local):
+        """Negative inside, about the distance to the surface outside."""
+        x, y, z = local
+        if self.name == "pin":
+            return np.maximum(np.hypot(x, y) - self.half[0], np.abs(z) - self.half[2])
+        return np.maximum.reduce(
+            (np.abs(x) - self.half[0], np.abs(y) - self.half[1], np.abs(z) - self.half[2])
+        )
 
 
 @dataclass
 class BendingGuide:
+    centres: np.ndarray  # the finished plate's hole centres, patient space
+    frames: np.ndarray  # (H, 3, 3) columns along / across / out, patient space
+    stock_distances: np.ndarray  # along the supplied plate from hole 1, mm
+    joints: list[GuideJoint]
+    parts: list[GuidePart]
+    kit: object
     width_mm: float
     thickness_mm: float
-    window_mm: float
-    saddles: list[GuideSaddle]
-    joints: list[GuideJoint]
+    tooth_mm: float
+    tooth_width_mm: float
+    play_mm: float
+    pin_diameter_mm: float
+    pin_height_mm: float
+    setback_mm: float
+    jaws_meet_teeth: bool
+    basis: np.ndarray  # (3, 3) columns: print x, y, z in patient space
+    origin: np.ndarray  # the print origin in patient space
     alloy_name: str = ""
-    notes: list[str] = field(default_factory=list)
+
+    def to_print(self, points) -> np.ndarray:
+        return (np.asarray(points, dtype=float) - self.origin) @ self.basis
+
+    def to_patient(self, points) -> np.ndarray:
+        return np.asarray(points, dtype=float) @ self.basis.T + self.origin
 
     def instructions(self) -> list[str]:
-        return [joint.instruction() for joint in self.joints]
+        return [self.instruction(joint) for joint in self.joints]
+
+    def instruction(self, joint: GuideJoint) -> str:
+        prefix = f"Holes {joint.index + 1}-{joint.index + 2}: "
+        wanted = [
+            ("in_plane", joint.in_plane_deg, "turn in the plane of the plate",
+             "counter-clockwise from the outer face", "clockwise from the outer face"),
+            ("out_of_plane", joint.out_of_plane_deg, "curl", "away from the bone", "towards the bone"),
+            ("twist", joint.twist_deg, "twist", "right-handed along the plate", "left-handed along the plate"),
+        ]
+        pieces, usable = [], []
+        for kind, angle, verb, positive, negative in wanted:
+            if abs(angle) < NEGLIGIBLE_DEG:
+                continue
+            text = f"{verb} {abs(angle):.1f} deg {positive if angle > 0 else negative}"
+            if self.kit.can_make(kind):
+                usable.append(abs(angle))
+            else:
+                text += " (this needs another tool)"
+            pieces.append(text)
+        if not pieces:
+            return prefix + "leave as supplied; the next hole already sits on its pin."
+        text = prefix + ", ".join(pieces) + f"; until hole {joint.index + 2} drops onto its pin."
+        if usable and self.kit.max_angle_per_pass_deg > 0:
+            passes = int(np.ceil(max(usable) / self.kit.max_angle_per_pass_deg))
+            if passes > 1:
+                text += f" {self.kit.name}: in {passes} passes, checking on the pins between them."
+        if joint.stop_angle_deg > joint.angle_deg + 0.05:
+            text += f" Expect to load about {joint.stop_angle_deg:.1f} deg for springback."
+        return text
 
 
 def _decompose(rotation: np.ndarray) -> tuple[float, float, float]:
@@ -201,251 +221,157 @@ def plan_bending_guide(
     bent_tangents,
     width_mm: float,
     thickness_mm: float,
-    seat_diameter_mm: float,
+    hole_diameter_mm: float,
+    kit,
     overbend=None,
     alloy_name: str = "",
+    tooth_mm: float = 1.2,
+    play_mm: float = 0.25,
 ) -> BendingGuide:
-    """Lay out the guide for bending a supplied plate into a planned shape.
+    """Lay out the guide that bends a supplied plate into a planned shape.
 
-    ``supplied_*`` are the plate's holes as it comes out of the packet (the
-    asset's own frame); ``bent_*`` the same holes as planned. ``overbend`` maps
-    a target angle in degrees to the angle to bend to before springback, or
-    is ``None`` for none.
+    ``supplied_*`` are the plate's holes as it comes out of the packet;
+    ``bent_*`` the same holes as planned. ``overbend`` maps a target angle in
+    degrees to the angle to load it to before springback. ``tooth_mm`` is how
+    thin the teeth are and ``play_mm`` the fit of a pin in its hole per side.
     """
     sc = np.asarray(supplied_centres, dtype=float)
+    centres = np.asarray(bent_centres, dtype=float)
     supplied = hole_frames(sc, supplied_axes)
     bent_axes = np.asarray(bent_axes, dtype=float)
     bent_tangents = np.asarray(bent_tangents, dtype=float)
-    bent = np.stack([_frame(t, u) for t, u in zip(bent_tangents, bent_axes)])
-    if len(sc) != len(bent):
+    if len(sc) != len(bent_axes) or len(sc) != len(centres):
         raise ValueError("the supplied and planned plates have different hole counts")
     if len(sc) < 2:
         raise ValueError("a bending guide needs at least two holes")
+    if not (min(width_mm, thickness_mm, hole_diameter_mm) > 0 and np.isfinite(centres).all()):
+        raise ValueError("Invalid plate section or planned hole positions.")
+    if not (0.8 <= tooth_mm <= 2.4 and 0.05 <= play_mm <= 0.8):
+        raise ValueError("Teeth must be 0.8-2.4 mm thick and pin play 0.05-0.8 mm.")
+    pin_radius = 0.5 * float(hole_diameter_mm) - float(play_mm)
+    if pin_radius < 0.4:
+        raise ValueError("That much play leaves no pin in a hole this small.")
+    bent = np.stack([_frame(t, u) for t, u in zip(bent_tangents, bent_axes)])
+    if np.min(np.linalg.norm(np.diff(centres, axis=0), axis=1)) < 1.0:
+        raise ValueError("Coincident hole positions cannot form a bending guide.")
 
     joints: list[GuideJoint] = []
     for i in range(len(sc) - 1):
-        origin = 0.5 * (sc[i] + sc[i + 1])
         frame = _frame(sc[i + 1] - sc[i], supplied[i][:, 2] + supplied[i + 1][:, 2])
         # The change in the relative orientation of the two segments, taken
         # into the joint's own frame.
-        before = supplied[i].T @ supplied[i + 1]
-        after = bent[i].T @ bent[i + 1]
-        change = after @ before.T  # in segment i's frame
+        change = (bent[i].T @ bent[i + 1]) @ (supplied[i].T @ supplied[i + 1]).T
         to_joint = frame.T @ supplied[i]
         rotation = to_joint @ change @ to_joint.T
-        axis, angle = _axis_angle(rotation)
+        _, angle = _axis_angle(rotation)
         angle_deg = float(np.degrees(angle))
         stop_deg = float(overbend(angle_deg)) if overbend is not None else angle_deg
-        stop = _rotation(axis, np.radians(stop_deg))
         in_plane, out_plane, twist = _decompose(rotation)
-        joints.append(
-            GuideJoint(
-                index=i,
-                origin=origin,
-                frame=frame,
-                rotation=rotation,
-                stop_rotation=stop,
-                angle_deg=angle_deg,
-                stop_angle_deg=stop_deg,
-                in_plane_deg=in_plane,
-                out_of_plane_deg=out_plane,
-                twist_deg=twist,
-            )
+        joints.append(GuideJoint(i, angle_deg, stop_deg, in_plane, out_plane, twist))
+
+    pitch = float(np.median(np.linalg.norm(np.diff(sc, axis=0), axis=1)))
+    tooth_width = float(min(max(2.4, 2.0 * pin_radius + 0.8), max(pitch - 3.0, 2.0 * pin_radius + 0.4)))
+    grip = float(kit.grip_span_mm)
+    setback = float(np.clip(0.35 * grip, 3.0, 10.0))
+    jaws_meet = False
+    if grip > 0:
+        # Jaws either side of a bridge, at holes half a pitch off its middle.
+        phase = (0.5 * grip / pitch - 0.5) % 1.0
+        jaws_meet = min(phase, 1.0 - phase) * pitch < 0.5 * tooth_width + JAW_MARGIN_MM
+
+    # Print space: the plate stands on edge, its width upright, its holes
+    # facing outward, wrapped round the teeth.
+    up = _unit(bent[:, :, 1].mean(axis=0))
+    middle = centres.mean(axis=0)
+    flat = (centres - middle) - np.outer((centres - middle) @ up, up)
+    _, singular, axes = np.linalg.svd(flat, full_matrices=False)
+    x = axes[0] if singular[0] > 1e-6 else bent[0, :, 0]
+    x = _unit(x - (x @ up) * up)
+    basis = np.column_stack([x, np.cross(up, x), up])
+    placed = (centres - middle) @ basis
+    frames = np.einsum("ji,hjk->hik", basis, bent)
+    half_t = 0.5 * float(thickness_mm)
+    half_w = 0.5 * float(width_mm)
+    reach = (
+        np.abs(frames[:, 2, 1]) * half_w
+        + np.abs(frames[:, 2, 0]) * 0.5 * tooth_width
+        + np.abs(frames[:, 2, 2]) * (half_t + tooth_mm)
+    )
+    lift = BASE_THICKNESS_MM + EDGE_ABOVE_BASE_MM - float(np.min(placed[:, 2] - reach))
+    placed[:, 2] += lift
+    origin = middle - lift * up
+
+    pads = placed - frames[:, :, 2] * (half_t + 0.5 * tooth_mm)
+    inward = -frames[:, :, 2].copy()
+    inward[:, 2] = 0.0
+    if np.min(np.linalg.norm(inward, axis=1)) < 0.2:
+        raise ValueError("The plate turns too far out of one plane for a guide to stand on a bench.")
+    inward = _unit(inward)
+    # The base keeps the setback unless the plate's curve is too tight for it,
+    # when it would fold back on itself: stand it nearer rather than fail.
+    tangents = np.gradient(pads[:, :2], axis=0)
+    while True:
+        feet = pads[:, :2] + setback * inward[:, :2]
+        if np.all(np.einsum("ij,ij->i", np.diff(feet, axis=0), 0.5 * (tangents[:-1] + tangents[1:])) > 0.5):
+            break
+        if setback <= 2.0:
+            raise ValueError("The plate curves too tightly for a guide behind it; check the plate path.")
+        setback = max(setback - 0.5, 2.0)
+
+    parts: list[GuidePart] = []
+    pin_height = PIN_HEIGHT_FRACTION * float(thickness_mm)
+    z_axis = np.array([0.0, 0.0, 1.0])
+    for i, (hole, frame, pad, into, foot) in enumerate(zip(placed, frames, pads, inward, feet)):
+        parts.append(GuidePart(pad, frame, np.array([0.5 * tooth_width, half_w, 0.5 * tooth_mm]), "pad"))
+        pin_low = hole - frame[:, 2] * (half_t + 0.25 * tooth_mm)
+        pin_high = hole + frame[:, 2] * (pin_height - half_t)
+        parts.append(
+            GuidePart(0.5 * (pin_low + pin_high), frame,
+                      np.array([pin_radius, pin_radius, 0.5 * np.linalg.norm(pin_high - pin_low)]), "pin")
+        )
+        across = np.cross(z_axis, into)
+        upright = np.column_stack([across, into, z_axis])
+        top = float(pad[2]) + (half_w + FLAG_MM if i == 0 else 0.0)
+        parts.append(
+            GuidePart(np.array([pad[0], pad[1], 0.5 * top]), upright,
+                      np.array([0.5 * tooth_width, 0.5 * tooth_mm, 0.5 * top]), "tooth")
+        )
+        # From the tooth back to the base; nothing stands out under the plate.
+        run = setback + 0.5 * tooth_mm
+        foot_centre = pad + into * (0.5 * run - 0.5 * tooth_mm)
+        parts.append(
+            GuidePart(np.array([foot_centre[0], foot_centre[1], 0.5 * BASE_THICKNESS_MM]), upright,
+                      np.array([0.5 * tooth_width, 0.5 * run, 0.5 * BASE_THICKNESS_MM]), "foot")
+        )
+    for a, b in zip(feet[:-1], feet[1:]):
+        along = np.array([b[0] - a[0], b[1] - a[1], 0.0])
+        length = float(np.linalg.norm(along))
+        along = along / length
+        frame = np.column_stack([along, np.cross(z_axis, along), z_axis])
+        parts.append(
+            GuidePart(np.array([0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1]), 0.5 * BASE_THICKNESS_MM]), frame,
+                      np.array([0.5 * length + 0.5 * BASE_WIDTH_MM, 0.5 * BASE_WIDTH_MM, 0.5 * BASE_THICKNESS_MM]),
+                      "base")
         )
 
-    saddles: list[GuideSaddle] = []
-    for i in range(len(sc)):
-        frame = supplied[i]
-        before = joints[i - 1] if i > 0 else None
-        after = joints[i] if i < len(joints) else None
-        pitch_back = np.linalg.norm(sc[i] - sc[i - 1]) if i > 0 else np.linalg.norm(sc[1] - sc[0])
-        pitch_on = (
-            np.linalg.norm(sc[i + 1] - sc[i]) if i < len(sc) - 1 else np.linalg.norm(sc[-1] - sc[-2])
-        )
-        saddles.append(
-            GuideSaddle(
-                hole=i,
-                centre=sc[i],
-                frame=frame,
-                start_x=-0.5 * float(pitch_back),
-                end_x=0.5 * float(pitch_on),
-                start_joint=before,
-                end_joint=after,
-            )
-        )
+    distances = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(sc, axis=0), axis=1))])
     return BendingGuide(
+        centres=centres.copy(),
+        frames=bent,
+        stock_distances=distances,
+        joints=joints,
+        parts=parts,
+        kit=kit,
         width_mm=float(width_mm),
         thickness_mm=float(thickness_mm),
-        window_mm=float(seat_diameter_mm) + 1.0,
-        saddles=saddles,
-        joints=joints,
+        tooth_mm=float(tooth_mm),
+        tooth_width_mm=tooth_width,
+        play_mm=float(play_mm),
+        pin_diameter_mm=2.0 * pin_radius,
+        pin_height_mm=pin_height,
+        setback_mm=setback,
+        jaws_meet_teeth=jaws_meet,
+        basis=basis,
+        origin=origin,
         alloy_name=alloy_name,
     )
-
-
-# -- the solid ----------------------------------------------------------------
-#
-# Every part of a saddle is a convex block: the intersection of half-spaces
-# ``A p <= b`` in the saddle's own frame (origin at the hole centre, +x along
-# the plate toward the next hole, +z out of the outer face). The same list
-# drives the printed mesh (each block clipped out of a box) and the contact
-# check (a point is inside if it is inside any block), so the two cannot
-# disagree.
-
-
-@dataclass
-class Block:
-    normals: np.ndarray  # (K, 3)
-    offsets: np.ndarray  # (K,)
-    name: str = ""
-
-    def value(self, points: np.ndarray) -> np.ndarray:
-        """Negative inside."""
-        return np.max(points @ self.normals.T - self.offsets, axis=-1)
-
-    def with_limits(self, normals, offsets) -> "Block":
-        return Block(
-            np.vstack([self.normals, np.asarray(normals, dtype=float).reshape(-1, 3)]),
-            np.concatenate([self.offsets, np.asarray(offsets, dtype=float).ravel()]),
-            self.name,
-        )
-
-
-def _box_block(lo, hi, name: str = "") -> Block:
-    lo = np.asarray(lo, dtype=float)
-    hi = np.asarray(hi, dtype=float)
-    eye = np.eye(3)
-    return Block(np.vstack([-eye, eye]), np.concatenate([-lo, hi]), name)
-
-
-def saddle_dimensions(guide: BendingGuide) -> dict[str, float]:
-    half_w = guide.width_mm / 2.0 + FIT_CLEARANCE_MM
-    half_t = guide.thickness_mm / 2.0 + FIT_CLEARANCE_MM
-    return {
-        "inner_y": half_w,
-        "outer_y": half_w + WALL_MM,
-        "plate_top": half_t,
-        "top": half_t + WALL_MM,
-        "wall_top": half_t + WALL_REACH_MM,
-        "wall_bottom": -(half_t + WALL_REACH_MM),
-    }
-
-
-def saddle_blocks(guide: BendingGuide, saddle: GuideSaddle, include_strap: bool = True) -> list[Block]:
-    """The convex parts of one saddle, ends already cut at its joints."""
-    d = saddle_dimensions(guide)
-    x0, x1 = saddle.start_x - 0.5, saddle.end_x + 0.5
-    hw = guide.window_mm / 2.0
-    blocks = [
-        # The two walls, reaching past both faces of the plate.
-        _box_block([x0, d["inner_y"], d["wall_bottom"]], [x1, d["outer_y"], d["wall_top"]], "wall"),
-        _box_block([x0, -d["outer_y"], d["wall_bottom"]], [x1, -d["inner_y"], d["wall_top"]], "wall"),
-        # The top between the walls, around a window over the hole that
-        # leaves it free for the bending irons.
-        _box_block([x0, -d["inner_y"], d["plate_top"]], [-hw, d["inner_y"], d["top"]], "top"),
-        _box_block([hw, -d["inner_y"], d["plate_top"]], [x1, d["inner_y"], d["top"]], "top"),
-        _box_block([-hw, hw, d["plate_top"]], [hw, d["inner_y"], d["top"]], "top"),
-        _box_block([-hw, -d["inner_y"], d["plate_top"]], [hw, -hw, d["top"]], "top"),
-    ]
-    # Snap lips under the plate's edges, in the middle of the saddle only, so
-    # the ends are free to meet.
-    span = 0.25 * (saddle.end_x - saddle.start_x)
-    lip_top = -(guide.thickness_mm / 2.0 + FIT_CLEARANCE_MM)
-    lip_in = guide.width_mm / 2.0 - LIP_MM
-    blocks += [
-        _box_block([-span, lip_in, lip_top - WALL_MM], [span, d["inner_y"], lip_top], "lip"),
-        _box_block([-span, -d["inner_y"], lip_top - WALL_MM], [span, -lip_in, lip_top], "lip"),
-    ]
-
-    # The ends: square where the bend opens, on the stop mitre where it closes.
-    for joint, sign in ((saddle.end_joint, 1.0), (saddle.start_joint, -1.0)):
-        if joint is None:
-            continue
-        normals, offsets = _end_limits(saddle, joint, sign)
-        blocks = [block.with_limits(normals, offsets) for block in blocks]
-
-    # Half of each strap to a neighbour, reaching just past the joint so the
-    # halves overlap and print as one. It crosses the gap, so it takes no
-    # end cut; it is thin enough to buckle rather than stop the bend.
-    if include_strap:
-        for joint, sign in ((saddle.end_joint, 1.0), (saddle.start_joint, -1.0)):
-            if joint is None:
-                continue
-            along = float((saddle.frame.T @ (joint.origin - saddle.centre))[0])
-            lo_x, hi_x = (along - 2.0, along + 0.1) if sign > 0 else (along - 0.1, along + 2.0)
-            blocks.append(
-                _box_block(
-                    [lo_x, -STRAP_WIDTH_MM / 2.0, d["top"] - STRAP_THICKNESS_MM],
-                    [hi_x, STRAP_WIDTH_MM / 2.0, d["top"]],
-                    "strap",
-                )
-            )
-    return blocks
-
-
-def _end_limits(saddle: GuideSaddle, joint: GuideJoint, sign: float):
-    """Half-spaces bounding a saddle at one joint, in the saddle's frame.
-
-    ``sign`` is +1 at the saddle's far end (the joint's first segment) and -1
-    at its near end (the second). In the joint frame the first segment turns
-    by minus half the stop rotation and the second by plus half, and the
-    shared mitre is then the plane x = 0; taken back to the straight plate,
-    the first segment's end is the plane with normal ``H x`` and the
-    second's ``H^-1 x``.
-    """
-    to_joint = joint.frame.T @ saddle.frame  # saddle-local -> joint frame
-    origin = saddle.frame.T @ (joint.origin - saddle.centre)
-    x = np.array([1.0, 0.0, 0.0])
-    normals = [sign * x]
-    offsets = [-JOINT_GAP_MM / 2.0]
-    if joint.has_stop:
-        axis, angle = _axis_angle(joint.stop_rotation)
-        half = _rotation(axis, angle / 2.0)
-        normals.append(sign * (half @ x if sign > 0 else half.T @ x))
-        offsets.append(0.0)
-    # n . (to_joint (p - origin)) <= c  ->  (to_joint^T n) . p <= c + (to_joint^T n) . origin
-    local = [to_joint.T @ n for n in normals]
-    return np.array(local), np.array([c + n @ origin for n, c in zip(local, offsets)])
-
-
-def saddle_field(
-    guide: BendingGuide, saddle: GuideSaddle, local: np.ndarray, include_strap: bool = True
-) -> np.ndarray:
-    """Implicit value of one saddle at points in its own frame (<= 0 inside)."""
-    points = np.asarray(local, dtype=float)
-    return np.min(
-        np.stack([block.value(points) for block in saddle_blocks(guide, saddle, include_strap)]),
-        axis=0,
-    )
-
-
-def joint_overlap(
-    guide: BendingGuide, joint: GuideJoint, angle_scale: float, step_mm: float = 0.1
-) -> float:
-    """Volume (mm³) where two neighbouring saddles overlap when the bridge is
-    bent through ``angle_scale`` times the stop angle: zero up to the stop,
-    growing past it. The flexible strap is left out; it buckles rather than
-    stops."""
-    first = guide.saddles[joint.index]
-    second = guide.saddles[joint.index + 1]
-    d = saddle_dimensions(guide)
-    # The saddles can only meet near the joint: a slab either side of it,
-    # as wide as the widest wedge the stop can open.
-    r = float(np.hypot(d["outer_y"], d["wall_top"])) + 0.5
-    reach = min(r * np.tan(np.radians(max(joint.stop_angle_deg, 1.0)) * angle_scale / 2.0 + 0.05) + 1.0, r)
-    across = np.arange(-r, r + 1e-9, step_mm)
-    along = np.arange(-reach, reach + 1e-9, step_mm)
-    X, Y, Z = np.meshgrid(along, across, across, indexing="ij")
-    q = np.stack([X, Y, Z], axis=-1).reshape(-1, 3)  # joint frame, bent
-    axis, angle = _axis_angle(joint.stop_rotation)
-    half = _rotation(axis, angle_scale * angle / 2.0)
-
-    def inside(saddle, turned):
-        # The segment was turned by ``turned``; take the points back.
-        straight = q @ turned  # == (turned.T @ q.T).T
-        world = joint.origin + straight @ joint.frame.T
-        local = (world - saddle.centre) @ saddle.frame
-        return saddle_field(guide, saddle, local, include_strap=False) <= 0.0
-
-    overlap = inside(first, half.T) & inside(second, half)
-    return float(overlap.sum() * step_mm**3)

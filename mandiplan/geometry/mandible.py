@@ -141,6 +141,12 @@ class MandibleIsolation:
     #: How high each ramus reaches above the bite plane, mm: (right, left).
     ramus_heights_mm: tuple[float, float] = (float("nan"), float("nan"))
     warnings: list[str] = field(default_factory=list)
+    #: Bone of the condylar heads too faint for the threshold (see
+    #: :func:`_condyle_heads`), the threshold it was separated at, and the gray
+    #: level the surface follows there. None when nothing was recovered.
+    faint_heads: np.ndarray | None = None
+    threshold: float = float("nan")
+    faint_level: float = float("nan")
 
     @property
     def separated(self) -> bool:
@@ -427,18 +433,20 @@ def find_arch(volume, threshold: float, count: int = 11, max_width_mm: float = n
     no mandible-shaped bone is found. Only the lower ``search_fraction`` of
     the scan is searched, and only Us at most ``max_width_mm`` wide count:
     in a CT that reaches the shoulders, the shoulder girdle is a U too.
-    Straight ahead is tried first, then a head turned by ``ARCH_TURNS_DEG``.
+    At each level, straight ahead is tried first, then a head turned by
+    ``ARCH_TURNS_DEG``. A higher straight U must not outrank the lower
+    mandibular body merely because the patient's head is turned.
     """
     if turns is None:
-        found = find_arch(volume, threshold, count, max_width_mm, search_fraction, (0.0,))
-        if found is not None:
-            return found
-        return find_arch(volume, threshold, count, max_width_mm, search_fraction,
-                         (0.0, *ARCH_TURNS_DEG))
+        turns = (0.0, *ARCH_TURNS_DEG)
     spacing = volume.spacing
     stride = np.maximum(np.round(1.0 / spacing[:2]).astype(int), 1)
     coarse_pixel = spacing[:2] * stride
-    z_step = max(int(round(2.0 / spacing[2])), 1)
+    # A tilted or locally interrupted body can supply only about 10 mm of
+    # continuous U-shaped sections. At a 2 mm pitch, moving the crop origin
+    # by one native slice can lose two of those sections and select the
+    # maxilla instead. Sample at 1 mm to resolve the persistence interval.
+    z_step = max(int(round(1.0 / spacing[2])), 1)
     array = volume.array
     levels = [
         k
@@ -677,7 +685,16 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     # outline, above the bite. Nothing of the mandible stands there: the
     # coronoids rise outside the line of the arch, the rami behind its ends,
     # and only the inner edge of a ramus comes within 5 mm of the line.
-    outline = points[:: max(len(points) // 60, 1), :2]
+    # A short body-level U can stop in front of the last molars. Include
+    # the teeth actually found beyond either end, independently on each
+    # side. The remaining extension is for finding rami, not palate:
+    # enclosing it blindly would turn medial ramus bone into skull markers.
+    outline_first, outline_last = n_head, n_head + len(points) - 1
+    if bite.found:
+        tooth_stations = np.flatnonzero(bite.has_teeth)
+        outline_first = min(outline_first, int(tooth_stations[0]))
+        outline_last = max(outline_last, int(tooth_stations[-1]))
+    outline = extended[outline_first: outline_last + 1, :2]
     columns = np.column_stack([X.ravel(), Y.ravel()])
     inside_arch = point_in_polygon(columns, outline).reshape(X.shape)
     palatal = (inside_arch & (distance > 5.0))[None] & (above_plane > 5.0) & (above_plane < 40.0)
@@ -844,16 +861,163 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     mask = np.zeros(full_shape, dtype=bool)
     mask[box] = mandible
     other = bone & ~mask
+    heads = np.zeros(full_shape, dtype=bool)
+    heads[box], level = _condyle_heads(
+        mandible, other[box], gray, threshold, spacing, above_plane, X, Y, points
+    )
+    mask |= heads
     heights, warnings = _ramus_check(mandible, above_plane, X, Y, points)
     return MandibleIsolation(
         mask=mask,
         other_bone=other,
+        faint_heads=heads,
+        threshold=float(threshold),
+        faint_level=level,
         bite=bite if bite.found else None,
         steps=steps,
         volume_mm3=float(mask.sum() * np.prod(spacing)),
         ramus_heights_mm=heights,
         warnings=warnings,
     )
+
+
+#: The head of a condyle is searched for within this of the rearmost bone of
+#: the process in plan, mm, and from this far below its top to this far above.
+CONDYLE_HEAD_PLAN_MM = 15.0
+CONDYLE_HEAD_BELOW_MM = 16.0
+CONDYLE_HEAD_ABOVE_MM = 4.0
+#: Faint head bone lies within this of the head as thresholded, mm.
+CONDYLE_HEAD_REACH_MM = 7.0
+#: How far between the soft tissue and the threshold faint bone is taken from.
+CONDYLE_HEAD_LEVEL = 0.45
+#: Gaps in the head's plate closed up to about twice this, mm.
+CONDYLE_HEAD_CLOSE_MM = 1.5
+#: The joint space kept clear of the skull's side of the joint, mm.
+CONDYLE_JOINT_GAP_MM = 0.6
+
+
+def _condyle_heads(mandible, other, gray, threshold, spacing, above_plane, X, Y, points):
+    """Bone of the condylar heads that the threshold misses, and its gray level.
+
+    The articular surface of a condyle is a thin plate over marrow, thinnest
+    at the back of the head; at any voxel size near its thickness it averages
+    down below a threshold that suits the rest of the jaw, and the isosurface
+    opens there. Bone is still brighter than the soft tissue round it. So the
+    head alone is read at a lower level, set between the soft tissue beside
+    it and the threshold (both from this scan: CBCT gray values are not
+    Hounsfield units), keeping what connects to the head without entering
+    the skull's side of the joint, and what it encloses.
+    """
+    import SimpleITK as sitk
+
+    found = np.zeros_like(mandible)
+    _, back_dir, lateral = arch_axes(points)
+    across = X * lateral[0] + Y * lateral[1]
+    behind = X * back_dir[0] + Y * back_dir[1]
+    middle = float(np.mean(points[:, :2] @ lateral))
+    high = mandible & (above_plane > PROCESS_JOINT_MIN_MM)
+    gap = max(int(round(CONDYLE_JOINT_GAP_MM / float(np.min(spacing)))), 1)
+    below = max(int(round(CONDYLE_HEAD_BELOW_MM / spacing[2])), 1)
+    above = max(int(round(CONDYLE_HEAD_ABOVE_MM / spacing[2])), 1)
+    skull_side = sitk.GetArrayFromImage(
+        sitk.BinaryDilate(sitk.GetImageFromArray(other.astype(np.uint8)), [gap, gap, gap])
+    ) > 0
+    zones = []
+    for sign in (-1.0, 1.0):
+        columns = high.any(axis=0) & (sign * (across - middle) > 0)
+        if not columns.any():
+            continue
+        rear = np.argmax(np.where(columns, behind, -np.inf))
+        anchor = np.unravel_index(rear, columns.shape)
+        plan = np.hypot(X - X[anchor], Y - Y[anchor]) <= CONDYLE_HEAD_PLAN_MM
+        levels = np.flatnonzero((high & plan[None]).any(axis=(1, 2)))
+        top = int(levels.max())
+        zone = np.zeros_like(mandible)
+        zone[max(top - below, 0) : top + above + 1] = plan
+        image = sitk.GetImageFromArray((high & zone).astype(np.uint8))
+        image.SetSpacing([float(v) for v in spacing])
+        near = sitk.GetArrayFromImage(
+            sitk.SignedMaurerDistanceMap(image, insideIsPositive=False, squaredDistance=False,
+                                         useImageSpacing=True)
+        ) <= CONDYLE_HEAD_REACH_MM
+        zones.append(zone & near)
+    if not zones:
+        return found, float(threshold)
+    zone = np.logical_or.reduce(zones)
+    # Soft tissue: what is neither bone nor air in the zone. Air is well under
+    # half the way from the darkest voxel to the threshold.
+    air = float(gray.min()) + 0.5 * (float(threshold) - float(gray.min()))
+    soft = gray[zone & (gray < threshold) & (gray > air)]
+    if soft.size < 50:
+        return found, float(threshold)
+    level = float(np.median(soft)) + CONDYLE_HEAD_LEVEL * (float(threshold) - float(np.median(soft)))
+    if not level < threshold:
+        return found, float(threshold)
+    candidate = (mandible | (gray >= level)) & zone & ~(skull_side & ~mandible)
+    labels = sitk.GetArrayFromImage(
+        sitk.ConnectedComponent(sitk.GetImageFromArray(candidate.astype(np.uint8)), False)
+    )
+    touching = np.unique(labels[mandible & zone & (labels > 0)])
+    head = np.isin(labels, touching)
+    # The plate may be one voxel thin and broken here and there: close it, then
+    # fill what it encloses, slice by slice as well, since a gap left anywhere
+    # keeps a three-dimensional fill from reaching the marrow behind it.
+    radius = max(int(round(CONDYLE_HEAD_CLOSE_MM / float(np.min(spacing)))), 1)
+    closed = sitk.GetArrayFromImage(
+        sitk.BinaryFillhole(
+            sitk.BinaryMorphologicalClosing(
+                sitk.GetImageFromArray(head.astype(np.uint8)), [radius, radius, radius], sitk.sitkBall
+            )
+        )
+    ).astype(np.uint8)
+    for axis in range(3):
+        for index in np.flatnonzero(closed.any(axis=tuple(a for a in range(3) if a != axis))):
+            where = [slice(None)] * 3
+            where[axis] = int(index)
+            where = tuple(where)
+            closed[where] = sitk.GetArrayFromImage(sitk.BinaryFillhole(sitk.GetImageFromArray(closed[where])))
+    head = (closed > 0) & zone & ~(skull_side & ~mandible)
+    # What the level brought in may fray at the joint: only what is at least
+    # a couple of voxels thick, still joined to the head, is kept.
+    opened = sitk.GetArrayFromImage(
+        sitk.BinaryMorphologicalOpening(
+            sitk.GetImageFromArray(head.astype(np.uint8)), [1, 1, 1], sitk.sitkBall
+        )
+    ) > 0
+    labels = sitk.GetArrayFromImage(
+        sitk.ConnectedComponent(sitk.GetImageFromArray((opened | mandible).astype(np.uint8)), False)
+    )
+    joined = np.isin(labels, np.unique(labels[mandible & (labels > 0)]))
+    return opened & joined & ~mandible, level
+
+
+def _with_faint_heads(array: np.ndarray, isolation) -> np.ndarray:
+    """``array`` with the surface round the heads taken from the mask.
+
+    The head's gray values are too faint to draw at the threshold, and vary
+    too much to draw at any one level, so close round it the array holds a
+    smoothed copy of the mask, scaled to cross the threshold on the mask's
+    edge, fading into the scan's own values a voxel or two further off.
+    """
+    import SimpleITK as sitk
+
+    threshold = float(isolation.threshold)
+    lift = max(threshold - float(isolation.faint_level), 1.0)
+
+    def blurred(mask):
+        image = sitk.Cast(sitk.GetImageFromArray(mask.astype(np.uint8)), sitk.sitkFloat32)
+        return sitk.GetArrayFromImage(sitk.SmoothingRecursiveGaussian(image, 0.8)).astype(np.float32)
+
+    near = sitk.GetArrayFromImage(
+        sitk.BinaryDilate(sitk.GetImageFromArray(isolation.faint_heads.astype(np.uint8)), [2, 2, 2])
+    ) > 0
+    weight = np.clip(blurred(near) * 2.0, 0.0, 1.0)
+    level_set = threshold + 2.0 * lift * (blurred(isolation.mask) - 0.5)
+    out = (1.0 - weight) * array + weight * level_set
+    # Fading back into the scan must not raise anything else to bone.
+    stray = (out >= threshold) & ~isolation.mask & (array < threshold)
+    out[stray] = threshold - 1.0
+    return out
 
 
 def _braincase(gray: np.ndarray, bone: np.ndarray, spacing) -> np.ndarray:
@@ -1470,6 +1634,9 @@ def masked_bone_volume(volume, isolation: MandibleIsolation):
 
     array = volume.array.astype(np.float32, copy=True)
     background = float(np.min(array))
+    heads = isolation.faint_heads
+    if heads is not None and heads.any():
+        array = _with_faint_heads(array, isolation)
     array[isolation.other_bone] = background
     return Volume(
         array=array,

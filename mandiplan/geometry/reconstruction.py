@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .plate_fit import kabsch
+from .resection import plane_depths
 
 
 # -- rigid transforms -------------------------------------------------------
@@ -239,30 +240,6 @@ def icp(
 
 
 # -- the resected region and the blend ---------------------------------------
-
-
-#: The depth given to a point in the planes' wedge but beyond the stretch of
-#: jaw they take out, mm: well outside any blend band.
-FAR_OUTSIDE_MM = 50.0
-
-
-def plane_depths(planes, points) -> np.ndarray:
-    """Signed distance of each point into the resected side of each plane.
-
-    Shape (len(points), len(planes)); positive means on the side the plane
-    removes.
-    """
-    pts = np.asarray(points, dtype=float).reshape(-1, 3)
-    depths = np.column_stack([plane.signed_distance(pts) for plane in planes])
-    reach = planes[0].reach if planes else None
-    if reach is not None:
-        # Beyond the stretch of jaw the cuts take out, nothing is resected,
-        # however deep into the wedge of the planes it lies.
-        candidates = np.flatnonzero(depths.min(axis=1) > -FAR_OUTSIDE_MM)
-        if len(candidates):
-            far = candidates[~reach.contains(pts[candidates])]
-            depths[far] = np.minimum(depths[far], -FAR_OUTSIDE_MM)
-    return depths
 
 
 def depth_into_resection(planes, points) -> np.ndarray:

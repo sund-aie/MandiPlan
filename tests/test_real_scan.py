@@ -62,6 +62,25 @@ def test_the_threshold_seed_draws_bone_not_skin(scan):
     assert 0.03 < fraction < 0.35
 
 
+@pytest.mark.parametrize("resampled_from_mm", [0.0, 2.0])
+def test_a_jaw_crop_lowers_the_threshold_only_for_resampled_coarse_slices(qt_app, resampled_from_mm):
+    from mandiplan.ui.session import Session
+
+    volume, geometry, series, _ = load_sample()
+    volume.resampled_from_mm = resampled_from_mm
+    geometry.jaw_box = True
+    geometry.jaw_volume = volume
+    normal = estimate_bone_threshold(volume)
+    thin = estimate_bone_threshold(volume, thin_bone=True)
+    assert thin < normal
+    session = Session()
+    session._load_volume(volume, geometry, series, "sample")
+    expected = thin if resampled_from_mm else normal
+    assert session.threshold == pytest.approx(expected)
+    assert session.automatic_threshold() == pytest.approx(expected)
+    session._mandible_timer.stop()
+
+
 def test_the_mandible_is_separated_from_the_maxilla_and_skull(scan, isolation):
     volume, threshold, frames = scan
     assert isolation.separated
@@ -106,6 +125,28 @@ def test_the_maxilla_is_not_in_the_mandible(scan, isolation):
     bone = (volume.array[levels] >= threshold) & inside[None]
     assert bone.sum() > 500  # the maxilla and palate are there ...
     assert not (isolation.mask[levels] & inside[None]).any()  # ... and none is mandible
+
+
+def test_a_short_body_curve_does_not_seed_posterior_maxilla_as_ramus(scan, isolation):
+    """The bite search extends past the body curve; the palate must too.
+
+    Removing one body seed at each end reproduces posterior upper-jaw
+    leakage on the public reference scan without adding private scan data.
+    """
+    volume, threshold, _ = scan
+    full_arch = load_sample()[3]
+    short = isolate_mandible(volume, threshold, frames_for(full_arch[1:-1]))
+    x, y = np.meshgrid(
+        volume.origin[0] + np.arange(volume.array.shape[2]) * volume.spacing[0],
+        volume.origin[1] + np.arange(volume.array.shape[1]) * volume.spacing[1],
+    )
+    inside = point_in_polygon(np.column_stack([x.ravel(), y.ravel()]), full_arch[:, :2]).reshape(x.shape)
+    z = volume.origin[2] + np.arange(volume.array.shape[0]) * volume.spacing[2]
+    bite_top = float(isolation.bite.heights_mm[isolation.bite.has_teeth].max())
+    levels = (z > bite_top + 8.0) & (z < bite_top + 23.0)
+    assert ((volume.array[levels] >= threshold) & inside[None]).sum() > 500
+    assert not (short.mask[levels] & inside[None]).any()
+    assert min(short.ramus_heights_mm) > 30.0
 
 
 def _lateral_cuts(frames, first=0.22, second=0.40):

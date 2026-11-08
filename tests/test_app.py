@@ -373,7 +373,7 @@ def test_plate_path_bend_table_and_exports(window, phantom_folder, tmp_path):
     plan = session.plate_plan
     assert plan is not None
     assert len(plan.nodes) >= 8
-    assert window.plate_panel.table.rowCount() == len(plan.nodes)
+    assert window.plate_panel.table.rowCount() == len(session.fitted_hole_plan.nodes)
     # Nodes sit one screw-hole pitch apart *along the path*, so the straight
     # segment between two of them is a chord: never longer, and here within 1%.
     assert np.all(plan.segment_lengths_mm <= plan.pitch_mm + 1e-9)
@@ -404,15 +404,15 @@ def test_plate_path_bend_table_and_exports(window, phantom_folder, tmp_path):
     expected = session.plate.width_mm * session.plate.thickness_mm * plan.total_length_mm
     assert rel_error(mass.GetVolume(), expected) < 0.05
 
-    # The clip-on guide for the plate as bent onto this path.
+    # The comb is laid out on the plate as finally seated.
     guide = session.bending_guide()
     assert guide is not None
-    assert len(guide.saddles) == session.plate_asset.hole_count
-    assert len(guide.joints) == session.plate_asset.hole_count - 1
-    assert any(joint.has_stop for joint in guide.joints)
+    np.testing.assert_allclose(guide.centres, session.bent_plate.hole_centres)
+    assert len(guide.joints) == len(session.bent_plate.hole_centres) - 1
+    assert any(joint.angle_deg > 0.5 for joint in guide.joints)
     guide_stl, guide_table = write_bending_guide(tmp_path / "guide.stl", guide, session.plate_asset)
     assert guide_stl.stat().st_size > 10_000
-    assert "until the saddles meet" in guide_table.read_text(encoding="utf-8")
+    assert "drops over its pin" in guide_table.read_text(encoding="utf-8")
     window.set_mode(Mode.NAVIGATE)
 
 
@@ -457,7 +457,10 @@ def test_choosing_a_plate_drives_the_pitch_and_the_fit(window, tmp_path):
 
     assert session.steps
     assert panel.steps_table.rowCount() == len(session.steps)
-    assert session.steps[0].kind == "cut"
+    trimmed = session.active_plate_asset.hole_count < session.plate_asset.hole_count
+    assert session.steps[0].kind == ("cut" if trimmed else "check")
+    assert all(step.distance_origin == "hole 1" for step in session.steps)
+    assert panel.steps_table.horizontalHeaderItem(2).text() == "from hole 1"
 
     path = write_steps_csv(
         tmp_path / "steps.csv",
@@ -468,7 +471,7 @@ def test_choosing_a_plate_drives_the_pitch_and_the_fit(window, tmp_path):
     )
     text = path.read_text(encoding="utf-8")
     assert text.splitlines()[0] == f"# {DISCLAIMER}"
-    assert "distance_from_cut_end_mm" in text
+    assert "distance_from_hole_1_mm" in text
     assert session.plate_system.name in text
 
     panel.family_box.setCurrentIndex(panel.family_box.findData("generic-recon-2.4-lp"))

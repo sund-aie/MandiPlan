@@ -101,7 +101,7 @@ def _plate_step(session) -> tuple[bool, str, str]:
     fit = session.fit
     if fit is not None and fit.problems:
         return False, "", fit.problems[0]
-    asset = getattr(session, "plate_asset", None)
+    asset = getattr(session, "active_plate_asset", getattr(session, "plate_asset", None))
     plate = f"{asset.hole_count}-hole plate" if asset is not None else "Plate"
     return True, "", f"{plate} on a {session.plate_plan.total_length_mm:.1f} mm path."
 

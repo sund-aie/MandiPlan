@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -746,6 +747,11 @@ class PlatePanel(QWidget):
         self.family_box = QComboBox()
         self._fill_families()
         self.model_box = QComboBox()
+        self.retained = QSpinBox()
+        self.retained.setMinimum(2)
+        self.retained.setKeyboardTracking(False)
+        self.retained.setSuffix(" holes")
+        self.retained.setToolTip("Keep holes from the starting end. Decrease to cut the distal tail between holes; restore the full count to undo the cut.")
         self.status_badge = QLabel("")
         self.clearance = QDoubleSpinBox()
         self.clearance.setRange(0.0, 5.0)
@@ -864,7 +870,8 @@ class PlatePanel(QWidget):
         library = QFormLayout()
         library.addRow("Brand", self.brand_box)
         library.addRow("Plate", self.family_box)
-        library.addRow("Length", self.model_box)
+        library.addRow("Stock length", self.model_box)
+        library.addRow("Holes to keep", self.retained)
         library.addRow("", self.status_badge)
         layout.addLayout(library)
         self.details = _Section(
@@ -899,6 +906,7 @@ class PlatePanel(QWidget):
         self.brand_box.currentIndexChanged.connect(self._on_brand)
         self.family_box.currentIndexChanged.connect(self._on_family)
         self.model_box.currentIndexChanged.connect(self._on_model)
+        self.retained.valueChanged.connect(session.set_retained_holes)
         self.clearance.valueChanged.connect(session.set_plate_clearance)
         self.bend_plate.toggled.connect(session.set_plate_bending)
         self.show_distortion.toggled.connect(session.set_hole_distortion_shown)
@@ -1014,7 +1022,12 @@ class PlatePanel(QWidget):
     def refresh_library(self) -> None:
         """Mirror the selected asset's identity, status and fit into the panel."""
         self._select_current_asset()
-        asset = self.session.plate_asset
+        asset = self.session.active_plate_asset
+        if asset is not None:
+            self.retained.blockSignals(True)
+            self.retained.setMaximum(self.session.plate_asset.hole_count)
+            self.retained.setValue(asset.hole_count)
+            self.retained.blockSignals(False)
         if asset is None:
             self.status_badge.setText("No plate selected")
             set_role(self.status_badge, "hint")
@@ -1052,7 +1065,7 @@ class PlatePanel(QWidget):
         contact = self.session.plate_contact
         if contact is not None and len(contact.clearance_mm):
             text += (
-                f"\nBone clearance {contact.clearance_mm.min():.2f} to "
+                f"\nAt {len(contact.clearance_mm)} hole centres: bone clearance {contact.clearance_mm.min():.2f} to "
                 f"{contact.clearance_mm.max():.2f} mm."
             )
         for line in problems:
@@ -1107,6 +1120,8 @@ class PlatePanel(QWidget):
         set_role(self.fit_info, "danger" if fit.problems else "hint")
 
         rows = steps_as_rows(self.session.steps)
+        reference = self.session.steps[0].distance_origin if self.session.steps else "cut end"
+        self.steps_table.horizontalHeaderItem(2).setText(f"from {reference}")
         self.steps_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             for c, text in enumerate(row):
@@ -1124,14 +1139,14 @@ class PlatePanel(QWidget):
                 text += f" (+{len(problems) - 1} more below)"
             role = "danger"
         elif warnings:
-            text = f"Fits, with {len(warnings)} point(s) to check below."
+            text = f"Check fit: {warnings[0]}"
             role = "warning"
         else:
             text = "Fits: the plate spans the plan with sound screw purchase each side."
             role = "hint"
         self.verdict.setText(text)
         set_role(self.verdict, role)
-        asset = session.plate_asset
+        asset = session.active_plate_asset
         option = fit.option
         if asset is not None and option is not None and option.holes != asset.hole_count:
             self.use_length.setText(
@@ -1161,9 +1176,10 @@ class PlatePanel(QWidget):
             self.table.setSortingEnabled(True)
             return
 
-        rows = bend_table_rows(plan)
+        table_plan = self.session.fitted_hole_plan or plan
+        rows = bend_table_rows(table_plan)
         self.table.setRowCount(len(rows))
-        for r, (node, text_row) in enumerate(zip(plan.bends, rows)):
+        for r, (node, text_row) in enumerate(zip(table_plan.bends, rows)):
             values = [
                 float(node.index),
                 node.cumulative_mm,
@@ -1178,7 +1194,7 @@ class PlatePanel(QWidget):
         self.table.setSortingEnabled(True)
         self.table.resizeColumnsToContents()
 
-        asset = self.session.plate_asset
+        asset = self.session.active_plate_asset
         plate = (
             f"{asset.hole_count}-hole plate ({asset.length_mm:.0f} mm)"
             if asset is not None else "Plate"
@@ -1198,12 +1214,13 @@ class ExportPanel(QWidget):
 
     #: (key, button text, what it is for)
     ITEMS = (
+        ("print-kit", "Prepare mandible print kit", "Choose your printer and export pieces that fit together while preserving the working side."),
         ("mandible", "Mandible (STL)", "The patient's mandible on its own, separated from the skull."),
         ("jaw", "Reconstructed jaw (STL)", "The mandible as rebuilt, to print as a model."),
         ("segment", "Mirrored segment only (STL)", "Just the part that fills the defect."),
         ("fragment", "Resected segment (STL)", "The bone the cuts remove."),
         ("plate", "Bent plate (STL)", "The plate as planned, to print and bend against."),
-        ("guide", "Bending guide (STL + table)", "Clip-on guide that stops each bend at its angle."),
+        ("guide", "Bending guide (STL + table)", "A thin comb to bend the plate on: a pin for each hole of the finished shape, made for this plate, its length as cut, and your bender."),
         ("bends", "Bend table (CSV)", "Angle at every screw hole."),
         ("steps", "Bench steps (CSV)", "The bending steps for the chosen kit, in order."),
         ("resection", "Resection summary (CSV)", "Cut positions, angles and margins."),
@@ -1229,6 +1246,20 @@ class ExportPanel(QWidget):
             self.buttons[key] = button
             layout.addWidget(button)
             layout.addWidget(_hint(purpose))
+            if key == "guide":
+                options = QWidget()
+                form = QFormLayout(options)
+                for title, attr, lo, hi in (("Tooth thickness", "guide_wall_mm", 0.8, 2.4),
+                                             ("Pin play per side", "guide_clearance_mm", 0.05, 0.8)):
+                    spin = QDoubleSpinBox()
+                    spin.setDecimals(2)
+                    spin.setRange(lo, hi)
+                    spin.setSingleStep(0.05)
+                    spin.setSuffix(" mm")
+                    spin.setValue(getattr(session, attr))
+                    spin.valueChanged.connect(lambda value, name=attr: setattr(session, name, value))
+                    form.addRow(title, spin)
+                layout.addWidget(_Section("Guide dimensions", options))
         layout.addStretch(1)
         for signal in (
             session.reconstruction_changed,
@@ -1243,6 +1274,7 @@ class ExportPanel(QWidget):
     def refresh(self) -> None:
         session = self.session
         ready = {
+            "print-kit": session.mandible is not None and session.surface is not None,
             "mandible": session.mandible is not None and session.surface is not None,
             "jaw": session.reconstruction is not None,
             "segment": session.reconstruction is not None,

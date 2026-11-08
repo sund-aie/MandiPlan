@@ -428,6 +428,15 @@ along it (the dark line between bright upper and lower crowns), cuts only the
 tooth contacts along that line, and splits any remaining contact at the jaw
 joints at its thinnest, darkest point.
 
+The initial CT jaw search uses a 2 mm averaged view, and arch persistence
+is checked at 1 mm intervals where the scan resolves them. Every height is
+checked for supported head rotations before moving on to a higher U, so a
+straight upper structure cannot outrank a lower tilted mandible. A jaw box
+cut from fine native slices keeps the usual threshold seed; only a box
+resampled from coarse slices uses the lower thin-bone seed. The palatal
+outline reaches the teeth detected beyond either end of a short body curve,
+independently on each side, without enclosing the full ramus search region.
+
 The bite is searched for twice. Metal fillings and crowns throw dark and
 bright streaks across the slices they lie in, and on a CT that streak band
 can look more like a bite than the bite does; so an occlusal plane is fitted
@@ -554,41 +563,86 @@ whether a bridge is bent past what the alloy takes over that length (about 26°
 for a 2.4 mm grade 4 plate on an 8 mm pitch), how far the bone contact is from
 the planned standoff, and what the bends do to the screw holes.
 
-The **Bench steps** tab turns all of that into instructions for the kit you
-picked, measured from the proximal cut end of the plate because that is what a
-ruler measures, and pointed in patient anatomy rather than in frame
-conventions:
+The **Bench steps** tab uses the actual retained plate's change from its supplied
+contour to the seated preview, with the selected kit's capabilities and pass
+limits. Its positions are measured along the hole-centre polyline from **hole 1**;
+the table, CSV column and each instruction name that reference. Older plans
+without a fitted asset keep their explicitly labelled cut-end reference.
 
-> 1. Take the 10-hole 2.4 mm reconstruction bar (90.0 mm). Trim 1 hole from the
->    distal end to 81.0 mm.
-> 2. Mark at 13.5 mm from the proximal end (hole 1). Bend 12.4° across the
->    plate's face, so the distal end moves toward the patient's left, in 2
->    passes of about 6.2° each. Grip 10 mm either side of the mark.
-> 4. At 31.4 mm (hole 3): 1.0° of twist clockwise is needed; bending irons
->    cannot twist. Use twisting forceps here.
+For example, on an 8 mm pitch plate, the bridge between holes 3 and 4 is 20 mm
+from hole 1. A required 15° in-plane turn with a 10°-per-pass kit is listed as
+two or more passes, followed by release and reseating on the checking form.
+A twist the selected kit cannot make is marked as requiring another tool.
+Any predicted springback allowance is an estimate to check after release.
 
 **6 · Export.** Every file in one place: the reconstructed jaw, the mirrored
 segment alone, the resected segment, the bent plate, the bending guide, the bend
 table, the bench steps and the resection summary. Every STL carries the
 attribution; every table carries the disclaimer.
 
-### The bending guide
+### Trim, seat and check the plate
 
-A plate is bent by eye against a model, over and over. The bending guide
-removes the guessing. It is a chain of saddles, one per screw hole, printed in
-one piece (TPU 95A, or PETG) and clipped onto the plate as it comes out of the
-packet, straight or preformed. A window over each hole leaves it free for the
-bending irons; a thin strap links each saddle to the next.
+In **5 · Plate**, select the stock shape and length, then select the number
+of proximal holes to keep. Trimming removes the unused distal end between
+holes. Restore the stock hole count to undo the trim. Inspect the contact
+readout on the actual retained holes; a path that leaves a hole unsupported,
+too far from the surface or badly angled needs adjustment. The standoff is
+a requested distance in millimetres. It is possible for a particular plate
+to be too short or too stiff for a path.
 
-Where two saddles meet, over the bridge between two holes, their ends are cut
-on the mitre of the planned bend at that bridge, overbent by the alloy's
-springback. On the side the bend closes they stand apart by a wedge; bend the
-bridge that way until the two saddles touch, let go, and the plate relaxes onto
-the plan. On the other side the ends are square and simply move apart, so the
-guide also shows which way to bend. Each saddle carries its hole number, and
-the table written next to the STL says, bridge by bridge, what the bend is and
-when to stop. Twist closes no gap and has no stop; it is listed for checking by
-eye.
+The plate is laid on the jaw as a whole. Its course across the bone is smoothed
+so the scatter of your clicks does not reach it, its height follows the form of
+the jaw rather than the texture of the surface, and it rests on any prominence
+it would otherwise pass through. Holes stay exactly the plate's distance apart.
+Each lobe around a hole stays rigid and all the bending is in the bridges, as on
+the bench.
+
+The **Bending guide (STL + table)** in **6 · Export** is a thin comb the plate
+wraps round. It stands on the bench on a flat base inside the plate's curve. One
+thin tooth rises at each hole of the finished plate, ending in a pad where the
+plate's bone face lies there and a pin where the hole is. To use it, hang hole 1
+on the flagged tooth, bend the next bridge until the next hole drops over its pin
+and lies flat, release, and go on. A hole on its pin after release is right.
+
+It is made for one plate and one bender: hole count and spacing (after any
+trimming), pin diameter from the bore, tooth height from the width, and pad
+position from the thickness. The bridges are open all round. The base stands back
+as far as the chosen kit needs, and the table says whether that kit's jaws land
+on a tooth at this plate's pitch, in which case lift the plate off the pins for
+each bend. Expand **Guide dimensions** to set tooth thickness and pin play. Print
+one pin first and try it in a real hole. An oval hole gets a round pin of its
+narrow width, so it has play along the plate. The pin checks the shape; the real
+springback, tool envelope and final fit must still be checked on the bench.
+
+### Print a jaw for a smaller printer
+
+Select **6 · Export → Prepare mandible print kit**. Choose the separated or
+reconstructed model, a printer or custom X/Y/Z build volume, and the patient
+side to protect. With a planned resection the app can infer the working side.
+The original single-STL exports remain available.
+
+The jaw is first made solid on a 0.3 mm grid, because a real bone's surface is a
+hollow shell with nothing for a joint to bite into. This moves the surface by a
+small fraction of a millimetre, and it is why these pieces are not the same mesh
+as the plain STL export.
+
+The whole jaw is tried at actual size first. If it does not fit, it is split
+along the arch, keeping the protected stretch (the working side and the
+resection, plus 6 mm) in one piece. Each seam is a jigsaw joint: a round head on
+a narrower neck in a matching socket, sized to the bone there. It goes together
+one way, by sliding the pieces together across the jaw, and then cannot be pulled
+apart along it. If the protected side cannot fit the printer, the app says so and
+writes nothing.
+
+The piece holding the resection lies with the outer face at the resection upward,
+so that face is finished as a top surface. Stems come from below and keep 8 mm
+from the resection and from the joints. Import each piece in its exported
+orientation, with its stems at the same coordinates. Review overhangs and
+adhesion in the slicer, and print one joint to calibrate **Joint clearance** for
+your material and printer.
+
+Presets are the makers' nominal build volumes, and have not been checked against
+each machine. Use **Custom** for a smaller usable bed.
 
 ### The plate catalogue is yours to correct
 
@@ -666,9 +720,9 @@ and under 0.2 % of the rest of the skull, with both condyles; and again with
 the head rolled 6° and a filling, with its streaks, in each first molar: both
 condyles kept, and nothing of the mandible more than 2 mm off the true bone.
 
-The bending guide is checked geometrically: two neighbouring saddles do not
-touch up to the stop angle and do just past it, for a curl and for an in-plane
-bend, and bending the wrong way opens the gap.
+Guide and plate checks exercise the bent hole geometry and exported meshes.
+A geometric match in software does not certify the bend made with a physical
+kit or the dimensional accuracy or strength of a printed model.
 
 `pytest` runs all of it, including end-to-end passes through the real
 application: load, separate, cut, reconstruct, refine, draw a plate, bend it,
@@ -697,9 +751,16 @@ export.
 - The plate library is generic. Its dimensions come from published size
   classes, not from any manufacturer, and nothing in the application knows the
   real bending characteristics of the plate in your hand.
-- The bending guide's stops are as good as the print: 0.1 mm of printing error
-  on a saddle wall is about 1.3° of bend. Twist has no stop. A flexible filament
-  gives a little under load; bend slowly to contact.
+- The bending guide has not been printed or used with a real plate and bender.
+  Pin fit depends on the actual plate and print, and a shape check cannot certify
+  tool force, springback or the finished physical bend.
+- The print kit's joints have not been printed. Their clearance is a starting
+  value to calibrate.
+- The back of a condylar head too faint for the threshold is read at a lower
+  level and closed over. Where the scan shows almost nothing there, its outline
+  is an estimate. A very thin plate pressed against the fossa in a tight joint
+  can still stay partly open, rather than risk taking the skull with it. Check
+  the head against the slices.
 - Two cutting planes. That covers a segmental resection but not a
   hemimandibulectomy with a condylar cut.
 - Margin distances are measured to points you place by eye, not to a segmented

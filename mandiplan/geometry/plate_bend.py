@@ -407,6 +407,7 @@ def clearance_report(
     target_clearance_mm: float = 0.5,
     max_gap_mm: float = 2.0,
     max_screw_angle_deg: float = 35.0,
+    matched: bool = False,
 ) -> ClearanceReport:
     """Measure the fitted plate against the bone it is supposed to sit on.
 
@@ -421,11 +422,18 @@ def clearance_report(
 
     diff = hole_centres[:, None, :] - bone_points[None, :, :]
     nearest = np.argmin(np.einsum("ijk,ijk->ij", diff, diff), axis=1)
+    if matched:
+        nearest = np.arange(len(hole_centres))
     normals = bone_normals[nearest]
     offset = hole_centres - bone_points[nearest]
 
     # Distance from the bone surface to the plate's inner face.
-    clearance = np.einsum("ij,ij->i", offset, normals) - thickness_mm / 2.0
+    inner_offset = offset - (thickness_mm / 2.0) * hole_axes
+    clearance = np.einsum("ij,ij->i", inner_offset, normals)
+    if matched:
+        # A nearest point on an edge of the jaw can be several mm sideways:
+        # its normal projection alone would incorrectly call that hole seated.
+        clearance = np.copysign(np.linalg.norm(inner_offset, axis=1), clearance)
     angle = np.degrees(
         np.arccos(np.clip(np.einsum("ij,ij->i", hole_axes, normals), -1.0, 1.0))
     )
@@ -463,3 +471,166 @@ def clearance_report(
         problems=problems,
         warnings=warnings,
     )
+
+
+#: How strongly the chain of holes is faired along the jaw, in hole pitches
+#: (Gaussian sigma): the course across the bone, how closely it follows hills
+#: and hollows of the bone, and how quickly the plate's face may turn. A hand
+#: contoured plate follows the jaw's form, not its surface texture.
+FAIR_COURSE_PITCHES = 1.6
+FAIR_HEIGHT_PITCHES = 0.7
+FAIR_NORMAL_PITCHES = 0.9
+#: Beyond this from the bone, mm, a point of the chain has no bone under it
+#: (a defect, or past the end of the jaw) and carries on as it was going.
+SEAT_REACH_MM = 7.0
+
+
+def _gaussian(values: np.ndarray, sigma: float) -> np.ndarray:
+    """Gaussian smoothing along the first axis; the ends run on as they were."""
+    values = np.asarray(values, dtype=float)
+    radius = int(np.ceil(3.0 * sigma))
+    if radius < 1 or len(values) < 3:
+        return values.copy()
+    kernel = np.exp(-0.5 * (np.arange(-radius, radius + 1) / sigma) ** 2)
+    kernel /= kernel.sum()
+    shape = (radius,) + values.shape[1:]
+    # Odd reflection about each end: a straight run stays straight, unshrunk.
+    head = 2.0 * values[0] - values[1 : radius + 1][::-1]
+    tail = 2.0 * values[-1] - values[-radius - 1 : -1][::-1]
+    if len(head) < radius or len(tail) < radius:
+        head = np.broadcast_to(values[0], shape)
+        tail = np.broadcast_to(values[-1], shape)
+    padded = np.concatenate([head, values, tail])
+    if padded.ndim == 1:
+        return np.convolve(padded, kernel, mode="valid")
+    return np.column_stack(
+        [np.convolve(padded[:, c], kernel, mode="valid") for c in range(padded.shape[1])]
+    )
+
+
+def _resampled(points: np.ndarray, normals: np.ndarray, step: float):
+    chords = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    s = np.concatenate([[0.0], np.cumsum(chords)])
+    stations = np.arange(0.0, s[-1] + step * 0.5, step)
+    at = lambda v: np.column_stack([np.interp(stations, s, v[:, c]) for c in range(3)])
+    return at(points), _unit(at(normals))
+
+
+def _walk_chain(curve: np.ndarray, start: float, spacings: np.ndarray, step: float) -> np.ndarray:
+    """Positions along ``curve`` (samples ``step`` apart) of a chain of holes
+    starting at sample position ``start``, with straight ``spacings`` between
+    them: a plate cannot stretch, so its holes are exactly that far apart."""
+    def point(u):
+        i = int(np.clip(np.floor(u), 0, len(curve) - 2))
+        return curve[i] + (u - i) * (curve[i + 1] - curve[i])
+
+    positions = [float(start)]
+    for spacing in spacings:
+        here = point(positions[-1])
+        u = positions[-1]
+        far = u + 1.0
+        while far < len(curve) - 1 and np.linalg.norm(point(far) - here) < spacing:
+            far += 1.0
+        lo, hi = far - 1.0, far
+        for _ in range(24):
+            mid = 0.5 * (lo + hi)
+            if np.linalg.norm(point(mid) - here) < spacing:
+                lo = mid
+            else:
+                hi = mid
+        positions.append(0.5 * (lo + hi))
+    return np.array(positions)
+
+
+def seat_plate_chain(projector, path, normals, spacings, thickness, clearance, width):
+    """Where a plate's holes go on the jaw: exactly spaced, seated and fair.
+
+    ``projector`` finds the bone (``project``, ``footprint_normal``);
+    ``path``/``normals`` is the route the operator drew; ``spacings`` the
+    plate's own hole-to-hole distances. Returns hole centres on the plate's
+    mid-plane and the plate's outward normal at each.
+
+    Reading the bone hole by hole copies its texture into the plate, which
+    comes out rippled and twisted, each lobe at its own angle, and no plate
+    bench can make that. The route is instead faired as a whole: how it
+    crosses the bone hardly follows the clicks' scatter at all, its height off
+    the bone follows the jaw's form, and the plate's face turns only slowly.
+    Where the fairing would sink the plate into a prominence it is lifted to
+    rest on it, as a real plate does.
+    """
+    path = np.asarray(path, dtype=float).reshape(-1, 3)
+    normals = _unit(np.asarray(normals, dtype=float).reshape(-1, 3))
+    spacings = np.asarray(spacings, dtype=float).ravel()
+    pitch = float(np.median(spacings))
+    step = 1.0
+    offset = float(thickness) / 2.0 + float(clearance)
+    half_width = 0.35 * float(width)
+
+    curve, up = _resampled(path, normals, step)
+    length = float(spacings.sum())
+    available = (len(curve) - 1) * step
+    # Holes beyond the drawn route still lie along the jaw: carry it on past
+    # both ends, far enough to keep the fairing clear of the plate's ends.
+    extra = int(np.ceil(max(length - available, 0.0) / 2.0 + 2.5 * pitch))
+    ends = (curve[0] - curve[min(4, len(curve) - 1)], curve[-1] - curve[-min(5, len(curve))])
+    head_dir, tail_dir = _unit(np.asarray(ends))
+    head = curve[0] + np.arange(extra, 0, -1)[:, None] * step * head_dir
+    tail = curve[-1] + np.arange(1, extra + 1)[:, None] * step * tail_dir
+    curve = np.vstack([head, curve, tail])
+    up = np.vstack([np.repeat(up[:1], extra, axis=0), up, np.repeat(up[-1:], extra, axis=0)])
+    centre = 0.5 * (len(curve) - 1)
+
+    course_sigma = FAIR_COURSE_PITCHES * pitch / step
+    height_sigma = FAIR_HEIGHT_PITCHES * pitch / step
+    normal_sigma = FAIR_NORMAL_PITCHES * pitch / step
+    radius = max(float(width) / 2.0, 2.0)
+    for _ in range(3):
+        bone = curve.copy()
+        seated = np.zeros(len(curve), dtype=bool)
+        faces = up.copy()
+        for k, point in enumerate(curve):
+            found, normal = projector.project(point)
+            if np.linalg.norm(found - point) > SEAT_REACH_MM or normal @ up[k] < 0.2:
+                continue
+            seated[k] = True
+            bone[k] = found
+            if k % 2 == 0:
+                patch = projector.footprint_normal(found, radius)
+                faces[k] = patch if patch @ up[k] > 0.2 else up[k]
+            else:
+                faces[k] = np.nan
+        missing = np.isnan(faces[:, 0])
+        faces[missing] = faces[np.maximum(np.flatnonzero(missing) - 1, 0)]
+        up = _unit(_gaussian(faces, normal_sigma))
+        course = _gaussian(bone, course_sigma)
+        height = np.einsum("ij,ij->i", bone - course, up)
+        curve = course + _gaussian(height, height_sigma)[:, None] * up
+        if not seated.any():
+            break
+
+    # Rest on the prominences the fairing would have the plate pass through.
+    tangents = _unit(np.gradient(curve, axis=0))
+    across = _unit(np.cross(tangents, up))
+    lift = np.zeros(len(curve))
+    for side in (-half_width, 0.0, half_width):
+        probes = curve + side * across
+        for k, probe in enumerate(probes):
+            found, normal = projector.project(probe)
+            if np.linalg.norm(found - probe) <= SEAT_REACH_MM and normal @ up[k] > 0.2:
+                lift[k] = max(lift[k], float((found - probe) @ up[k]))
+    window = max(int(round(0.5 * pitch / step)), 1)
+    held = np.array([lift[max(k - window, 0) : k + window + 1].max() for k in range(len(lift))])
+    curve = curve + _gaussian(held, 0.5 * window)[:, None] * up
+
+    # The holes, on the plate's mid-plane, centred on the route as drawn.
+    middle = curve + offset * up
+    start = centre - length / (2.0 * step)
+    for _ in range(3):
+        positions = _walk_chain(middle, start, spacings, step)
+        start += centre - 0.5 * (positions[0] + positions[-1])
+    start = float(np.clip(start, 0.0, len(middle) - 2))
+    positions = _walk_chain(middle, start, spacings, step)
+    samples = np.arange(len(middle))
+    target = np.column_stack([np.interp(positions, samples, middle[:, c]) for c in range(3)])
+    outward = _unit(np.column_stack([np.interp(positions, samples, up[:, c]) for c in range(3)]))
+    return target, outward

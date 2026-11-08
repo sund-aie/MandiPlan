@@ -261,6 +261,7 @@ class MainWindow(QMainWindow):
             ("Export bent plate (STL)…", self.export_plate_stl),
             ("Export bending guide (STL + table)…", self.export_bending_guide),
             ("Export bench steps (CSV)…", self.export_steps_csv),
+            ("Prepare mandible print kit…", self.export_print_kit),
             ("Export mandible (STL)…", self.export_mandible_stl),
             ("Export reconstructed jaw (STL)…", self.export_graft_stl),
             ("Export mirrored segment only (STL)…", self.export_mirrored_segment_stl),
@@ -474,9 +475,16 @@ class MainWindow(QMainWindow):
             self.set_mode(Mode.NAVIGATE)
 
     def set_busy(self, busy: bool) -> None:
-        """A wait cursor, and a repaint, around the few slow steps."""
+        """Show progress without entering macOS's unstable busy-cursor path."""
+        import sys
+
+        # Qt's macOS wait cursor can crash in CoreGraphics while registering
+        # its bitmap, including when restoreOverrideCursor is called. Keep
+        # the status indication on macOS without replacing the native cursor.
+        use_cursor = sys.platform != "darwin"
         if busy:
-            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            if use_cursor:
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             self.statusBar().showMessage("Working…")
             # Paint the cursor and message now, but take no clicks: a click
             # handled in the middle of the computation would re-enter it.
@@ -484,7 +492,8 @@ class MainWindow(QMainWindow):
                 QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
             )
         else:
-            QApplication.restoreOverrideCursor()
+            if use_cursor:
+                QApplication.restoreOverrideCursor()
             self.statusBar().clearMessage()
 
     def show_message(self, text: str) -> None:
@@ -839,7 +848,7 @@ class MainWindow(QMainWindow):
         return path or None
 
     def export_bend_csv(self) -> None:
-        plan = self.session.plate_plan
+        plan = self.session.fitted_hole_plan or self.session.plate_plan
         if plan is None:
             self.show_message("Draw a plate path first.")
             return
@@ -852,7 +861,7 @@ class MainWindow(QMainWindow):
                 plan,
                 self.session.plate.width_mm,
                 self.session.plate.thickness_mm,
-                asset=self.session.plate_asset,
+                asset=self.session.active_plate_asset,
                 fitted=self.session.fitted_plate,
                 bent=self.session.bent_plate,
                 contact=self.session.plate_contact,
@@ -862,6 +871,7 @@ class MainWindow(QMainWindow):
 
     def export_item(self, key: str) -> None:
         {
+            "print-kit": self.export_print_kit,
             "mandible": self.export_mandible_stl,
             "jaw": self.export_graft_stl,
             "segment": self.export_mirrored_segment_stl,
@@ -874,11 +884,15 @@ class MainWindow(QMainWindow):
         }[key]()
 
     def export_bending_guide(self) -> None:
-        """The clip-on guide that stops every bend at its angle, with its table."""
-        guide = self.session.bending_guide()
+        """Export the comb bending guide and its bridge table."""
+        try:
+            guide = self.session.bending_guide()
+        except ValueError as error:
+            self.show_message(str(error))
+            return
         if guide is None:
             return
-        asset = self.session.plate_asset
+        asset = self.session.active_plate_asset
         default = f"{asset.id}-bending-guide.stl" if asset else "bending_guide.stl"
         path = self._save_path("Export bending guide", "STL files (*.stl)", default)
         if not path:
@@ -886,6 +900,9 @@ class MainWindow(QMainWindow):
         self.set_busy(True)
         try:
             stl, table = write_bending_guide(path, guide, asset)
+        except (ValueError, OSError) as error:
+            self.show_message(f"Could not export the guide: {error}")
+            return
         finally:
             self.set_busy(False)
         self.session.note_export("bending guide")
@@ -899,7 +916,7 @@ class MainWindow(QMainWindow):
                 "Select a plate and draw a plate path before exporting the plate."
             )
             return
-        asset = self.session.plate_asset
+        asset = self.session.active_plate_asset
         default = f"{asset.id}-bent.stl" if asset else "plate_bent.stl"
         path = self._save_path("Export bent plate", "STL files (*.stl)", default)
         if path:
@@ -925,6 +942,43 @@ class MainWindow(QMainWindow):
             )
             self.session.note_export("bench steps")
             self.show_message(f"Bench steps written to {path}")
+
+    def export_print_kit(self) -> None:
+        """Export printable jaw pieces in a new folder, preserving the work site."""
+        from ..printing import export_print_kit
+        from .print_setup import PrintSetupDialog, protection_points, working_boundary
+
+        session = self.session
+        session.ensure_mandible()
+        if session.mandible is None or session.surface is None:
+            self.show_message(session.mandible_problem or "Separate the mandible before preparing a print kit.")
+            return
+        setup = PrintSetupDialog(session, self)
+        if not setup.exec():
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Save print kit inside folder")
+        if not folder:
+            return
+        surface = (session.reconstructed_surface if setup.model.currentData() == "reconstructed"
+                   else session.surface)
+        self.set_busy(True)
+        try:
+            protected = protection_points(session)
+            side, boundary = working_boundary(session, surface, setup.side.currentData(), protected)
+            files = export_print_kit(
+                folder, surface, tuple(s.value() for s in setup.dims),
+                working_side=side, cut_points=protected, midline_x=boundary,
+                printer_name=setup.printer.currentText(), supports=setup.supports.isChecked(),
+                clearance_mm=setup.clearance.value(), frames=getattr(session, "frames", None),
+            )
+        except (ValueError, OSError, RuntimeError) as error:
+            self.show_message(str(error))
+            QMessageBox.warning(self, "Print kit could not be exported", str(error))
+            return
+        finally:
+            self.set_busy(False)
+        session.note_export("print kit")
+        self.show_message(f"Print kit written to {files[0].parent}")
 
     def export_mandible_stl(self) -> None:
         """The patient's mandible alone, as separated from the skull."""

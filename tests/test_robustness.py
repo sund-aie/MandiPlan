@@ -59,6 +59,9 @@ def dialogs(tmp_path_factory):
         "warn": QMessageBox.warning,
         "crit": QMessageBox.critical,
     }
+    from mandiplan.ui.print_setup import PrintSetupDialog
+    saved_print_exec = PrintSetupDialog.exec
+    PrintSetupDialog.exec = lambda self: 0
     counter = {"n": 0}
 
     def save_name(*_a, **_k):
@@ -70,6 +73,7 @@ def dialogs(tmp_path_factory):
     for name in ("information", "warning", "critical"):
         setattr(QMessageBox, name, staticmethod(lambda *a, **k: None))
     yield out
+    PrintSetupDialog.exec = saved_print_exec
     QFileDialog.getExistingDirectory = saved["dir"]
     QFileDialog.getSaveFileName = saved["save"]
     QMessageBox.information = saved["info"]
@@ -130,6 +134,8 @@ def _sweep(win, qt_app, errors, phase) -> list[str]:
     for spin in win.findChildren((QDoubleSpinBox, QSpinBox)):
         lo, hi = spin.minimum(), spin.maximum()
         for value in (lo, (lo + hi) / 2, hi):
+            if isinstance(spin, QSpinBox):
+                value = int(value)
             run(f"spin {spin.suffix()}={value}", lambda s=spin, v=value: s.setValue(v))
     for slider in win.findChildren(QSlider):
         for value in (slider.minimum(), slider.maximum()):

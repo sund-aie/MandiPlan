@@ -28,8 +28,9 @@ import numpy as np
 from .threshold import otsu_threshold
 from .volume import Volume
 
-#: The coarse grid the head is looked for on, mm.
-COARSE_MM = 3.0
+#: The coarse grid the head is looked for on, mm. A 3 mm average can lose a
+#: short run of connected mandibular cortex and find the maxilla instead.
+COARSE_MM = 2.0
 #: An axial slice through the brain encloses at least this much, cm².
 MIN_BRAIN_AREA_CM2 = 40.0
 #: ... and the vault keeps doing so for at least this far, mm.

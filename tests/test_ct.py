@@ -385,3 +385,72 @@ def test_a_cranial_wall_rising_from_the_zygoma_stays_skull(tmp_path):
     assert held["skull"] < 0.002 and held["upper"] < 0.01 and held["mandible"] > 0.9
     right, left = isolation.ramus_heights_mm
     assert abs(right - left) < 5.0 and max(right, left) < 50.0 and not isolation.warnings
+
+
+def _faint_headed_jaw():
+    """Two condylar heads, the back of each too faint for the threshold, each
+    under its fossa with a joint space between. Spacing 0.5 mm."""
+    spacing = np.array([0.5, 0.5, 0.5])
+    xs = np.arange(-70.0, 70.0, 0.5)
+    ys = np.arange(-60.0, 40.0, 0.5)
+    zs = np.arange(0.0, 45.0, 0.5)
+    zz, yy, xx = np.meshgrid(zs, ys, xs, indexing="ij")
+    gray = np.full(xx.shape, 50.0, dtype=np.float32)
+    mandible = np.zeros(xx.shape, dtype=bool)
+    other = np.zeros(xx.shape, dtype=bool)
+    faint = np.zeros(xx.shape, dtype=bool)
+    threshold = 300.0
+    for side in (-1.0, 1.0):
+        rel = np.stack([xx - side * 50.0, yy - 20.0, zz - 28.0])
+        head = (rel[0] / 9.0) ** 2 + (rel[1] / 5.0) ** 2 + (rel[2] / 6.0) ** 2 <= 1.0
+        neck = (np.abs(rel[0]) < 3.0) & (np.abs(rel[1]) < 3.0) & (rel[2] < 0.0)
+        back = head & (rel[1] > 1.0)
+        mandible |= (head & ~back) | neck
+        faint |= back
+        gray[back] = 200.0
+        fossa = (rel[0] / 12.0) ** 2 + (rel[1] / 8.0) ** 2 + ((rel[2]) / 10.0) ** 2
+        dome = (fossa > 1.0) & (fossa <= 1.6) & (rel[2] > 0.0)
+        other |= dome
+    gray[mandible | other] = 900.0
+    gray[:, :, :10] = -1000.0  # air, outside the head
+    # The arch: a U in plan, its back towards +y, as the heads are.
+    theta = np.radians(np.linspace(-90.0, 90.0, 41))
+    points = np.column_stack([50.0 * np.sin(theta), -50.0 * np.cos(theta), np.full(41, 5.0)])
+    x_grid, y_grid = np.meshgrid(xs, ys)
+    above_plane = (zs[:, None, None] - 2.0) * np.ones((1,) + x_grid.shape)
+    return gray, mandible, other, faint, threshold, spacing, above_plane, x_grid, y_grid, points
+
+
+def test_the_faint_back_of_a_condylar_head_is_kept():
+    """A condyle's articular plate is thin, and at the back it falls under a
+    threshold set for the rest of the jaw; the head must not come out bitten."""
+    from mandiplan.geometry.mandible import _condyle_heads
+
+    gray, mandible, other, faint, threshold, spacing, above_plane, x, y, points = _faint_headed_jaw()
+    found, level = _condyle_heads(mandible, other, gray, threshold, spacing, above_plane, x, y, points)
+    assert level < threshold
+    assert (found & faint).sum() / faint.sum() > 0.85
+    assert not (found & other).any(), "the skull's side of the joint stays the skull's"
+    # Nothing beyond the head: only the faint bone, and what it encloses.
+    assert (found & ~faint).sum() < 0.1 * faint.sum()
+
+
+def test_a_surface_goes_round_the_recovered_head_and_nothing_else_rises():
+    from mandiplan.geometry.mandible import MandibleIsolation, _condyle_heads, masked_bone_volume
+
+    gray, mandible, other, faint, threshold, spacing, above_plane, x, y, points = _faint_headed_jaw()
+    found, level = _condyle_heads(mandible, other, gray, threshold, spacing, above_plane, x, y, points)
+    isolation = MandibleIsolation(mask=mandible | found, other_bone=other, bite=None, faint_heads=found,
+                                  threshold=threshold, faint_level=level)
+    drawn = masked_bone_volume(Volume(array=gray, spacing=spacing), isolation)
+    assert ((drawn.array >= threshold) & found).sum() / found.sum() > 0.9
+    assert not (drawn.array[other] >= threshold).any()
+    assert not (drawn.array[~(mandible | found | other)] >= threshold).any()
+
+
+def test_a_threshold_below_the_soft_tissue_recovers_nothing():
+    from mandiplan.geometry.mandible import _condyle_heads
+
+    gray, mandible, other, _, _, spacing, above_plane, x, y, points = _faint_headed_jaw()
+    found, _ = _condyle_heads(mandible, other, gray, 10.0, spacing, above_plane, x, y, points)
+    assert not found.any()

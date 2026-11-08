@@ -24,7 +24,7 @@ import numpy as np
 import vtk
 from vtkmodules.util.numpy_support import vtk_to_numpy
 
-from ..geometry.resection import CutPlane
+from ..geometry.resection import CutPlane, resected_mask
 from .convert import volume_to_vtk
 
 
@@ -177,46 +177,112 @@ def clip_closed(
     if not planes:
         return polydata
 
-    collection = vtk.vtkPlaneCollection()
-    for plane in planes:
-        collection.AddItem(_vtk_plane(plane, invert=False))
-    wedge = _clip_with_collection(polydata, collection)
-    # The planes' wedge may hold a far part of the jaw as well as the
-    # segment; only what lies along the cuts' stretch is resected.
-    reach = planes[0].reach
-    near, far = _split_by_reach(wedge, reach) if reach is not None else (wedge, None)
+    if planes[0].reach is not None:
+        return _clip_along_jaw(polydata, planes, keep_resected)
+
     if keep_resected:
-        return near
+        collection = vtk.vtkPlaneCollection()
+        for plane in planes:
+            collection.AddItem(_vtk_plane(plane, invert=False))
+        return _clip_with_collection(polydata, collection)
 
     pieces = vtk.vtkAppendPolyData()
     for plane in planes:
         collection = vtk.vtkPlaneCollection()
         collection.AddItem(_vtk_plane(plane, invert=True))
         pieces.AddInputData(_clip_with_collection(polydata, collection))
-    if far is not None and far.GetNumberOfPoints():
-        pieces.AddInputData(far)
     pieces.Update()
     return pieces.GetOutput()
 
 
-def _split_by_reach(polydata: vtk.vtkPolyData, reach):
-    """The connected pieces of ``polydata`` along the resection's stretch of
-    jaw, and the rest."""
-    if polydata.GetNumberOfPoints() == 0:
-        return polydata, None
-    connectivity = vtk.vtkPolyDataConnectivityFilter()
-    connectivity.SetInputData(polydata)
-    connectivity.SetExtractionModeToAllRegions()
-    connectivity.ColorRegionsOn()
-    connectivity.Update()
-    labelled = connectivity.GetOutput()
-    regions = vtk_to_numpy(labelled.GetPointData().GetArray("RegionId"))
-    points = vtk_to_numpy(labelled.GetPoints().GetData())
-    inside = reach.contains(points)
-    keep = [r for r in np.unique(regions) if inside[regions == r].mean() >= 0.5]
-    if len(keep) == len(np.unique(regions)):
-        return polydata, None
-    return _regions(labelled, keep), _regions(labelled, [r for r in np.unique(regions) if r not in keep])
+def _clip_along_jaw(polydata: vtk.vtkPolyData, planes, keep_resected: bool) -> vtk.vtkPolyData:
+    """The side of the resection asked for, with the cuts where the saw makes them.
+
+    Each plane parts the whole surface, also where it crosses the far side of
+    the arch. Each connected piece then goes wholly to the side most of it
+    lies on along the jaw; the walls a plane left where both sides of it went
+    the same way are taken out again, so the jaw is whole there.
+    """
+    cells = [polydata]
+    for plane in planes:
+        parted = []
+        for cell in cells:
+            for invert in (False, True):
+                collection = vtk.vtkPlaneCollection()
+                collection.AddItem(_vtk_plane(plane, invert=invert))
+                parted.append(_clip_with_collection(cell, collection))
+        cells = parted
+
+    pieces = vtk.vtkAppendPolyData()
+    any_piece = False
+    for cell in cells:
+        if cell.GetNumberOfPoints() == 0:
+            continue
+        connectivity = vtk.vtkPolyDataConnectivityFilter()
+        connectivity.SetInputData(cell)
+        connectivity.SetExtractionModeToAllRegions()
+        connectivity.ColorRegionsOn()
+        connectivity.Update()
+        labelled = connectivity.GetOutput()
+        regions = vtk_to_numpy(labelled.GetPointData().GetArray("RegionId"))
+        points = vtk_to_numpy(labelled.GetPoints().GetData())
+        removed = resected_mask(planes, points)
+        chosen = [
+            int(r) for r in np.unique(regions)
+            if (removed[regions == r].mean() >= 0.5) == keep_resected
+        ]
+        if chosen:
+            pieces.AddInputData(_without_walls(_regions(labelled, chosen), planes))
+            any_piece = True
+    if not any_piece:
+        return vtk.vtkPolyData()
+    pieces.Update()
+    clean = vtk.vtkCleanPolyData()
+    clean.SetInputConnection(pieces.GetOutputPort())
+    clean.ToleranceIsAbsoluteOn()
+    clean.SetAbsoluteTolerance(1e-4)
+    clean.ConvertLinesToPointsOff()
+    clean.ConvertPolysToLinesOff()
+    clean.ConvertStripsToPolysOff()
+    clean.Update()
+    out = vtk.vtkPolyData()
+    out.ShallowCopy(clean.GetOutput())
+    return out
+
+
+def _without_walls(piece: vtk.vtkPolyData, planes) -> vtk.vtkPolyData:
+    """``piece`` without the faces on a plane where both sides of it are the
+    same part of the jaw."""
+    triangles = vtk.vtkTriangleFilter()
+    triangles.SetInputData(piece)
+    triangles.Update()
+    tri = triangles.GetOutput()
+    if tri.GetNumberOfCells() == 0:
+        return tri
+    points = vtk_to_numpy(tri.GetPoints().GetData())
+    faces = vtk_to_numpy(tri.GetPolys().GetConnectivityArray()).reshape(-1, 3)
+    corners = points[faces]
+    drop = np.zeros(len(faces), dtype=bool)
+    for plane in planes:
+        on_plane = np.abs((corners - plane.origin) @ plane.normal).max(axis=1) < 1e-4
+        if not on_plane.any():
+            continue
+        centres = corners[on_plane].mean(axis=1)
+        step = 0.05 * plane.normal
+        wall = resected_mask(planes, centres + step) == resected_mask(planes, centres - step)
+        drop[np.flatnonzero(on_plane)[wall]] = True
+    if not drop.any():
+        return tri
+    kept = vtk.vtkPolyData()
+    kept.SetPoints(tri.GetPoints())
+    cells = vtk.vtkCellArray()
+    for a, b, c in faces[~drop]:
+        cells.InsertNextCell(3)
+        cells.InsertCellPoint(int(a))
+        cells.InsertCellPoint(int(b))
+        cells.InsertCellPoint(int(c))
+    kept.SetPolys(cells)
+    return kept
 
 
 def _regions(labelled: vtk.vtkPolyData, regions) -> vtk.vtkPolyData:

@@ -120,6 +120,12 @@ def compute_plate_plan(path_points, path_normals, pitch_mm: float) -> PlatePlan:
     if len(nodes) < 2:
         raise ValueError("path is shorter than one screw-hole pitch")
 
+    return plan_at_holes(nodes, normals, pitch_mm)
+
+
+def plan_at_holes(nodes, normals, pitch_mm):
+    """Describe the actual placed holes, including nonuniform catalogue spacing."""
+    nodes, normals = np.asarray(nodes), np.asarray(normals)
     v = np.diff(nodes, axis=0)
     lengths = np.linalg.norm(v, axis=1)
     seg_normals = _segment_normals(nodes, normals)

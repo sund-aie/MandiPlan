@@ -418,3 +418,108 @@ def test_a_resection_takes_only_the_stretch_between_its_cuts():
     report = build_report(frames, planes)
     assert report.arc_length_mm == pytest.approx(30.0, abs=1.0)
     assert report.entry_s_mm == pytest.approx(start, abs=1.0)
+
+
+def _u_jaw():
+    """Condyle to condyle: a U of a jaw, as a tube of bone, with its curve."""
+    import vtk
+
+    from mandiplan.geometry import cpr
+    from mandiplan.geometry.spline import ArchCurve
+
+    theta = np.radians(np.linspace(-90.0, 90.0, 13))
+    body = np.column_stack([50 * np.sin(theta), -50 * np.cos(theta), np.zeros(13)])
+    left_ramus = np.array([[50.0, 15.0, 15.0], [50.0, 25.0, 45.0]])
+    right_ramus = np.array([[-50.0, 15.0, 15.0], [-50.0, 25.0, 45.0]])
+    seeds = np.vstack([right_ramus[::-1], body, left_ramus])
+    frames = cpr.build_frames(ArchCurve(seeds), 0.5)
+    line = vtk.vtkPolyData()
+    points = vtk.vtkPoints()
+    for p in frames.points[::4]:
+        points.InsertNextPoint(*p)
+    line.SetPoints(points)
+    cells = vtk.vtkCellArray()
+    cells.InsertNextCell(points.GetNumberOfPoints(), list(range(points.GetNumberOfPoints())))
+    line.SetLines(cells)
+    tube = vtk.vtkTubeFilter()
+    tube.SetInputData(line)
+    tube.SetRadius(7.0)
+    tube.SetNumberOfSides(16)
+    tube.CappingOn()
+    triangles = vtk.vtkTriangleFilter()
+    triangles.SetInputConnection(tube.GetOutputPort())
+    clean = vtk.vtkCleanPolyData()
+    clean.SetInputConnection(triangles.GetOutputPort())
+    clean.Update()
+    return frames, clean.GetOutput()
+
+
+def test_one_cut_takes_the_far_ramus_and_condyle_wherever_they_lie():
+    """A coronal plane through one body crosses the other body too. A saw does not."""
+    from mandiplan.geometry.resection import bound_resection, build_report
+
+    frames, surface = _u_jaw()
+    # On the side of the jaw that runs first along the curve, facing round the jaw.
+    index = frames.index_of(0.3 * frames.length_mm)
+    plane = CutPlane(frames.points[index], frames.tangents[index])
+    bound_resection(frames, [plane])
+
+    inside = resected_mask([plane], frames.points)
+    assert not inside[frames.s < frames.s[index] - 1.0].any()
+    assert inside[frames.s > frames.s[index] + 1.0].all(), "the far side must be taken to its condyle"
+
+    report = build_report(frames, [plane])
+    assert report.arc_length_mm == pytest.approx(frames.length_mm - frames.s[index], abs=1.0)
+
+    far_condyle = frames.points[-1]
+    near_condyle = frames.points[0]
+    fragment = clip_closed(surface, [plane], keep_resected=True)
+    retained = clip_closed(surface, [plane], keep_resected=False)
+    for mesh, has, lacks in ((fragment, far_condyle, near_condyle), (retained, near_condyle, far_condyle)):
+        bounds = np.array(mesh.GetBounds()).reshape(3, 2)
+        assert np.all(has >= bounds[:, 0] - 1.0) and np.all(has <= bounds[:, 1] + 1.0)
+    # The jaw is cut once: nothing is lost, and no wall stands inside the far side.
+    whole = mesh_volume_mm3(surface)
+    assert mesh_volume_mm3(fragment) + mesh_volume_mm3(retained) == pytest.approx(whole, rel=0.002)
+    import vtk
+
+    for mesh in (fragment, retained):
+        edges = vtk.vtkFeatureEdges()
+        edges.SetInputData(mesh)
+        edges.FeatureEdgesOff()
+        edges.ManifoldEdgesOff()
+        edges.Update()
+        assert edges.GetOutput().GetNumberOfCells() == 0
+    # Every face left lying on the plane belongs to the one real cut.
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    triangles = vtk.vtkTriangleFilter()
+    triangles.SetInputData(fragment)
+    triangles.Update()
+    tri = triangles.GetOutput()
+    faces = _points(tri)[vtk_to_numpy(tri.GetPolys().GetConnectivityArray()).reshape(-1, 3)]
+    on_plane = np.abs((faces - plane.origin) @ plane.normal).max(axis=1) < 1e-3
+    assert on_plane.any()
+    assert np.linalg.norm(faces[on_plane].mean(axis=1) - plane.origin, axis=1).max() < 15.0
+
+
+def _points(mesh):
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    return vtk_to_numpy(mesh.GetPoints().GetData()).astype(float)
+
+
+def test_two_cuts_take_only_the_stretch_between_them():
+    from mandiplan.geometry.resection import bound_resection, build_report
+
+    frames, surface = _u_jaw()
+    a, b = frames.index_of(0.4 * frames.length_mm), frames.index_of(0.6 * frames.length_mm)
+    planes = [CutPlane(frames.points[a], frames.tangents[a]), CutPlane(frames.points[b], -frames.tangents[b])]
+    bound_resection(frames, planes)
+    report = build_report(frames, planes)
+    assert report.arc_length_mm == pytest.approx(frames.s[b] - frames.s[a], abs=1.0)
+    fragment = clip_closed(surface, planes, keep_resected=True)
+    retained = clip_closed(surface, planes, keep_resected=False)
+    assert mesh_volume_mm3(fragment) + mesh_volume_mm3(retained) == pytest.approx(mesh_volume_mm3(surface), rel=0.002)
+    bounds = np.array(fragment.GetBounds()).reshape(3, 2)
+    assert bounds[1, 1] < -20.0, "the rami stay"

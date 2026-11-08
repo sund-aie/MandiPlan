@@ -47,7 +47,7 @@ MARK_COLOUR = (0.902, 0.678, 0.200)      # amber, active editing state only
 GRAFT_COLOUR = (0.600, 0.792, 0.776)     # pale teal: the mirrored segment
 NO_DONOR_COLOUR = (0.839, 0.706, 0.478)  # muted sand: no mirror donor there
 #: Half the side of the box a cut plane is drawn in, mm: a jaw's height.
-PLANE_HALF_SIZE_MM = 24.0
+PLANE_HALF_SIZE_MM = 11.0
 
 
 class _VtkWidget(QVTKRenderWindowInteractor):
@@ -591,8 +591,10 @@ class View3D(QWidget):
                 widget.Off()
                 widget.SetInteractor(None)
             for index, plane in enumerate(self.session.planes):
-                # The plane is drawn where it crosses a box round its origin,
-                # so it covers the jaw there and not the whole scan.
+                # The box only sizes the plane: it is drawn as a square centred
+                # on the cut, whatever its angle, and is free to leave the box
+                # during a drag. (Cropped to the box, an oblique plane is a
+                # hexagon, and it stops following the mouse at the box's walls.)
                 box = [
                     float(c) + sign * PLANE_HALF_SIZE_MM
                     for c in plane.origin
@@ -614,7 +616,10 @@ class View3D(QWidget):
 
     def _make_plane_widget(self, index: int, bounds) -> vtk.vtkImplicitPlaneWidget2:
         rep = vtk.vtkImplicitPlaneRepresentation()
-        rep.SetPlaceFactor(1.1)
+        rep.SetPlaceFactor(1.0)
+        rep.CropPlaneToBoundingBoxOff()
+        rep.ConstrainToWidgetBoundsOff()
+        rep.OutsideBoundsOn()
         rep.PlaceWidget(bounds)
         rep.SetDrawPlane(True)
         rep.SetDrawOutline(False)

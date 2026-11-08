@@ -167,3 +167,20 @@ def test_the_etched_mark_travels_with_the_bent_plate(seated):
     bone_face = _signed_to_bone(seated.projector, placed.points[height < -1.0][::5])
     assert mark.min() > 0.0
     assert mark.mean() > bone_face.mean() + seated.plate_asset.thickness_mm * 0.7
+
+
+def test_distal_cut_updates_mesh_seating_and_guide_together(seated):
+    stock = seated.plate_asset
+    try:
+        seated.set_retained_holes(5)
+        active = seated.active_plate_asset
+        assert seated.plate_asset is stock and active.hole_count == 5
+        assert len(seated.plate_mesh().hole_centres) == len(seated.fitted_hole_plan.nodes) == 5
+        assert len(seated.plate_contact.clearance_mm) == 5
+        assert np.all(np.isfinite(seated.plate_contact.clearance_mm))
+        assert len(seated.bending_guide().centres) == 5
+        assert active.export_metadata()["plate_hole_count"] == "5"
+    finally:
+        seated.set_retained_holes(stock.hole_count)
+    assert seated.active_plate_asset is stock
+    assert len(seated.plate_mesh().hole_centres) == stock.hole_count
