@@ -48,6 +48,21 @@ from .plate_profile import point_in_polygon
 BAND_MM = 10.0
 #: How far the bite is searched above the arch curve, mm.
 BITE_SEARCH_MM = (-5.0, 50.0)
+#: How far below the arch curve the jaw's lower border is looked for, and the
+#: most a bite can stand above that border, mm.
+LOWER_BORDER_SEARCH_MM = -40.0
+LOWER_BORDER_GAP_MM = 4
+BITE_ABOVE_BORDER_MM = 52.0
+#: How far a bite's sideways slope may differ from the lower border's, mm per mm.
+MAX_BITE_ROLL_DIFFERENCE = 0.08
+#: Two ridges touching: the row of least bone is looked for within this of the
+#: occlusal plane, with bone this much thicker within this either side, mm.
+CONTACT_SMOOTH_MM = 1.5
+CONTACT_REACH_MM = 14.0
+CONTACT_SIDE_MM = 10.0
+CONTACT_NARROWING = 1.5
+CONTACT_MIN_BONE = 0.12
+CONTACT_AGREE_MM = 12.0
 #: Half-thickness of the cut made along the bite, mm.
 BITE_CUT_MM = 0.75
 #: A station has teeth when both crowns reach this fraction of the band's
@@ -123,6 +138,10 @@ class Bite:
     heights_mm: np.ndarray  # (N,) world z of the gap at each station
     has_teeth: np.ndarray  # (N,) bool, teeth on both sides of the gap
     depth: np.ndarray  # (N,) gap depth, fraction of the band's brightest values
+    #: The sideways slope of the jaw's lower border, mm per mm, if known.
+    roll: float | None = None
+    #: (N,) bool, no teeth here but the jaws' ridges touch at ``heights_mm``.
+    contact: np.ndarray | None = None
 
     @property
     def found(self) -> bool:
@@ -182,7 +201,144 @@ def find_bite(volume, frames, band_mm: float = BAND_MM, step_mm: float = 0.5) ->
     return bite_along(volume, points, across, band_mm, step_mm)
 
 
-def bite_along(volume, points, across, band_mm: float = BAND_MM, step_mm: float = 0.5) -> Bite:
+def _level_plane(points, z, weights, roll):
+    """The occlusal plane through ``(points, z)``, no more tilted sideways than
+    the jaw itself allows.
+
+    ``roll`` is the jaw's sideways slope, from its lower border, or None. A
+    bite is about parallel to that border from side to side. With teeth missing
+    on one side, what passes for its bite there can be the alveolar crest, or
+    the wrong jaw altogether, and a plane fitted through it leans enough to put
+    the skull's markers on that side's condyle. A plane that disagrees with the
+    border is fitted again with the border's slope, front to back only.
+    """
+    plane = robust_plane(points, z, weights)
+    if roll is None or len(z) < 3:
+        return plane
+    _, back, lateral = arch_axes(points)
+    if plane is not None:
+        origin = points[:, :2].mean(axis=0)
+        slope = (float(plane(origin[0] + lateral[0], origin[1] + lateral[1]))
+                 - float(plane(origin[0], origin[1])))
+        if abs(slope - roll) <= MAX_BITE_ROLL_DIFFERENCE:
+            return plane
+    across = points[:, :2] @ lateral
+    depth = points[:, :2] @ back
+    level = np.column_stack([depth, np.zeros(len(depth))])
+    fitted = robust_plane(level, np.asarray(z, dtype=float) - roll * across, weights)
+    if fitted is None:
+        return plane
+    return lambda x, y: (
+        fitted(np.asarray(x, dtype=float) * back[0] + np.asarray(y, dtype=float) * back[1], 0.0)
+        + roll * (np.asarray(x, dtype=float) * lateral[0] + np.asarray(y, dtype=float) * lateral[1])
+    )
+
+
+def _border_roll(points, border) -> float | None:
+    """The sideways slope of the jaw's lower border, mm per mm; None if unknown."""
+    known = np.isfinite(border)
+    if known.sum() < MIN_PLANE_STATIONS:
+        return None
+    plane = robust_plane(points[known], border[known])
+    if plane is None:
+        return None
+    _, _, lateral = arch_axes(points)
+    origin = points[known, :2].mean(axis=0)
+    return float(plane(origin[0] + lateral[0], origin[1] + lateral[1])) - float(plane(origin[0], origin[1]))
+
+
+def _ridge_contacts(volume, grid, rise, points, heights, has_teeth, plane, threshold):
+    """Where teeth are missing, the place the two jaws' ridges touch.
+
+    An edentulous stretch has no gap between crowns for the bite search to
+    find, and an upper ridge resting on a lower one is one mass of bone. But
+    it narrows where they meet: the row of least bone, with more both above
+    and below it, within reach of the occlusal plane. Returns the heights with
+    those stations set, and which they are. The cut there is left to the
+    watershed, which only needs its markers on the right sides of the contact.
+    """
+    heights = heights.copy()
+    contact = np.zeros(len(points), dtype=bool)
+    with_teeth = np.flatnonzero(has_teeth)
+    if not len(with_teeth):
+        return heights, contact
+    bone = (volume.sample(grid, fill=float(np.min(volume.array))) >= threshold).mean(axis=1)
+    step = float(rise[1] - rise[0])
+    kernel = np.ones(max(int(round(CONTACT_SMOOTH_MM / step)), 1))
+    kernel /= kernel.sum()
+    smooth = np.apply_along_axis(lambda row: np.convolve(row, kernel, mode="same"), 1, bone)
+    expected = plane(points[:, 0], points[:, 1]) - points[:, 2]
+    side = int(round(CONTACT_SIDE_MM / step))
+    found = np.full(len(points), np.nan)
+    # Only between the teeth there are: on past them the arch curve runs up
+    # the rami, where nothing is touching anything.
+    for i in range(with_teeth[0], with_teeth[-1] + 1):
+        if has_teeth[i]:
+            found[i] = heights[i] - points[i, 2]
+            continue
+        low = int(np.searchsorted(rise, expected[i] - CONTACT_REACH_MM))
+        high = int(np.searchsorted(rise, expected[i] + CONTACT_REACH_MM))
+        column = smooth[i]
+        # From below: the first narrowing with bone again above it. Higher
+        # still lie the nasal floor and the sinuses, which narrow too.
+        for row in range(max(low, 1), min(high, len(column) - 1)):
+            value = column[row]
+            under = column[max(row - side, 0) : row]
+            over = column[row + 1 : row + side + 1]
+            if (
+                value <= column[row + 1]
+                and len(under)
+                and under.max() >= max(CONTACT_NARROWING * value, CONTACT_MIN_BONE)
+                and over.max() >= max(CONTACT_NARROWING * value, CONTACT_MIN_BONE)
+            ):
+                # Follow it down to the bottom of the narrowing.
+                end = row
+                while end + 1 < len(column) and column[end + 1] <= column[end]:
+                    end += 1
+                start = end
+                while start > row and column[start - 1] == column[end]:
+                    start -= 1
+                found[i] = rise[(start + end) // 2]
+                contact[i] = True
+                break
+    # One station's reading is not to be trusted against its neighbours'.
+    half = max(int(round(CONTACT_AGREE_MM / (2.0 * np.linalg.norm(points[1] - points[0])))), 1)
+    for i in np.flatnonzero(contact):
+        near = found[max(i - half, 0) : i + half + 1]
+        heights[i] = points[i, 2] + float(np.nanmedian(near))
+    return heights, contact
+
+
+def _lower_border(volume, points, across, band_mm: float, threshold: float) -> np.ndarray:
+    """Height of the lowest bone under each station, mm; +inf where there is none."""
+    offsets = np.arange(-band_mm, band_mm + 1e-9, 2.0)
+    drop = np.arange(LOWER_BORDER_SEARCH_MM, 1e-9, 1.0)
+    grid = (
+        points[:, None, None, :]
+        + offsets[None, :, None, None] * across[:, None, None, :]
+        + drop[None, None, :, None] * np.array([0.0, 0.0, 1.0])
+    )
+    bone = (volume.sample(grid, fill=float(np.min(volume.array))) >= threshold).any(axis=1)
+    # Downwards from the curve, through no more than a small gap: the hyoid or
+    # the neck under the jaw is not its border.
+    borders = np.full(len(points), np.inf)
+    allowed_gap = int(LOWER_BORDER_GAP_MM)
+    for station, column in enumerate(bone):
+        rows = np.flatnonzero(column)
+        if not len(rows) or len(column) - 1 - rows[-1] > allowed_gap:
+            continue
+        lowest = rows[-1]
+        for row in rows[::-1][1:]:
+            if lowest - row - 1 > allowed_gap:
+                break
+            lowest = row
+        borders[station] = points[station, 2] + drop[lowest]
+    return borders
+
+
+def bite_along(
+    volume, points, across, band_mm: float = BAND_MM, step_mm: float = 0.5, threshold: float | None = None
+) -> Bite:
     """The occlusal gap along a polyline with horizontal across-directions.
 
     Searched twice. The first search finds the darkest smooth line with
@@ -225,13 +381,23 @@ def bite_along(volume, points, across, band_mm: float = BAND_MM, step_mm: float 
     )
     crowns = np.minimum(below, above)
     depth = crowns - image
+    roll = None
+    if threshold is not None:
+        # Where the teeth are gone there is no gap at the bite, and the nasal
+        # floor over the palate looks like one. No bite stands this far above
+        # the jaw's lower border.
+        border = _lower_border(volume, points, across, band_mm, threshold)
+        roll = _border_roll(points, border)
+        too_high = (points[:, None, 2] + rise[None, :]) > (border[:, None] + BITE_ABOVE_BORDER_MM)
+        depth = np.where(too_high, -1.0, depth)
 
     rows = np.arange(len(points))
+    plane = None
     path = _darkest_path(-depth)
     has_teeth = (crowns[rows, path] >= CROWN_LEVEL) & (depth[rows, path] >= MIN_GAP_DEPTH)
     if int(has_teeth.sum()) >= MIN_PLANE_STATIONS:
-        plane = robust_plane(
-            points[has_teeth], points[has_teeth, 2] + rise[path[has_teeth]], depth[rows, path][has_teeth]
+        plane = _level_plane(
+            points[has_teeth], points[has_teeth, 2] + rise[path[has_teeth]], depth[rows, path][has_teeth], roll
         )
         if plane is not None:
             expected = plane(points[:, 0], points[:, 1]) - points[:, 2]
@@ -242,11 +408,17 @@ def bite_along(volume, points, across, band_mm: float = BAND_MM, step_mm: float 
             allowed[rows, nearest] = True
             path = _darkest_path(np.where(allowed, -depth, np.inf))
             has_teeth = (crowns[rows, path] >= CROWN_LEVEL) & (depth[rows, path] >= MIN_GAP_DEPTH)
+    heights = points[:, 2] + rise[path]
+    contact = None
+    if threshold is not None and plane is not None:
+        heights, contact = _ridge_contacts(volume, grid, rise, points, heights, has_teeth, plane, threshold)
     return Bite(
         station_points=points,
-        heights_mm=points[:, 2] + rise[path],
+        heights_mm=heights,
         has_teeth=has_teeth,
         depth=depth[rows, path],
+        roll=roll,
+        contact=contact,
     )
 
 
@@ -634,7 +806,7 @@ def isolate_mandible(volume, threshold: float, frames) -> MandibleIsolation:
     extended, n_head = _extended_polyline(points, RAMUS_EXTENSION_MM, step)
     across = np.cross(np.gradient(extended, axis=0), [0.0, 0.0, 1.0])
     across /= np.maximum(np.linalg.norm(across, axis=1, keepdims=True), 1e-9)
-    bite = bite_along(volume, extended, across, step_mm=step)
+    bite = bite_along(volume, extended, across, step_mm=step, threshold=threshold)
     ref = _reference_heights(bite, extended).astype(np.float32)
     plane = _bite_plane(bite, extended, ref)
 
@@ -1578,7 +1750,7 @@ def _reference_heights(bite: Bite, points: np.ndarray) -> np.ndarray:
         # No teeth: the alveolar crest is some 25 mm above a body-level curve.
         return points[:, 2] + 25.0
     stations = np.arange(len(points))
-    known = bite.has_teeth
+    known = bite.has_teeth if bite.contact is None else (bite.has_teeth | bite.contact)
     return np.interp(stations, stations[known], bite.heights_mm[known])
 
 
@@ -1611,10 +1783,11 @@ def _bite_plane(bite: Bite, stations: np.ndarray, heights: np.ndarray):
     if bite.found and int(bite.has_teeth.sum()) >= MIN_PLANE_STATIONS:
         # Robustly, and a plausible tilt only: a fit pulled steep by a few
         # stray stations would put the skull markers on one side's condyle.
-        plane = robust_plane(
+        plane = _level_plane(
             bite.station_points[bite.has_teeth],
             bite.heights_mm[bite.has_teeth],
             bite.depth[bite.has_teeth],
+            bite.roll,
         )
         if plane is not None:
             return plane

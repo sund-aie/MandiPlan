@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pydicom
 import pytest
@@ -190,3 +192,68 @@ def test_a_multiframe_scan_too_large_is_averaged_from_disk(tmp_path, phantom):
     assert geometry.working_factor == 2
     assert np.allclose(loaded.spacing, phantom.spacing * 2)
     assert np.allclose(loaded.origin, phantom.origin + 0.5 * phantom.spacing, atol=1e-4)
+
+
+def _head_up_series(folder, spacing_tag=None, fill=None):
+    """A little CT, bright at its top slice, optionally as odd scanners write it."""
+    import pydicom
+
+    from make_phantom import write_dicom_series
+    from mandiplan.geometry.volume import Volume
+
+    array = np.full((12, 32, 32), -1000.0, dtype=np.float32)
+    array[:, 8:24, 8:24] = 40.0
+    array[-1, 12:20, 12:20] = 2000.0  # the top of the head
+    array[0, 12:16, 12:16] = 700.0  # and a mark at the foot end only
+    if fill is not None:
+        yy, xx = np.mgrid[:32, :32]
+        array[:, (yy - 15.5) ** 2 + (xx - 15.5) ** 2 > 15.5**2] = fill
+    volume = Volume(array=array, spacing=np.array([1.0, 1.0, 2.5]), origin=np.array([-16.0, -16.0, -100.0]))
+    write_dicom_series(volume, folder)
+    files = sorted(Path(folder).rglob("*.dcm"))
+    assert files
+    if spacing_tag is not None:
+        for path in files:
+            ds = pydicom.dcmread(path)
+            ds.SpacingBetweenSlices = spacing_tag
+            ds.save_as(path)
+    return array
+
+
+def test_a_negative_slice_spacing_does_not_turn_the_scan_upside_down(tmp_path):
+    """Some CT scanners write SpacingBetweenSlices as -2.5. The head stays up."""
+    from mandiplan.dicom_io import load_folder
+
+    array = _head_up_series(tmp_path, spacing_tag="-2.5")
+    volume, _, _ = load_folder(tmp_path)
+    assert volume.origin[2] == pytest.approx(-100.0)
+    assert volume.spacing[2] == pytest.approx(2.5)
+    np.testing.assert_allclose(volume.array, array, atol=1.0)
+
+
+def test_the_fill_outside_a_ct_circle_counts_as_air_not_tissue(tmp_path):
+    from mandiplan.dicom_io import load_folder
+
+    _head_up_series(tmp_path, fill=-3024.0)
+    volume, _, _ = load_folder(tmp_path)
+    assert float(volume.array.min()) >= -1100.0
+
+
+def test_a_real_low_value_is_not_mistaken_for_padding():
+    from mandiplan.dicom_io import _without_padding
+
+    # A CBCT's darkest values run on smoothly from its air: no gap, no padding.
+    rng = np.random.default_rng(1)
+    array = rng.integers(0, 3000, size=(30, 40, 40)).astype(np.int16)
+    array[array < 200] = 0
+    assert _without_padding(array) is array
+
+
+def test_a_series_in_nested_folders_is_listed_once(tmp_path):
+    from mandiplan.dicom_io import list_series
+
+    nested = tmp_path / "DICOM" / "ST000000" / "SE000000"
+    nested.mkdir(parents=True)
+    _head_up_series(nested)
+    assert len(list_series(tmp_path)) == 1
+

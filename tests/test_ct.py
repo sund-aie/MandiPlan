@@ -454,3 +454,57 @@ def test_a_threshold_below_the_soft_tissue_recovers_nothing():
     gray, mandible, other, _, _, spacing, above_plane, x, y, points = _faint_headed_jaw()
     found, _ = _condyle_heads(mandible, other, gray, 10.0, spacing, above_plane, x, y, points)
     assert not found.any()
+
+
+def _edentulous_front(tooth_gap_at=20.0):
+    """Teeth at the back of an arch; at the front, an upper ridge rests on a lower."""
+    from mandiplan.geometry.mandible import bite_along
+
+    spacing = np.array([0.5, 0.5, 0.5])
+    xs = np.arange(-20.0, 20.0, 0.5)
+    ys = np.arange(-25.0, 25.0, 0.5)
+    zs = np.arange(0.0, 80.0, 0.5)
+    zz, yy, xx = np.meshgrid(zs, ys, xs, indexing="ij")
+    array = np.full(xx.shape, 40.0, dtype=np.float32)
+    # A lower jaw 30 mm tall, thick; an upper ridge thick above it, meeting at a
+    # point at z = 30; a nasal floor well above with empty space under it.
+    width = np.where(zz < 30.0, 8.0 - (zz / 30.0) * 7.0, 1.0 + (zz - 30.0) * 0.5)
+    array[(np.abs(xx) < width) & (zz > 2.0) & (zz < 44.0)] = 900.0
+    array[(np.abs(xx) < 16.0) & (zz > 58.0) & (zz < 60.0)] = 900.0
+    # Teeth with a clean bite at the two ends of the stretch.
+    ends = np.abs(yy) > tooth_gap_at
+    array[ends] = 40.0
+    array[ends & (np.abs(xx) < 4.0) & (zz > 10.0) & (zz < 29.0)] = 1500.0
+    array[ends & (np.abs(xx) < 4.0) & (zz > 31.0) & (zz < 50.0)] = 1500.0
+    from mandiplan.geometry.volume import Volume
+
+    volume = Volume(array=array, spacing=spacing, origin=np.array([xs[0], ys[0], zs[0]]))
+    stations = np.arange(-24.0, 24.01, 0.5)
+    points = np.column_stack([np.zeros(len(stations)), stations, np.full(len(stations), 12.0)])
+    across = np.tile([1.0, 0.0, 0.0], (len(stations), 1))
+    return bite_along(volume, points, across, step_mm=0.5, threshold=300.0), stations
+
+
+def test_where_teeth_are_gone_the_bite_is_where_the_ridges_touch():
+    bite, stations = _edentulous_front()
+    middle = np.abs(stations) < 12.0
+    assert bite.contact is not None and bite.contact[middle].mean() > 0.8
+    # At the narrowing, not up at the nasal floor's dark space.
+    assert np.abs(bite.heights_mm[middle] - 30.0).max() < 3.5
+
+
+def test_a_sideways_lean_of_the_bite_is_held_to_the_lower_border():
+    from mandiplan.geometry.mandible import _level_plane
+
+    theta = np.radians(np.linspace(-80.0, 80.0, 60))
+    points = np.column_stack([50.0 * np.sin(theta), -50.0 * np.cos(theta), np.zeros(60)])
+    # Teeth level on one side; what passes for the bite on the other is 20 mm high.
+    heights = np.where(points[:, 0] > 0.0, 20.0, 0.0) + 40.0
+    plane = _level_plane(points, heights, np.ones(60), roll=0.0)
+    lean = float(plane(50.0, -10.0)) - float(plane(-50.0, -10.0))
+    assert abs(lean) < 1.0
+    # One that agrees with the border is left as fitted.
+    leaning = 40.0 + 0.1 * points[:, 0]
+    plane = _level_plane(points, leaning, np.ones(60), roll=0.08)
+    assert float(plane(50.0, -10.0)) - float(plane(-50.0, -10.0)) == pytest.approx(10.0, abs=0.5)
+

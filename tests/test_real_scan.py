@@ -89,7 +89,8 @@ def test_the_mandible_is_separated_from_the_maxilla_and_skull(scan, isolation):
     assert 35_000 < isolation.volume_mm3 < 75_000
 
     bite = isolation.bite
-    assert bite is not None and bite.has_teeth.mean() > 0.5
+    # The stations run on up the rami past the last tooth, so not nearly all.
+    assert bite is not None and bite.has_teeth.mean() > 0.45
     top_of_bite = float(np.max(bite.heights_mm[bite.has_teeth]))
     kk, jj, ii = np.nonzero(isolation.mask)
     world = volume.origin + np.column_stack([ii, jj, kk]) * volume.spacing

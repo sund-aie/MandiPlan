@@ -59,6 +59,10 @@ HEAD_LENGTH_MM = 260.0
 #: Voxels coarser than this along any axis, mm, step the bone surface
 #: visibly: the jaw box is resampled to cubic voxels.
 SMOOTH_VOXEL_MM = 1.0
+#: Padding is a constant below this, darker than air on the Hounsfield scale,
+#: covering at least this share of the scan.
+PADDING_BELOW = -1100.0
+PADDING_MIN_FRACTION = 0.01
 #: Largest working volume, in voxels, before it is block-averaged. 80 M voxels
 #: is 320 MB as float32, which leaves room for the surface, the reformats and
 #: the reconstruction on an 8 GB machine.
@@ -110,18 +114,14 @@ class SeriesGeometry:
     jaw_volume: Volume | None = None
 
 
-def list_series(folder: str | Path) -> list[SeriesInfo]:
-    """Every DICOM series found under ``folder`` (recursively)."""
+def _series_in_folder(folder: str | Path) -> list[SeriesInfo]:
+    """The DICOM series directly in ``folder``."""
     import SimpleITK as sitk
 
     folder = str(folder)
     reader = sitk.ImageSeriesReader()
-    uids = reader.GetGDCMSeriesIDs(folder)
-    if not uids:
-        uids = tuple()
-
     found: list[SeriesInfo] = []
-    for uid in uids:
+    for uid in reader.GetGDCMSeriesIDs(folder) or ():
         files = list(reader.GetGDCMSeriesFileNames(folder, uid))
         if not files:
             continue
@@ -135,11 +135,22 @@ def list_series(folder: str | Path) -> list[SeriesInfo]:
                 image_type=image_type,
             )
         )
+    return found
+
+
+def list_series(folder: str | Path) -> list[SeriesInfo]:
+    """Every DICOM series found under ``folder`` (recursively)."""
+    found = _series_in_folder(folder)
 
     if not found:
         # GetGDCMSeriesIDs only looks at one directory level; walk sub-folders.
+        # Each folder is reached once by the walk, and a series only counts once.
+        seen = set()
         for sub in sorted(p for p in Path(folder).rglob("*") if p.is_dir()):
-            found.extend(list_series(sub))
+            for series in _series_in_folder(sub):
+                if series.series_uid not in seen:
+                    seen.add(series.series_uid)
+                    found.append(series)
     return found
 
 
@@ -626,6 +637,8 @@ def load_series(
     spacing = np.asarray(image.GetSpacing(), dtype=float)
     origin = np.asarray(image.GetOrigin(), dtype=float)
     direction = np.asarray(image.GetDirection(), dtype=float).reshape(3, 3)
+    origin, direction = _stack_placement(files, origin, direction)
+    array = _without_padding(array)
     # Not every "CT" is a medical CT: many CBCT scanners write that modality
     # too. What matters is whether the scan shows more than the head, or has
     # voxels coarse enough to step the bone surface; a CBCT does neither.
@@ -648,6 +661,49 @@ def load_series(
             "millimetres from the DICOM spacing."
         )
     return volume, geometry
+
+
+def _without_padding(array):
+    """``array`` with the fill outside the reconstructed circle replaced by air.
+
+    A CT stores a constant well below air (-3024 or -2000) outside its circle.
+    It is no tissue, and can be a fifth of the voxels: left in, it passes for
+    air in every statistic of the scan, and real air then passes for soft
+    tissue. Nothing real is darker than air, so a constant below air, covering
+    a good part of the scan, can only be that.
+    """
+    sample = np.asarray(array[:: max(array.shape[0] // 24, 1), ::4, ::4])
+    lowest = sample.min()
+    fill = sample == lowest
+    if lowest > PADDING_BELOW or fill.mean() < PADDING_MIN_FRACTION or fill.all():
+        return array
+    air = np.percentile(sample[~fill], 0.5)
+    out = np.array(array, copy=True)
+    out[out == lowest] = air
+    return out
+
+
+def _stack_placement(files, origin, direction):
+    """The volume's origin and direction, from where its slices actually lie.
+
+    Some scanners write a negative SpacingBetweenSlices (0018,0088), and the
+    reader then reports the stacking axis reversed while the slices stay in
+    file order: a scan read that way is upside down and, being a reflection,
+    has its sides swapped too. ImagePositionPatient of the first and last file
+    in the order they were stacked is the only thing to go by.
+    """
+    import pydicom
+
+    first = pydicom.dcmread(files[0], stop_before_pixels=True, force=True)
+    last = pydicom.dcmread(files[-1], stop_before_pixels=True, force=True)
+    start = np.asarray([float(v) for v in first.ImagePositionPatient], dtype=float)
+    end = np.asarray([float(v) for v in last.ImagePositionPatient], dtype=float)
+    along = end - start
+    length = float(np.linalg.norm(along))
+    direction = direction.copy()
+    if length > 0.0 and float(along @ direction[:, 2]) < 0.0:
+        direction[:, 2] = -direction[:, 2]
+    return start, direction
 
 
 def _length_mm(shape, spacing, direction) -> float:
