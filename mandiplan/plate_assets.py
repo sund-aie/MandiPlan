@@ -377,3 +377,31 @@ def _cached_mesh(path: str, unit_scale: float, expected_mm: float) -> Mesh:
 def load_asset_mesh(asset: PlateAsset) -> Mesh:
     """The asset's mesh in millimetres, size-checked against its metadata."""
     return _cached_mesh(str(asset.mesh_path), asset.unit_scale, asset.extent_mm)
+
+
+def hole_length_mm(asset: PlateAsset) -> float:
+    """How long the asset's screw holes are along the plate, mm, read off its mesh.
+
+    An oval hole is longer along the plate than ``hole_diameter_mm``, its width.
+    Measured at the bone face of the hole in the middle of the plate.
+    """
+    middle = len(asset.hole_centres_mm) // 2
+    centre = asset.hole_centres_mm[middle]
+    axis = asset.hole_axes[middle] / np.linalg.norm(asset.hole_axes[middle])
+    neighbour = asset.hole_centres_mm[middle + 1 if middle + 1 < len(asset.hole_centres_mm) else middle - 1]
+    along = neighbour - centre
+    along = along - (along @ axis) * axis
+    along = along / np.linalg.norm(along)
+    points = load_asset_mesh(asset).points - centre
+    points = points - np.outer(points @ axis, axis)
+    across = np.cross(axis, along)
+    at_along, at_across = points @ along, points @ across
+    # The wall of the bore, on the plate's long axis: the vertices nearest the
+    # centre there, wherever in the thickness they are.
+    on_axis = np.abs(at_across) < 0.15 * asset.hole_diameter_mm
+    if not on_axis.any():
+        return float(asset.hole_diameter_mm)
+    length = 2.0 * float(np.abs(at_along[on_axis]).min())
+    if not 0.8 * asset.hole_diameter_mm <= length <= 1.8 * asset.hole_diameter_mm:
+        return float(asset.hole_diameter_mm)
+    return max(length, float(asset.hole_diameter_mm))

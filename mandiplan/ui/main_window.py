@@ -230,6 +230,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.planning_dock)
 
         self.toolbox.currentChanged.connect(self._leave_step_tool)
+        self.toolbox.currentChanged.connect(self._open_plate_step)
         self.volume_panel.load_requested.connect(self.open_dicom_folder)
         for panel in (
             self.arch_panel, self.resection_panel, self.plate_panel, self.reconstruction_panel
@@ -467,6 +468,11 @@ class MainWindow(QMainWindow):
     #: The step each step-specific tool belongs to.
     STEP_OF_MODE = {Mode.ARCH: 1, Mode.LANDMARK: 2, Mode.SCULPT: 3, Mode.PLATE: 4}
 
+    def _open_plate_step(self, index: int) -> None:
+        """Arriving at the plate step with nothing placed, place the chosen plate."""
+        if index == self.STEP_OF_MODE[Mode.PLATE] and not self.session.plate_points:
+            self.session.place_plate_automatically(quiet=True)
+
     def _leave_step_tool(self, page: int) -> None:
         """Moving to another step puts its predecessor's tool down, so a
         click or drag there no longer adds plate points or curve points."""
@@ -522,7 +528,7 @@ class MainWindow(QMainWindow):
             "segment, Execute cut.\n"
             "4  Reconstruction: Reconstruct from the healthy side. Optionally smooth "
             "the junctions or brush on the jaw (key 7).\n"
-            "5  Plate: draw the plate path on the jaw, pick the plate, read the "
+            "5  Plate: pick the plate; it places itself, and a sign says if it will do. Read the "
             "verdict.\n"
             "6  Export: the jaw, the bent plate, the bending guide and the tables.\n\n"
             "Mouse: left-drag rotates, right-drag zooms, middle-drag pans; in Refine "
@@ -850,7 +856,7 @@ class MainWindow(QMainWindow):
     def export_bend_csv(self) -> None:
         plan = self.session.fitted_hole_plan or self.session.plate_plan
         if plan is None:
-            self.show_message("Draw a plate path first.")
+            self.show_message("Choose a plate first, so it can be placed on the jaw.")
             return
         path = self._save_path(
             "Export bend table", "CSV files (*.csv)", "plate_bends.csv"
@@ -913,7 +919,7 @@ class MainWindow(QMainWindow):
         fitted = self.session.plate_mesh()
         if fitted is None:
             self.show_message(
-                "Select a plate and draw a plate path before exporting the plate."
+                "Choose a plate, so it can be placed on the jaw, before exporting the plate."
             )
             return
         asset = self.session.active_plate_asset
@@ -927,7 +933,7 @@ class MainWindow(QMainWindow):
 
     def export_steps_csv(self) -> None:
         if not self.session.steps:
-            self.show_message("Draw a plate path first.")
+            self.show_message("Choose a plate first, so it can be placed on the jaw.")
             return
         path = self._save_path(
             "Export bench steps", "CSV files (*.csv)", "plate_bending_steps.csv"

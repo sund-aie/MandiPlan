@@ -14,6 +14,7 @@ import numpy as np
 import vtk
 
 from .constants import ATTRIBUTION, DISCLAIMER
+from .geometry.bending_guide import PIN_TEST_PLAYS_MM
 from .geometry.plate import PlatePlan, ribbon_mesh
 from .render.convert import triangles_to_polydata
 
@@ -297,7 +298,7 @@ def write_bending_guide(path: str | Path, guide, asset=None) -> tuple[Path, Path
     The CSV sits next to the STL with the same name. It says, bridge by
     bridge, which way to bend, and how the guide is printed and used.
     """
-    from .render.bending_guide_mesh import guide_polydata
+    from .render.bending_guide_mesh import guide_polydata, pin_test_polydata
 
     path = Path(path)
     writer = vtk.vtkSTLWriter()
@@ -306,6 +307,17 @@ def write_bending_guide(path: str | Path, guide, asset=None) -> tuple[Path, Path
     writer.SetInputData(guide_polydata(guide))
     writer.Write()
     stamp_stl(path)
+
+    test_piece = path.with_name(path.stem + "-pin-test.stl")
+    writer = vtk.vtkSTLWriter()
+    writer.SetFileName(str(test_piece))
+    writer.SetFileTypeToBinary()
+    triangles = vtk.vtkTriangleFilter()
+    triangles.SetInputData(pin_test_polydata(guide))
+    triangles.Update()
+    writer.SetInputData(triangles.GetOutput())
+    writer.Write()
+    stamp_stl(test_piece)
 
     table = path.with_suffix(".csv")
     tool = guide.kit.name
@@ -319,15 +331,22 @@ def write_bending_guide(path: str | Path, guide, asset=None) -> tuple[Path, Path
         "MandiPlan bending guide",
         f"plate: {asset.name} ({asset.status_label}); {len(guide.centres)} holes"
         if asset is not None else f"plate: {len(guide.centres)} holes",
-        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick; "
-        f"pins {guide.pin_diameter_mm:.2f} mm for this plate's bore",
+        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick; pins "
+        f"{guide.pin_diameter_mm:.2f}" + (f" x {guide.pin_diameter_mm + guide.hole_stretch_mm:.2f}" if guide.hole_stretch_mm else "")
+        + " mm for this plate's bore",
         f"teeth {guide.tooth_mm:.2f} mm thick; the base stands {guide.setback_mm:.1f} mm behind "
         "the plate, the room this bender needs",
         "print: base flat on the bed as exported, 100% scale, in a rigid material; no supports "
-        "beyond what the slicer asks under the pins. Check one pin in a real hole before relying on it",
-        "use: stand the guide on the bench with the plate's bone face towards the teeth. Hang "
-        "hole 1 on the tooth with the raised flag. Bend the next bridge until the next hole drops "
-        "over its pin and the plate lies flat on the pad; release, check, and go on to the next",
+        "beyond what the slicer asks under the pins",
+        f"first print {test_piece.name}: pins 1, 2 and 3 have "
+        + ", ".join(f"{p:.2f}" for p in PIN_TEST_PLAYS_MM)
+        + " mm of play per side. Try them in a real hole of this plate, and set Pin play to the "
+        "tightest that slides in without forcing",
+        "use: stand the guide on the bench and take the plate as it comes from the packet, cut to "
+        "length if the table says so. Hang hole 1 on the tooth with the raised flag, bone face to "
+        "the teeth, lower edge on the ledge. Bend the next bridge until the next hole drops over "
+        "its pin and the plate lies flat on the pad; release, check, and go on to the next. Hole "
+        "numbers are on the base",
         access,
         "the pads and pins are the finished shape: a hole on its pin after release is right. "
         "Springback figures are model estimates; the pin decides",

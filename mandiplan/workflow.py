@@ -97,7 +97,7 @@ def _plate_step(session) -> tuple[bool, str, str]:
     if session.surface is None:
         return False, "a bone surface", "Load a volume first."
     if session.plate_plan is None:
-        return False, "", "Draw a plate path on the bone."
+        return False, "", "Choose a plate: it places itself on the jaw."
     fit = session.fit
     if fit is not None and fit.problems:
         return False, "", fit.problems[0]

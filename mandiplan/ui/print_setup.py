@@ -100,15 +100,15 @@ class PrintSetupDialog(QDialog):
                            ("Patient left", "left"), ("Patient right", "right")]:
             self.side.addItem(label, key)
         form.addRow("Protect working side", self.side)
-        self.clearance = _mm(0.1, 0.7, 0.3)
-        form.addRow("Joint clearance", self.clearance)
+        self.clearance = _mm(0.05, 0.5, 0.2)
+        form.addRow("Peg clearance", self.clearance)
         self.supports = QCheckBox("Add removable support stems")
         self.supports.setChecked(True)
         form.addRow("", self.supports)
         layout.addLayout(form)
-        note = QLabel("Pieces stay at actual size and lock together like a puzzle. The working side and "
-                      "the resection stay in one piece, laid with the resection's outer face up and "
-                      "no stem near it. If no cut is planned, choose a side before a split is needed.")
+        note = QLabel("Parts stay at actual size and connect with pegs on flat faces. The resected section "
+                      "stays whole in one part, laid with its outer face up and no support on that face. "
+                      "If no cut is planned, choose a side before a split is needed.")
         note.setWordWrap(True)
         layout.addWidget(note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)

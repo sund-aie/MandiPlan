@@ -6,17 +6,19 @@ of the finished plate. Each tooth ends in a pad exactly where the bone face of
 the plate lies at that hole, turned exactly as the plate is there, and a pin
 exactly where the hole's centre is, as thick as this plate's bore allows.
 
-So the guide is used with the bender in hand and nothing clipped on. Hang
-hole 1 on the flagged tooth. Bend the next bridge until the next hole drops
-over the next pin and lies flat on its pad, let go, and move on. The plate is
-right when every hole is on its pin. A pin is an answer no angle reading can
-give: a hole on its pin has the right place and the right turn.
+So the guide is used with the bender in hand and nothing clipped on. Take the
+plate as it comes out of the packet, hang hole 1 on the flagged tooth with its
+lower edge on the ledge, and bend the next bridge until the next hole drops
+over the next pin and lies flat on its pad. Let go, and move on: the plate
+wraps round the comb from one end. It is right when every hole is on its pin.
+A pin is an answer no angle reading can give: a hole on its pin has the right
+place and the right turn. Each tooth's hole number is on the base beside it.
 
 Everything is the plate's own, and the kit's:
 
-* hole count and spacing come from the plate (after any trimming), pin
-  diameter from its bore, tooth height from its width, pad position from its
-  thickness;
+* hole count and spacing come from the plate (after any trimming), each pin
+  takes the shape of its bore, oval or round, tooth height comes from its width,
+  pad position from its thickness;
 * between the teeth the bridges are free on all sides. The base stands back
   from the plate by the depth the chosen bender needs behind the bridge, and
   the guide reports where that bender's jaws would meet a tooth at this
@@ -37,9 +39,25 @@ BASE_THICKNESS_MM = 1.6
 BASE_WIDTH_MM = 5.0
 #: Plate's lowest edge above the base, mm: room for the tool's jaw.
 EDGE_ABOVE_BASE_MM = 2.0
+#: The ledge under the plate's lower edge at each tooth: gap to the plate, how
+#: far past the plate's outer face it stands, its thinnest, mm. Its underside
+#: slopes at 45 degrees, so it prints without support.
+LEDGE_GAP_MM = 0.1
+LEDGE_PAST_MM = 0.6
+LEDGE_THIN_MM = 0.6
+#: Chamfer on a pin's tip, which lets a hole find it, mm.
+PIN_LEAD_IN_MM = 0.35
+#: Hole numbers on the base: height, stroke and how far they stand up, mm.
+DIGIT_HEIGHT_MM = 3.4
+DIGIT_STROKE_MM = 0.55
+DIGIT_RAISE_MM = 0.5
+#: Play per side of the pins on the printed test piece, mm.
+PIN_TEST_PLAYS_MM = (0.15, 0.25, 0.35)
 #: Pin as a fraction of the plate's thickness: it locates without standing
 #: out of the outer face.
 PIN_HEIGHT_FRACTION = 0.75
+#: A tooth is at least its height over this thick, mm: a thin tall one bends.
+TOOTH_SLENDERNESS = 20.0
 #: How far past the plate's edge the first tooth's flag stands, mm.
 FLAG_MM = 3.5
 #: Below this a bend is left alone, degrees.
@@ -126,12 +144,24 @@ class GuidePart:
     frame: np.ndarray  # (3, 3) columns: the part's local axes
     half: np.ndarray  # half sizes along them; for a pin (radius, radius, half height)
     name: str
+    #: For a pin: how much longer than wide along the plate, as an oval hole is.
+    stretch: float = 0.0
 
     def field(self, local):
         """Negative inside, about the distance to the surface outside."""
         x, y, z = local
         if self.name == "pin":
-            return np.maximum(np.hypot(x, y) - self.half[0], np.abs(z) - self.half[2])
+            along = np.maximum(np.abs(x) - 0.5 * self.stretch, 0.0)
+            radius = self.half[0] - np.maximum(z - (self.half[2] - PIN_LEAD_IN_MM), 0.0)
+            return np.maximum(np.hypot(along, y) - radius, np.abs(z) - self.half[2])
+        if self.name == "ledge":
+            # Flat on top (local y = -half), sloping up to the tooth at z = -half.
+            top = y + self.half[1]
+            out = z + self.half[2]
+            underside = top - (LEDGE_THIN_MM + (2.0 * self.half[2] - out))
+            return np.maximum.reduce(
+                (np.abs(x) - self.half[0], -top, underside, np.abs(z) - self.half[2])
+            )
         return np.maximum.reduce(
             (np.abs(x) - self.half[0], np.abs(y) - self.half[1], np.abs(z) - self.half[2])
         )
@@ -152,6 +182,8 @@ class BendingGuide:
     play_mm: float
     pin_diameter_mm: float
     pin_height_mm: float
+    hole_stretch_mm: float
+    hole_diameter_mm: float
     setback_mm: float
     jaws_meet_teeth: bool
     basis: np.ndarray  # (3, 3) columns: print x, y, z in patient space
@@ -166,6 +198,59 @@ class BendingGuide:
 
     def instructions(self) -> list[str]:
         return [self.instruction(joint) for joint in self.joints]
+
+    def steps(self) -> list[tuple[int, str]]:
+        """The bench sequence: ``(bridges bent so far, what to do)``."""
+        first = (
+            "Fresh plate: hang hole 1 on the flagged tooth, bone face to the teeth, "
+            "its lower edge on the ledge."
+        )
+        out = [(0, first)]
+        for joint in self.joints:
+            if max(abs(joint.in_plane_deg), abs(joint.out_of_plane_deg), abs(joint.twist_deg)) >= NEGLIGIBLE_DEG:
+                out.append((joint.index + 1, self.instruction(joint)))
+        out.append((len(self.joints), "Done: every hole on its pin and flat on its pad, after letting go."))
+        return out
+
+    def pin_test_parts(self) -> list[GuidePart]:
+        """A small tab with pins of each play, to try in a real plate before
+        printing the guide. Pins stand straight up; a row of dots counts them."""
+        radius = 0.5 * self.hole_diameter_mm
+        frame = np.eye(3)
+        gap = max(2.0 * radius + self.hole_stretch_mm + 4.0, 7.0)
+        count = len(PIN_TEST_PLAYS_MM)
+        length = gap * count
+        parts = [
+            GuidePart(np.array([0.5 * length, 0.0, 0.5 * BASE_THICKNESS_MM]), frame,
+                      np.array([0.5 * length, 4.5 + radius, 0.5 * BASE_THICKNESS_MM]), "base")
+        ]
+        tall = max(self.pin_height_mm, 1.0)
+        for i, play in enumerate(PIN_TEST_PLAYS_MM):
+            x = gap * (i + 0.5)
+            parts.append(
+                GuidePart(np.array([x, 0.0, BASE_THICKNESS_MM + 0.5 * tall - 0.2]), frame,
+                          np.array([radius - play, radius - play, 0.5 * tall + 0.2]), "pin",
+                          stretch=self.hole_stretch_mm)
+            )
+            parts.extend(_digit_parts(str(i + 1), np.array([x, -(radius + 2.4)]), np.array([1.0, 0.0]), BASE_THICKNESS_MM))
+        return parts
+
+    def chain_after(self, supplied_centres, supplied_axes, bridges: int):
+        """The plate's holes with its first ``bridges`` bridges bent: ``(centres, axes)``.
+
+        Those holes lie on their pins; the rest of the plate runs on from the
+        last of them still as it came, rigid.
+        """
+        sc = np.asarray(supplied_centres, dtype=float)
+        supplied = hole_frames(sc, supplied_axes)
+        last = int(np.clip(bridges, 0, len(sc) - 1))
+        turn = self.frames[last] @ supplied[last].T
+        centres = self.centres.copy()
+        axes = self.frames[:, :, 2].copy()
+        for j in range(last + 1, len(sc)):
+            centres[j] = self.centres[last] + turn @ (sc[j] - sc[last])
+            axes[j] = turn @ supplied[j][:, 2]
+        return centres, axes
 
     def instruction(self, joint: GuideJoint) -> str:
         prefix = f"Holes {joint.index + 1}-{joint.index + 2}: "
@@ -213,6 +298,46 @@ def _decompose(rotation: np.ndarray) -> tuple[float, float, float]:
     return float(in_plane), float(out_of_plane), float(twist)
 
 
+#: Which of a seven-segment digit's strokes each numeral lights.
+_SEGMENTS = {
+    "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc",
+    "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcfgd",
+}
+
+
+def _digit_parts(text: str, centre_xy, ahead_xy, base_top: float) -> list[GuidePart]:
+    """Raised seven-segment numerals on a flat surface at height ``base_top``."""
+    ahead = np.array([ahead_xy[0], ahead_xy[1], 0.0], dtype=float)
+    # Read from the inside of the curve, so "up" the numeral is ahead turned left
+    # as seen from above, and writing runs along ``ahead``.
+    up = np.array([-ahead[1], ahead[0], 0.0])
+    z = np.array([0.0, 0.0, 1.0])
+    frame = np.column_stack([ahead, up, z])
+    height = DIGIT_HEIGHT_MM
+    width = 0.6 * height
+    stroke = DIGIT_STROKE_MM
+    spans = {
+        "a": (0.0, 0.5, True), "g": (0.0, 0.0, True), "d": (0.0, -0.5, True),
+        "f": (-0.5, 0.25, False), "b": (0.5, 0.25, False),
+        "e": (-0.5, -0.25, False), "c": (0.5, -0.25, False),
+    }
+    pitch = width + 0.7
+    parts = []
+    for n, char in enumerate(text):
+        offset = (n - 0.5 * (len(text) - 1)) * pitch
+        for segment in _SEGMENTS[char]:
+            sx, sy, flat = spans[segment]
+            local = ahead * (offset + sx * width) + up * (sy * height)
+            half = (
+                np.array([0.5 * (width + stroke), 0.5 * stroke, 0.5 * DIGIT_RAISE_MM + 0.1])
+                if flat
+                else np.array([0.5 * stroke, 0.25 * height + 0.5 * stroke, 0.5 * DIGIT_RAISE_MM + 0.1])
+            )
+            centre = np.array([centre_xy[0], centre_xy[1], base_top + 0.5 * DIGIT_RAISE_MM - 0.1]) + local
+            parts.append(GuidePart(centre, frame, half, "digit"))
+    return parts
+
+
 def plan_bending_guide(
     supplied_centres,
     supplied_axes,
@@ -227,6 +352,7 @@ def plan_bending_guide(
     alloy_name: str = "",
     tooth_mm: float = 1.2,
     play_mm: float = 0.25,
+    hole_length_mm: float | None = None,
 ) -> BendingGuide:
     """Lay out the guide that bends a supplied plate into a planned shape.
 
@@ -234,6 +360,7 @@ def plan_bending_guide(
     ``bent_*`` the same holes as planned. ``overbend`` maps a target angle in
     degrees to the angle to load it to before springback. ``tooth_mm`` is how
     thin the teeth are and ``play_mm`` the fit of a pin in its hole per side.
+    ``hole_length_mm`` is the bore's length along the plate, if oval.
     """
     sc = np.asarray(supplied_centres, dtype=float)
     centres = np.asarray(bent_centres, dtype=float)
@@ -251,6 +378,7 @@ def plan_bending_guide(
     pin_radius = 0.5 * float(hole_diameter_mm) - float(play_mm)
     if pin_radius < 0.4:
         raise ValueError("That much play leaves no pin in a hole this small.")
+    stretch = max(float(hole_length_mm or hole_diameter_mm) - float(hole_diameter_mm), 0.0)
     bent = np.stack([_frame(t, u) for t, u in zip(bent_tangents, bent_axes)])
     if np.min(np.linalg.norm(np.diff(centres, axis=0), axis=1)) < 1.0:
         raise ValueError("Coincident hole positions cannot form a bending guide.")
@@ -270,7 +398,8 @@ def plan_bending_guide(
         joints.append(GuideJoint(i, angle_deg, stop_deg, in_plane, out_plane, twist))
 
     pitch = float(np.median(np.linalg.norm(np.diff(sc, axis=0), axis=1)))
-    tooth_width = float(min(max(2.4, 2.0 * pin_radius + 0.8), max(pitch - 3.0, 2.0 * pin_radius + 0.4)))
+    pin_length = 2.0 * pin_radius + stretch
+    tooth_width = float(min(max(2.4, pin_length + 0.8), max(pitch - 3.0, pin_length + 0.4)))
     grip = float(kit.grip_span_mm)
     setback = float(np.clip(0.35 * grip, 3.0, 10.0))
     jaws_meet = False
@@ -297,7 +426,10 @@ def plan_bending_guide(
         + np.abs(frames[:, 2, 0]) * 0.5 * tooth_width
         + np.abs(frames[:, 2, 2]) * (half_t + tooth_mm)
     )
-    lift = BASE_THICKNESS_MM + EDGE_ABOVE_BASE_MM - float(np.min(placed[:, 2] - reach))
+    ledge_run = 2.0 * half_t + LEDGE_PAST_MM + 0.5 * tooth_mm
+    ledge_depth = LEDGE_THIN_MM + ledge_run
+    # The ledge's underside, which starts at the plate's lower edge, stays off the base.
+    lift = BASE_THICKNESS_MM + max(EDGE_ABOVE_BASE_MM, ledge_depth + LEDGE_GAP_MM + 0.4) - float(np.min(placed[:, 2] - reach))
     placed[:, 2] += lift
     origin = middle - lift * up
 
@@ -307,11 +439,15 @@ def plan_bending_guide(
     if np.min(np.linalg.norm(inward, axis=1)) < 0.2:
         raise ValueError("The plate turns too far out of one plane for a guide to stand on a bench.")
     inward = _unit(inward)
+    # Which way along its width each pad's end points down. A tooth comes up to
+    # that end, never past it, so a plate leaning towards it does not hit it.
+    lows = frames[:, :, 1] * np.where(frames[:, 2, 1] < 0.0, 1.0, -1.0)[:, None]
+    posts = pads + lows * half_w
     # The base keeps the setback unless the plate's curve is too tight for it,
     # when it would fold back on itself: stand it nearer rather than fail.
-    tangents = np.gradient(pads[:, :2], axis=0)
+    tangents = np.gradient(posts[:, :2], axis=0)
     while True:
-        feet = pads[:, :2] + setback * inward[:, :2]
+        feet = posts[:, :2] + setback * inward[:, :2]
         if np.all(np.einsum("ij,ij->i", np.diff(feet, axis=0), 0.5 * (tangents[:-1] + tangents[1:])) > 0.5):
             break
         if setback <= 2.0:
@@ -321,24 +457,44 @@ def plan_bending_guide(
     parts: list[GuidePart] = []
     pin_height = PIN_HEIGHT_FRACTION * float(thickness_mm)
     z_axis = np.array([0.0, 0.0, 1.0])
-    for i, (hole, frame, pad, into, foot) in enumerate(zip(placed, frames, pads, inward, feet)):
+    for i, (hole, frame, pad, post, low, into) in enumerate(zip(placed, frames, pads, posts, lows, inward)):
         parts.append(GuidePart(pad, frame, np.array([0.5 * tooth_width, half_w, 0.5 * tooth_mm]), "pad"))
         pin_low = hole - frame[:, 2] * (half_t + 0.25 * tooth_mm)
         pin_high = hole + frame[:, 2] * (pin_height - half_t)
         parts.append(
             GuidePart(0.5 * (pin_low + pin_high), frame,
-                      np.array([pin_radius, pin_radius, 0.5 * np.linalg.norm(pin_high - pin_low)]), "pin")
+                      np.array([pin_radius, pin_radius, 0.5 * np.linalg.norm(pin_high - pin_low)]), "pin",
+                      stretch=stretch)
         )
+        # The ledge the plate's lower edge rests on.
+        ledge_frame = np.column_stack([frame[:, 0], low, frame[:, 2]])
+        ledge_start = pad + low * (half_w + LEDGE_GAP_MM)
+        parts.append(
+            GuidePart(
+                ledge_start + low * 0.5 * ledge_depth + frame[:, 2] * 0.5 * ledge_run,
+                ledge_frame,
+                np.array([0.5 * tooth_width, 0.5 * ledge_depth, 0.5 * ledge_run]),
+                "ledge",
+            )
+        )
+        # The tooth: thin, but stiffer the taller it stands, keeping its outer
+        # face where the pad's is.
         across = np.cross(z_axis, into)
         upright = np.column_stack([across, into, z_axis])
-        top = float(pad[2]) + (half_w + FLAG_MM if i == 0 else 0.0)
+        top = float(post[2]) + 0.3
+        thick = max(tooth_mm, top / TOOTH_SLENDERNESS)
         parts.append(
-            GuidePart(np.array([pad[0], pad[1], 0.5 * top]), upright,
-                      np.array([0.5 * tooth_width, 0.5 * tooth_mm, 0.5 * top]), "tooth")
+            GuidePart(np.array([post[0], post[1], 0.5 * top]) + into * 0.5 * (thick - tooth_mm), upright,
+                      np.array([0.5 * tooth_width, 0.5 * thick, 0.5 * top]), "tooth")
         )
+        if i == 0:
+            parts.append(
+                GuidePart(pad - low * (half_w + 0.5 * FLAG_MM), frame,
+                          np.array([0.5 * tooth_width, 0.5 * FLAG_MM + 0.2, 0.5 * tooth_mm]), "flag")
+            )
         # From the tooth back to the base; nothing stands out under the plate.
         run = setback + 0.5 * tooth_mm
-        foot_centre = pad + into * (0.5 * run - 0.5 * tooth_mm)
+        foot_centre = post + into * (0.5 * run - 0.5 * tooth_mm)
         parts.append(
             GuidePart(np.array([foot_centre[0], foot_centre[1], 0.5 * BASE_THICKNESS_MM]), upright,
                       np.array([0.5 * tooth_width, 0.5 * run, 0.5 * BASE_THICKNESS_MM]), "foot")
@@ -353,6 +509,12 @@ def plan_bending_guide(
                       np.array([0.5 * length + 0.5 * BASE_WIDTH_MM, 0.5 * BASE_WIDTH_MM, 0.5 * BASE_THICKNESS_MM]),
                       "base")
         )
+
+    # Each tooth's hole number, on the base beside it, read from inside the curve.
+    for i, (foot, into) in enumerate(zip(feet, inward)):
+        ahead = feet[min(i + 1, len(feet) - 1)] - feet[max(i - 1, 0)]
+        ahead = ahead / max(float(np.linalg.norm(ahead)), 1e-9)
+        parts.extend(_digit_parts(str(i + 1), foot, ahead, BASE_THICKNESS_MM))
 
     distances = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(sc, axis=0), axis=1))])
     return BendingGuide(
@@ -369,6 +531,8 @@ def plan_bending_guide(
         play_mm=float(play_mm),
         pin_diameter_mm=2.0 * pin_radius,
         pin_height_mm=pin_height,
+        hole_stretch_mm=stretch,
+        hole_diameter_mm=float(hole_diameter_mm),
         setback_mm=setback,
         jaws_meet_teeth=jaws_meet,
         basis=basis,

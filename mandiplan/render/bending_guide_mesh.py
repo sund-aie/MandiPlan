@@ -16,18 +16,39 @@ from ..geometry.bending_guide import BendingGuide
 
 #: Contouring grid, mm.
 GRID_MM = 0.2
+#: A piece this small next to the guide is a contouring sliver.
+MAX_SLIVER_SHARE = 0.02
 
 
 def guide_polydata(guide: BendingGuide, *, print_pose: bool = True) -> vtk.vtkPolyData:
     """The whole guide: base flat on z = 0, or where it stands over the patient."""
-    step = min(GRID_MM, guide.tooth_mm / 5.0)
+    result = parts_polydata(guide.parts, min(GRID_MM, guide.tooth_mm / 5.0))
+    points = vtk_to_numpy(result.GetPoints().GetData()).astype(float)
+    if print_pose:
+        points[:, 2] -= points[:, 2].min()
+    else:
+        points = guide.to_patient(points)
+    result.GetPoints().SetData(numpy_to_vtk(points, deep=True))
+    return result
+
+
+def pin_test_polydata(guide: BendingGuide) -> vtk.vtkPolyData:
+    """The little tab of test pins, flat on z = 0."""
+    result = parts_polydata(guide.pin_test_parts(), 0.1)
+    points = vtk_to_numpy(result.GetPoints().GetData()).astype(float)
+    points[:, 2] -= points[:, 2].min()
+    result.GetPoints().SetData(numpy_to_vtk(points, deep=True))
+    return result
+
+
+def parts_polydata(parts, step: float) -> vtk.vtkPolyData:
+    """The union of ``parts``, contoured at ``step`` mm."""
     placed = []
-    for part in guide.parts:
+    for part in parts:
         bound = np.abs(part.frame) @ part.half + 2.0 * step
         placed.append((part, part.centre - bound, part.centre + bound))
-    origin = np.min([p[1] for p in placed], axis=0) - step
-    # The base lies exactly on the bed.
-    origin[2] = -2.0 * step
+    # Off the round numbers: no flat face may fall exactly on a grid plane.
+    origin = np.min([p[1] for p in placed], axis=0) - step - 0.137 * step
     size = np.ceil((np.max([p[2] for p in placed], axis=0) - origin) / step).astype(int) + 2
     nx, ny, nz = (int(v) for v in size)
     slab = max(2, 5_000_000 // (nx * ny))
@@ -66,12 +87,28 @@ def guide_polydata(guide: BendingGuide, *, print_pose: bool = True) -> vtk.vtkPo
     clean.ConvertPolysToLinesOff()
     clean.ConvertLinesToPointsOff()
     clean.Update()
+    return _one_solid(clean.GetOutput())
+
+
+def _one_solid(mesh: vtk.vtkPolyData) -> vtk.vtkPolyData:
+    """The main body of a contour, without the odd sliver at a thin tip. Anything
+    bigger than a sliver coming away is a guide that has fallen apart."""
+    connectivity = vtk.vtkPolyDataConnectivityFilter()
+    connectivity.SetInputData(mesh)
+    connectivity.SetExtractionModeToAllRegions()
+    connectivity.Update()
+    sizes = vtk_to_numpy(connectivity.GetRegionSizes())
+    if len(sizes) > 1:
+        rest = np.delete(sizes, int(np.argmax(sizes)))
+        if float(rest.max()) > MAX_SLIVER_SHARE * float(sizes.max()):
+            raise ValueError("Part of this guide would come away from the rest; try thicker teeth.")
+    connectivity.SetExtractionModeToLargestRegion()
+    connectivity.Update()
+    tidy = vtk.vtkCleanPolyData()
+    tidy.SetInputConnection(connectivity.GetOutputPort())
+    tidy.ConvertPolysToLinesOff()
+    tidy.ConvertLinesToPointsOff()
+    tidy.Update()
     result = vtk.vtkPolyData()
-    result.DeepCopy(clean.GetOutput())
-    points = vtk_to_numpy(result.GetPoints().GetData()).astype(float)
-    if print_pose:
-        points[:, 2] -= points[:, 2].min()
-    else:
-        points = guide.to_patient(points)
-    result.GetPoints().SetData(numpy_to_vtk(points, deep=True))
+    result.DeepCopy(tidy.GetOutput())
     return result

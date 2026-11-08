@@ -48,6 +48,16 @@ GRAFT_COLOUR = (0.600, 0.792, 0.776)     # pale teal: the mirrored segment
 NO_DONOR_COLOUR = (0.839, 0.706, 0.478)  # muted sand: no mirror donor there
 #: Half the side of the box a cut plane is drawn in, mm: a jaw's height.
 PLANE_HALF_SIZE_MM = 11.0
+GUIDE_COLOUR = (0.45, 0.6, 0.8)
+#: The screw plan's hole markers: size, and what their colours mean.
+ADVICE_MARKER_MM = 1.3
+ADVICE_COLOURS = {
+    "screw": (30, 170, 70),
+    "spare": (120, 140, 170),
+    "skip": (235, 150, 20),
+    "no bone": (215, 40, 40),
+}
+VERDICT_COLOURS = {"good": (0.11, 0.55, 0.25), "caution": (0.8, 0.5, 0.0), "bad": (0.85, 0.12, 0.12)}
 
 
 class _VtkWidget(QVTKRenderWindowInteractor):
@@ -161,6 +171,7 @@ class View3D(QWidget):
         session.volume_changed.connect(lambda: setattr(self, "_new_scan", True))
         session.resection_changed.connect(self.refresh_resection)
         session.plate_changed.connect(self.refresh_plate)
+        session.guide_view_changed.connect(self.refresh_guide_view)
         session.arch_changed.connect(self.refresh_arch)
         session.reconstruction_changed.connect(self.refresh_reconstruction)
         session.reconstruction_edited.connect(self.render)
@@ -266,6 +277,57 @@ class View3D(QWidget):
         self.node_actor.SetMapper(self.node_mapper)
         self.node_actor.GetProperty().SetColor(0.25, 0.45, 0.9)
         self.renderer.AddActor(self.node_actor)
+
+        # The screw plan: a coloured marker in each hole, and the verdict in words.
+        self.advice_points = vtk.vtkPolyData()
+        self.advice_glyph = vtk.vtkGlyph3D()
+        advice_sphere = vtk.vtkSphereSource()
+        advice_sphere.SetRadius(ADVICE_MARKER_MM)
+        advice_sphere.SetThetaResolution(12)
+        advice_sphere.SetPhiResolution(12)
+        self.advice_glyph.SetSourceConnection(advice_sphere.GetOutputPort())
+        self.advice_glyph.SetScaleModeToDataScalingOff()
+        self.advice_glyph.SetColorModeToColorByScalar()
+        self.advice_glyph.SetInputData(empty_polydata())
+        self.advice_mapper = vtk.vtkPolyDataMapper()
+        self.advice_mapper.SetInputConnection(self.advice_glyph.GetOutputPort())
+        self.advice_mapper.SetColorModeToDirectScalars()
+        self.advice_mapper.SetScalarModeToUsePointData()
+        self.advice_actor = vtk.vtkActor()
+        self.advice_actor.SetMapper(self.advice_mapper)
+        self.renderer.AddActor(self.advice_actor)
+        self.verdict_actor = vtk.vtkTextActor()
+        self.verdict_actor.GetTextProperty().SetFontSize(26)
+        self.verdict_actor.GetTextProperty().SetBold(True)
+        self.verdict_actor.GetTextProperty().SetFrame(False)
+        self.verdict_actor.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+        self.verdict_actor.GetPositionCoordinate().SetValue(0.02, 0.93)
+        self.verdict_actor.VisibilityOff()
+        self.renderer.AddViewProp(self.verdict_actor)
+
+        # Rehearsing the bends: the printed comb, and the plate at this step on it.
+        self.guide_mapper = vtk.vtkPolyDataMapper()
+        self.guide_mapper.SetInputData(empty_polydata())
+        self.guide_mapper.ScalarVisibilityOff()
+        self.guide_actor = vtk.vtkActor()
+        self.guide_actor.SetMapper(self.guide_mapper)
+        self.guide_actor.GetProperty().SetColor(*GUIDE_COLOUR)
+        self.guide_actor.VisibilityOff()
+        self.renderer.AddActor(self.guide_actor)
+        self.guide_plate_normals = vtk.vtkPolyDataNormals()
+        self.guide_plate_normals.SplittingOn()
+        self.guide_plate_normals.ConsistencyOff()
+        self.guide_plate_normals.SetInputData(empty_polydata())
+        self.guide_plate_mapper = vtk.vtkPolyDataMapper()
+        self.guide_plate_mapper.SetInputConnection(self.guide_plate_normals.GetOutputPort())
+        self.guide_plate_mapper.ScalarVisibilityOff()
+        self.guide_plate_actor = vtk.vtkActor()
+        self.guide_plate_actor.SetMapper(self.guide_plate_mapper)
+        self.guide_plate_actor.GetProperty().SetSpecular(0.45)
+        self.guide_plate_actor.VisibilityOff()
+        self.renderer.AddActor(self.guide_plate_actor)
+        self._guide_view_shown = False
+        self._saved_visibility: list[tuple] = []
 
         self.mark_glyph = vtk.vtkGlyph3D()
         mark = vtk.vtkSphereSource()
@@ -436,7 +498,11 @@ class View3D(QWidget):
         fitted = session.plate_mesh()
         plan = session.plate_plan
         asset = session.plate_asset
-        self.plate_actor.GetProperty().SetColor(*(asset.colour if asset is not None else PLATE_COLOUR))
+        verdict = session.plate_verdict
+        colour = asset.colour if asset is not None else PLATE_COLOUR
+        # A plate that will not do looks it, whichever way the view is turned.
+        self.plate_actor.GetProperty().SetColor(*(VERDICT_COLOURS["bad"] if verdict is not None and verdict.level == "bad" else colour))
+        self._refresh_verdict_sign(verdict)
 
         if fitted is None:
             self.plate_normals.SetInputData(empty_polydata())
@@ -447,7 +513,16 @@ class View3D(QWidget):
 
         # Hole markers are the plate's real hole centres after fitting, and
         # they are an overlay: the hole geometry stays visible underneath.
-        if fitted is not None and self.show_hole_centres:
+        advised = (
+            fitted is not None and self.show_hole_centres and verdict is not None
+            and len(verdict.holes) == len(fitted.hole_centres)
+        )
+        self.advice_glyph.SetInputData(
+            self._advice_markers(fitted, verdict) if advised else empty_polydata()
+        )
+        if advised:
+            self.node_glyph.SetInputData(empty_polydata())
+        elif fitted is not None and self.show_hole_centres:
             self.node_glyph.SetInputData(points_to_polydata(fitted.hole_centres))
         elif plan is None:
             self.node_glyph.SetInputData(points_to_polydata(session.plate_points))
@@ -481,6 +556,70 @@ class View3D(QWidget):
             self.screw_mapper.SetInputData(empty_polydata())
             self.screw_actor.VisibilityOff()
         self.render()
+
+    def refresh_guide_view(self) -> None:
+        """Swap the jaw for the comb and the plate at this step, or back again."""
+        from ..render.convert import triangles_to_polydata
+
+        preview = self.session.guide_preview()
+        hidden = [
+            self.bone_actor, self.fragment_actor, self.graft_actor, self.plate_actor,
+            self.node_actor, self.advice_actor, self.marking_actor, self.screw_actor,
+            self.verdict_actor, self.arch_actor,
+        ]
+        if preview is None:
+            self.guide_actor.VisibilityOff()
+            self.guide_plate_actor.VisibilityOff()
+            if self._guide_view_shown:
+                for actor, visibility in self._saved_visibility:
+                    actor.SetVisibility(visibility)
+                self._guide_view_shown = False
+                self._sync_plane_widgets()
+                self.renderer.ResetCamera()
+            self.render()
+            return
+        if not self._guide_view_shown:
+            self._saved_visibility = [(actor, actor.GetVisibility()) for actor in hidden]
+            for actor in hidden:
+                actor.VisibilityOff()
+            for widget in self._plane_widgets:
+                widget.SetEnabled(False)
+            self._guide_view_shown = True
+            entering = True
+        else:
+            entering = False
+        mesh, points, triangles = preview
+        self.guide_mapper.SetInputData(mesh)
+        self.guide_plate_normals.SetInputData(triangles_to_polydata(points, triangles))
+        asset = self.session.plate_asset
+        self.guide_plate_actor.GetProperty().SetColor(*(asset.colour if asset is not None else PLATE_COLOUR))
+        self.guide_actor.VisibilityOn()
+        self.guide_plate_actor.VisibilityOn()
+        if entering:
+            self.renderer.ResetCamera(mesh.GetBounds())
+        self.renderer.ResetCameraClippingRange()
+        self.render()
+
+    def _advice_markers(self, fitted, verdict) -> vtk.vtkPolyData:
+        """The holes as points, each carrying the colour of what it is for."""
+        from vtkmodules.util.numpy_support import numpy_to_vtk
+
+        markers = points_to_polydata(fitted.hole_centres)
+        colours = np.array([ADVICE_COLOURS[hole.state] for hole in verdict.holes], dtype=np.uint8)
+        array = numpy_to_vtk(colours, deep=True, array_type=vtk.VTK_UNSIGNED_CHAR)
+        array.SetName("advice")
+        markers.GetPointData().SetScalars(array)
+        return markers
+
+    def _refresh_verdict_sign(self, verdict) -> None:
+        if verdict is None:
+            self.verdict_actor.VisibilityOff()
+            return
+        # Plain characters: the view's font has no tick or cross.
+        marks = {"good": "", "caution": "!  ", "bad": "X  "}
+        self.verdict_actor.SetInput(f"{marks[verdict.level]}Plate: {verdict.headline}")
+        self.verdict_actor.GetTextProperty().SetColor(*VERDICT_COLOURS[verdict.level])
+        self.verdict_actor.VisibilityOn()
 
     def set_plate_overlays(
         self, plate: bool, holes: bool, screws: bool, marking: bool = True

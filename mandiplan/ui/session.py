@@ -38,6 +38,7 @@ from ..geometry.sculpt import SurfaceSculptor, vertex_normals
 from ..geometry.mesh_io import Mesh, MeshLoadError
 from ..geometry.plate import PlatePlan, compute_plate_plan, fair_plate_path, plan_at_holes
 from ..geometry.hole_distortion import ovalise_mesh, predict_distortion
+from ..geometry.auto_plate import advise_holes, jaw_route, judge_plate, place_chain, plate_turns, recommend_length
 from ..geometry.plate_bend import (
     BentPlate,
     ClearanceReport,
@@ -52,7 +53,7 @@ from ..geometry.plate_fit import (
     rigid_fit,
 )
 from ..materials import Alloy, alloy_by_id
-from ..plate_assets import PlateAsset, asset_by_id, assets_in_family, load_asset_mesh, load_assets
+from ..plate_assets import PlateAsset, asset_by_id, assets_in_family, hole_length_mm, load_asset_mesh, load_assets
 from ..geometry.resection import (
     CutPlane,
     PlanePlacement,
@@ -107,6 +108,7 @@ class _Snapshot:
     plate_points: list
     plate_normals: list
     cut_applied: bool
+    plate_auto: bool = False
 
 
 @dataclass
@@ -138,6 +140,14 @@ class VolumeInfo:
         return lines
 
 
+#: A bend past this share of a plate's limit at one hole rules the plate out.
+BEND_FATAL_SHARE = 2.0
+#: A hole this far into the bone is within what a rough surface reads, mm.
+COLLISION_TOLERANCE_MM = 0.3
+#: A plate turning this much in its own plane somewhere was preformed, degrees.
+PREFORM_MIN_DEG = 8.0
+
+
 class Session(QObject):
     volume_changed = pyqtSignal()
     surface_changed = pyqtSignal()
@@ -146,6 +156,7 @@ class Session(QObject):
     resection_changed = pyqtSignal()
     reconstruction_changed = pyqtSignal()
     plate_changed = pyqtSignal()
+    guide_view_changed = pyqtSignal()
     mandible_changed = pyqtSignal()
     #: The reconstructed surface was edited by hand; only its shape changed.
     reconstruction_edited = pyqtSignal()
@@ -166,6 +177,8 @@ class Session(QObject):
     #: separating the mandible, so a run of clicks or a slider drag triggers
     #: it once.
     MANDIBLE_DELAY_MS = 900
+
+    AUTO_PLATE_DELAY_MS = 350
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -251,6 +264,20 @@ class Session(QObject):
         #: The operator picked the plate's length. Until then the shortest
         #: plate of the family that spans the drawn path is used.
         self.plate_length_chosen = False
+        #: The plate was placed by ``place_plate_automatically``, not drawn; it
+        #: follows the cuts and the jaw until a path is drawn by hand.
+        self.plate_auto = False
+        self.plate_placement = None
+        self.plate_route = None
+        #: Whether this plate will do here, hole by hole. See ``geometry/auto_plate``.
+        self.plate_verdict = None
+        self._guide = None
+        self._guide_mesh = None
+        self._guide_steps = []
+        self.guide_step = 0
+        self._auto_plate_timer = QTimer(self)
+        self._auto_plate_timer.setSingleShot(True)
+        self._auto_plate_timer.timeout.connect(self._replace_plate)
         self._trimmed_stock = None
         self.fitted_hole_plan = None
         self.fitted_plate: FittedPlate | None = None
@@ -472,6 +499,8 @@ class Session(QObject):
         self.mandible_changed.emit()
         if source == "auto" and not self.arch_seeds:
             self._lay_automatic_arch()
+        if self.plate_auto:
+            self._auto_plate_timer.start(self.AUTO_PLATE_DELAY_MS)
         return True
 
     def _lay_automatic_arch(self) -> bool:
@@ -881,6 +910,9 @@ class Session(QObject):
         # Every change to the cuts comes through here: bound them along the
         # jaw before anything measures, previews, cuts or mirrors with them.
         bound_resection(self.frames, self.planes)
+        if self.plate_auto:
+            # The plate follows the cuts, once they have stopped moving.
+            self._auto_plate_timer.start(self.AUTO_PLATE_DELAY_MS)
         if self.planes:
             self.report = build_report(self.frames, self.planes, self.landmarks)
         else:
@@ -1175,6 +1207,11 @@ class Session(QObject):
             self.message.emit("Extract a bone surface before drawing a plate path.")
             return
         self._push_undo()
+        if self.plate_auto:
+            # Drawing by hand takes over from the automatic placement.
+            self.plate_auto = False
+            self.plate_points.clear()
+            self.plate_normals.clear()
         point, _ = projector.project(world_point)
         normal = projector.footprint_normal(point, self.PLATE_FOOTPRINT_MM)
         self.plate_points.append(point)
@@ -1191,6 +1228,7 @@ class Session(QObject):
 
     def clear_plate_path(self) -> None:
         self._push_undo()
+        self.plate_auto = False
         self.plate_points.clear()
         self.plate_normals.clear()
         self.update_plate_plan()
@@ -1211,7 +1249,175 @@ class Session(QObject):
         self.plate_asset = None if asset_id is None else asset_by_id(asset_id)
         if self.plate_asset is not None:
             self._adopt_asset(self.plate_asset)
+        # Choosing a plate is all it takes, unless a path was drawn by hand.
+        if self.plate_asset is not None and (self.plate_auto or not self.plate_points):
+            if self.place_plate_automatically(quiet=True):
+                return
         self.update_plate_plan()
+
+    # -- placing the plate without being told where ------------------------
+
+    def _defect_span(self):
+        """The resection's arc span on the arch curve, or None."""
+        report = self.report
+        if self.planes and report is not None and np.isfinite(report.arc_length_mm):
+            return (float(report.entry_s_mm), float(report.exit_s_mm))
+        return None
+
+    def _route_surface(self):
+        return self.reconstructed_surface if self.reconstructed_surface is not None else self.surface
+
+    def place_plate_automatically(self, quiet: bool = False) -> bool:
+        """Put the chosen plate where it belongs: no clicks on the bone.
+
+        The length is chosen too, unless the operator picked one. Returns
+        False, with the reason shown unless ``quiet``, if there is nothing to
+        place it on yet.
+        """
+        if self.volume is None:
+            if not quiet:
+                self.message.emit("Open a scan first.")
+            return False
+        if quiet and self.mandible is None:
+            # Not while the scan is still being read: this runs again after.
+            return False
+        self.ensure_mandible()
+        surface = self._route_surface()
+        asset = self.plate_asset
+        if asset is None or self.frames is None or surface is None or not surface.GetNumberOfPoints():
+            if not quiet:
+                self.message.emit(
+                    "The plate cannot be placed yet: it needs the jaw separated and an arch "
+                    "curve along it (steps 1 and 2)."
+                )
+            return False
+        vertices = vtk_to_numpy(surface.GetPoints().GetData()).astype(float)
+        route = jaw_route(vertices, self.frames, asset.width_mm)
+        if route is None:
+            if not quiet:
+                self.message.emit("No route for a plate could be found along this jaw.")
+            return False
+        defect = self._defect_span()
+        system = system_for_asset(asset)
+        minimum = max(int(system.min_holes_per_side), 1)
+
+        def describe(item):
+            centres, axes = item.hole_centres_mm, item.hole_axes
+            return np.linalg.norm(np.diff(centres, axis=0), axis=1), plate_turns(centres, axes)
+
+        if not self.plate_length_chosen and self._trimmed_stock is None:
+            family = sorted(assets_in_family(asset.family), key=lambda a: a.hole_count)
+            choices = [(*describe(item), item.id) for item in family]
+            best = recommend_length(route, choices, defect, minimum)
+            if best is not None and best != asset.id:
+                self.plate_asset = asset = asset_by_id(best)
+                self._adopt_asset(asset)
+        active = self.active_plate_asset
+        spacings, turns = describe(active)
+        placement = place_chain(route, spacings, turns, defect, minimum)
+        if placement is None:
+            if not quiet:
+                self.message.emit("This plate could not be placed along this jaw.")
+            return False
+        self.plate_route = route
+        self.plate_placement = placement
+        self.plate_auto = True
+        self.plate_points = [np.asarray(p, dtype=float) for p in placement.points]
+        self.plate_normals = [np.asarray(n, dtype=float) for n in placement.outward]
+        self.update_plate_plan()
+        return True
+
+    def _replace_plate(self) -> None:
+        if self.plate_auto and self.plate_asset is not None:
+            self.place_plate_automatically(quiet=True)
+
+    def _judge_plate(self) -> None:
+        """Say whether the plate will do where it lies, hole by hole."""
+        self.plate_verdict = None
+        asset = self.active_plate_asset
+        placed = self.bent_plate or self.fitted_plate
+        contact = self.plate_contact
+        if asset is None or placed is None or contact is None or self.frames is None:
+            return
+        projector = self.plate_projector
+        centres, axes = placed.hole_centres, placed.hole_axes
+        if len(contact.clearance_mm) != len(centres):
+            return
+        stations = self.frames.points[:: max(int(round(1.0 / self.frames.step_mm)), 1)]
+        arcs_at = self.frames.s[:: max(int(round(1.0 / self.frames.step_mm)), 1)]
+        arcs = arcs_at[np.argmin(np.linalg.norm(centres[:, None, :] - stations[None, :, :], axis=2), axis=1)]
+        depths = np.array(
+            [projector.through_bone(c, -a) if projector is not None else float("nan") for c, a in zip(centres, axes)]
+        )
+        defect = self._defect_span()
+        holes = advise_holes(arcs, contact.clearance_mm, contact.hole_axis_error_deg, depths, defect)
+
+        limit = float(asset.deformation.max_bend_deg_per_node)
+        bends = np.nan_to_num(self.bent_plate.bend_angles_deg) if self.bent_plate is not None else np.zeros(0)
+        fatal, cautions = [], []
+        worst = float(bends.max()) if len(bends) else 0.0
+        if worst > BEND_FATAL_SHARE * limit:
+            fatal.append(
+                f"The jaw asks for a {worst:.0f}° bend at one hole here, far past the "
+                f"{limit:.0f}° this plate is rated for at a hole."
+            )
+        elif worst > limit:
+            cautions.append(
+                f"The tightest bend is {worst:.0f}° at a hole, past the {limit:.0f}° this plate is "
+                "rated for: bend it in stages and check it for cracks."
+            )
+        if self.bent_plate is not None and any("fold" in p for p in self.bent_plate.problems):
+            fatal.extend(p for p in self.bent_plate.problems if "fold" in p)
+        # A rough surface reads a touching plate as a little inside it; only more
+        # than that is worth saying.
+        if len(contact.clearance_mm) and float(contact.clearance_mm.min()) < -COLLISION_TOLERANCE_MM:
+            cautions.extend(contact.problems)
+
+        longer = self._longer_that_would_do(asset, defect)
+        own_turns = plate_turns(asset.hole_centres_mm, asset.hole_axes)
+        self.plate_verdict = judge_plate(
+            holes,
+            arcs,
+            defect,
+            (float(self.frames.s[0]), float(self.frames.s[-1])),
+            self.plate_placement if self.plate_auto else None,
+            self.plate_route if self.plate_auto else None,
+            asset.width_mm,
+            fatal,
+            cautions,
+            is_preformed=bool(np.abs(own_turns).max() > PREFORM_MIN_DEG) if len(own_turns) else False,
+            hole_count=asset.hole_count,
+            longer_holes=longer,
+        )
+
+    def _longer_that_would_do(self, asset, defect) -> int | None:
+        """The hole count of the shortest longer plate of this family that holds."""
+        family = sorted(assets_in_family(asset.family), key=lambda a: a.hole_count)
+        longer = [item for item in family if item.hole_count > asset.hole_count]
+        if not longer:
+            return None
+        if self.plate_route is None or not self.plate_auto:
+            return longer[0].hole_count
+        system = system_for_asset(asset)
+        choices = [
+            (
+                np.linalg.norm(np.diff(item.hole_centres_mm, axis=0), axis=1),
+                plate_turns(item.hole_centres_mm, item.hole_axes),
+                item.hole_count,
+            )
+            for item in longer
+        ]
+        return recommend_length(self.plate_route, choices, defect, max(int(system.min_holes_per_side), 1))
+
+    def use_suggested_length(self) -> None:
+        """Take the length the verdict suggests."""
+        verdict, asset = self.plate_verdict, self.plate_asset
+        if verdict is None or verdict.suggested_holes is None or asset is None:
+            return
+        for item in assets_in_family(asset.family):
+            if item.hole_count == verdict.suggested_holes:
+                self.set_plate_asset(item.id)
+                return
 
     @property
     def active_plate_asset(self):
@@ -1231,6 +1437,8 @@ class Session(QObject):
             return
         self.plate_length_chosen = True
         self._marking_cache.clear()
+        if self.plate_auto and self.place_plate_automatically(quiet=True):
+            return
         self.update_plate_plan()
 
     def _adopt_asset(self, asset) -> None:
@@ -1277,6 +1485,8 @@ class Session(QObject):
         self.plate_fit_warnings = []
         self.plate_fit_problems = []
         self.fitted_hole_plan = None
+        self.plate_verdict = None
+        self.leave_guide_view()
         asset = self.active_plate_asset
         plan = self.plate_plan
         if asset is None or plan is None or len(plan.nodes) < 2:
@@ -1321,6 +1531,7 @@ class Session(QObject):
         self._check_contact(asset, plan)
         if self.bent_plate is not None:
             self.fitted_hole_plan = plan_at_holes(self.bent_plate.hole_centres, self.bent_plate.hole_axes, asset.hole_pitch_mm)
+        self._judge_plate()
 
     def _marking_for(self, asset):
         """The asset's etched mark in its own space, built once per asset."""
@@ -1483,7 +1694,73 @@ class Session(QObject):
             alloy_name=alloy.name,
             tooth_mm=self.guide_wall_mm,
             play_mm=self.guide_clearance_mm,
+            hole_length_mm=hole_length_mm(asset),
         )
+
+    # -- rehearsing the bends on the guide ---------------------------------
+
+    def enter_guide_view(self) -> bool:
+        """Show the comb and the plate on it, as at the start of bending."""
+        guide = self.bending_guide()
+        if guide is None:
+            return False
+        from ..render.bending_guide_mesh import guide_polydata
+
+        self._guide = guide
+        self._guide_mesh = guide_polydata(guide, print_pose=False)
+        self._guide_steps = guide.steps()
+        self.guide_step = 0
+        self.guide_view_changed.emit()
+        return True
+
+    def leave_guide_view(self) -> None:
+        if self._guide is None:
+            return
+        self._guide = None
+        self._guide_mesh = None
+        self._guide_steps = []
+        self.guide_view_changed.emit()
+
+    @property
+    def guide_view_on(self) -> bool:
+        return self._guide is not None
+
+    def set_guide_step(self, step: int) -> None:
+        if self._guide is None:
+            return
+        self.guide_step = int(np.clip(step, 0, len(self._guide_steps) - 1))
+        self.guide_view_changed.emit()
+
+    @property
+    def guide_step_text(self) -> str:
+        if self._guide is None:
+            return ""
+        return self._guide_steps[self.guide_step][1]
+
+    @property
+    def guide_step_count(self) -> int:
+        return len(self._guide_steps)
+
+    def guide_preview(self):
+        """``(guide mesh, plate points, plate triangles)`` at the current step."""
+        if self._guide is None:
+            return None
+        asset = self.active_plate_asset
+        mesh = self._trimmed_stock[1] if self._trimmed_stock else load_asset_mesh(asset)
+        bridges = self._guide_steps[self.guide_step][0]
+        centres, axes = self._guide.chain_after(asset.hole_centres_mm, asset.hole_axes, bridges)
+        plate = bend_to_path(
+            mesh.points,
+            mesh.triangles,
+            asset.hole_centres_mm,
+            asset.hole_axes,
+            centres,
+            axes,
+            protected_radius_mm=asset.deformation.protected_radius_mm,
+            min_bend_radius_mm=asset.deformation.min_bend_radius_mm,
+            max_bend_deg_per_node=asset.deformation.max_bend_deg_per_node,
+        )
+        return self._guide_mesh, plate.points, plate.triangles
 
     def plate_alloy(self) -> Alloy:
         """The alloy the selected plate is made of."""
@@ -1555,7 +1832,7 @@ class Session(QObject):
         """Use the shortest plate of the family that spans the path, unless
         the operator chose a length."""
         fit, asset = self.fit, self.plate_asset
-        if self.plate_length_chosen or fit is None or fit.option is None or asset is None:
+        if self.plate_auto or self.plate_length_chosen or fit is None or fit.option is None or asset is None:
             return
         if fit.option.holes == asset.hole_count:
             return
@@ -1580,6 +1857,7 @@ class Session(QObject):
                 plate_points=copy.deepcopy(self.plate_points),
                 plate_normals=copy.deepcopy(self.plate_normals),
                 cut_applied=self.cut_applied,
+                plate_auto=self.plate_auto,
             )
         )
         del self._undo[:-40]
@@ -1600,6 +1878,7 @@ class Session(QObject):
         self.landmarks = state.landmarks
         self.plate_points = state.plate_points
         self.plate_normals = state.plate_normals
+        self.plate_auto = state.plate_auto
         if not state.cut_applied:
             self.fragment_surface = None
             self.retained_surface = None

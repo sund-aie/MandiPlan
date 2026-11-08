@@ -1062,6 +1062,8 @@ CONDYLE_HEAD_ABOVE_MM = 4.0
 CONDYLE_HEAD_REACH_MM = 7.0
 #: How far between the soft tissue and the threshold faint bone is taken from.
 CONDYLE_HEAD_LEVEL = 0.45
+#: How far below the top of a head it is taken as convex, mm.
+CONDYLE_HEAD_FILL_MM = 9.0
 #: Gaps in the head's plate closed up to about twice this, mm.
 CONDYLE_HEAD_CLOSE_MM = 1.5
 #: The joint space kept clear of the skull's side of the joint, mm.
@@ -1095,6 +1097,7 @@ def _condyle_heads(mandible, other, gray, threshold, spacing, above_plane, X, Y,
         sitk.BinaryDilate(sitk.GetImageFromArray(other.astype(np.uint8)), [gap, gap, gap])
     ) > 0
     zones = []
+    tops = []
     for sign in (-1.0, 1.0):
         columns = high.any(axis=0) & (sign * (across - middle) > 0)
         if not columns.any():
@@ -1113,6 +1116,7 @@ def _condyle_heads(mandible, other, gray, threshold, spacing, above_plane, X, Y,
                                          useImageSpacing=True)
         ) <= CONDYLE_HEAD_REACH_MM
         zones.append(zone & near)
+        tops.append(top)
     if not zones:
         return found, float(threshold)
     zone = np.logical_or.reduce(zones)
@@ -1142,6 +1146,17 @@ def _condyle_heads(mandible, other, gray, threshold, spacing, above_plane, X, Y,
             )
         )
     ).astype(np.uint8)
+    # A head is convex: at each level near its top, what lies between its front
+    # and back, or between its two poles, is head, even with the plate over it
+    # lost against a tight joint. Marrow is dark, so nothing else showed it.
+    fill = max(int(round(CONDYLE_HEAD_FILL_MM / spacing[2])), 1)
+    for one, top in zip(zones, tops):
+        band = slice(max(top - fill, 0), top + above + 1)
+        within = (closed[band] > 0) & one[band]
+        for axis in (1, 2):
+            ahead = np.logical_or.accumulate(within, axis=axis)
+            behind = np.flip(np.logical_or.accumulate(np.flip(within, axis=axis), axis=axis), axis=axis)
+            closed[band][ahead & behind] = 1
     for axis in range(3):
         for index in np.flatnonzero(closed.any(axis=tuple(a for a in range(3) if a != axis))):
             where = [slice(None)] * 3

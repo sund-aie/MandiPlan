@@ -804,9 +804,22 @@ class PlatePanel(QWidget):
         for kit in load_kits():
             self.kit_box.addItem(kit.name, kit.id)
 
+        self.guide_toggle = QPushButton("Rehearse the bends on the guide")
+        self.guide_toggle.setCheckable(True)
+        self.guide_back = QPushButton("Back")
+        self.guide_next = QPushButton("Next bend")
+        self.guide_text = QLabel("")
+        self.guide_text.setWordWrap(True)
+
+        self.place_button = QPushButton("Place this plate on the jaw again")
+        self.place_button.setProperty("primary", True)
+        self.sign = QLabel("")
+        self.sign.setWordWrap(True)
+        self.sign.setVisible(False)
+        self.use_suggested = QPushButton("")
+        self.use_suggested.setVisible(False)
         self.draw_button = QPushButton("Draw plate path on the bone")
         self.draw_button.setCheckable(True)
-        self.draw_button.setProperty("primary", True)
         self.undo_point = QPushButton("Remove last point")
         self.clear_path = QPushButton("Clear path")
         self.verdict = QLabel("")
@@ -836,7 +849,13 @@ class PlatePanel(QWidget):
         self.steps_table.setWordWrap(True)
         self.steps_table.horizontalHeader().setStretchLastSection(True)
 
+        self.screws_table = QTableWidget(0, 4)
+        self.screws_table.setHorizontalHeaderLabels(["hole", "screw", "bone (mm)", "why"])
+        self.screws_table.verticalHeader().setVisible(False)
+        self.screws_table.horizontalHeader().setStretchLastSection(True)
+
         self.tabs = QTabWidget()
+        self.tabs.addTab(self.screws_table, "Screws")
         self.tabs.addTab(self.table, "Bend table")
         self.tabs.addTab(self.steps_table, "Bench steps")
         self.tabs.setMinimumHeight(220)
@@ -848,9 +867,29 @@ class PlatePanel(QWidget):
 
         layout = QVBoxLayout(self)
 
-        # 1. Draw the path: the one thing this step is for.
-        layout.addWidget(self.draw_button)
-        layout.addWidget(
+        # 1. Which plate: the one choice this step needs. It places itself.
+        library = QFormLayout()
+        library.addRow("Brand", self.brand_box)
+        library.addRow("Plate", self.family_box)
+        library.addRow("Stock length", self.model_box)
+        library.addRow("Holes to keep", self.retained)
+        library.addRow("", self.status_badge)
+        layout.addLayout(library)
+        layout.addWidget(self.place_button)
+
+        # 2. Will it do? A sign anyone can read, then the reasons on demand.
+        layout.addWidget(self.sign)
+        layout.addWidget(self.use_suggested)
+        layout.addWidget(self.summary)
+        layout.addWidget(self.verdict)
+        layout.addWidget(self.use_length)
+
+        # 3. The path by hand, for when the automatic one is not the one wanted.
+        by_hand = QWidget()
+        by_hand_layout = QVBoxLayout(by_hand)
+        by_hand_layout.setContentsMargins(0, 0, 0, 0)
+        by_hand_layout.addWidget(self.draw_button)
+        by_hand_layout.addWidget(
             _hint(
                 "Click along the outer face of the jaw where the plate will lie; "
                 "after reconstructing, click across the rebuilt segment too."
@@ -859,21 +898,8 @@ class PlatePanel(QWidget):
         row = QHBoxLayout()
         row.addWidget(self.undo_point)
         row.addWidget(self.clear_path)
-        layout.addLayout(row)
-
-        # 2. Does it fit, in one line; the reasons on demand.
-        layout.addWidget(self.summary)
-        layout.addWidget(self.verdict)
-        layout.addWidget(self.use_length)
-
-        # 3. Which plate. Its length follows the path until one is picked.
-        library = QFormLayout()
-        library.addRow("Brand", self.brand_box)
-        library.addRow("Plate", self.family_box)
-        library.addRow("Stock length", self.model_box)
-        library.addRow("Holes to keep", self.retained)
-        library.addRow("", self.status_badge)
-        layout.addLayout(library)
+        by_hand_layout.addLayout(row)
+        layout.addWidget(_Section("Draw the path by hand", by_hand))
         self.details = _Section(
             "Why: fit, contact and screw holes",
             _boxed(self.fit_info, self.fit_status, self.hole_report),
@@ -889,6 +915,16 @@ class PlatePanel(QWidget):
         bending_box = QWidget()
         bending_box.setLayout(bending)
         layout.addWidget(_Section("Bending", bending_box))
+        rehearsal = QWidget()
+        rehearsal_layout = QVBoxLayout(rehearsal)
+        rehearsal_layout.setContentsMargins(0, 0, 0, 0)
+        rehearsal_layout.addWidget(self.guide_toggle)
+        stepper = QHBoxLayout()
+        stepper.addWidget(self.guide_back)
+        stepper.addWidget(self.guide_next)
+        rehearsal_layout.addLayout(stepper)
+        rehearsal_layout.addWidget(self.guide_text)
+        layout.addWidget(_Section("Bend a fresh plate on the guide", rehearsal, expanded=True))
         layout.addWidget(
             _Section("Screw-hole options", _boxed(self.show_distortion, self.use_insets))
         )
@@ -927,8 +963,15 @@ class PlatePanel(QWidget):
         self.undo_point.clicked.connect(session.remove_last_plate_point)
         self.clear_path.clicked.connect(session.clear_plate_path)
         self.use_length.clicked.connect(session.use_fitting_length)
+        self.place_button.clicked.connect(lambda: session.place_plate_automatically())
+        self.guide_toggle.toggled.connect(self._on_guide_toggle)
+        self.guide_back.clicked.connect(lambda: session.set_guide_step(session.guide_step - 1))
+        self.guide_next.clicked.connect(lambda: session.set_guide_step(session.guide_step + 1))
+        session.guide_view_changed.connect(self._refresh_guide_view)
+        self.use_suggested.clicked.connect(session.use_suggested_length)
         session.plate_changed.connect(self.refresh)
         self._on_family()
+        self._refresh_guide_view()
 
     # -- plate library ---------------------------------------------------
 
@@ -1044,7 +1087,7 @@ class PlatePanel(QWidget):
         fitted = self.session.fitted_plate
         warnings = self.session.plate_fit_warnings
         if fitted is None:
-            self.fit_status.setText("Draw a plate path to fit this plate to it.")
+            self.fit_status.setText("Choose a plate and it will be placed on the jaw.")
             set_role(self.fit_status, "hint")
             return
         bent = self.session.bent_plate
@@ -1084,7 +1127,7 @@ class PlatePanel(QWidget):
         report = self.session.hole_distortion
         if report is None:
             self.hole_report.setText(
-                "Draw a plate path and bend the plate to see what the bends "
+                "Once a plate is placed and bent, this shows what the bends "
                 "do to its screw holes."
             )
             set_role(self.hole_report, "hint")
@@ -1108,6 +1151,11 @@ class PlatePanel(QWidget):
             self.fit_info.setText("")
             return
         self._refresh_verdict(fit)
+        # With the plate placed for you, the sign above already says all this.
+        automatic = self.session.plate_auto and self.session.plate_verdict is not None
+        self.verdict.setVisible(not automatic)
+        if automatic:
+            self.use_length.setVisible(False)
         lines = [fit.verdict]
         if fit.holes_proximal or fit.holes_distal:
             lines.append(
@@ -1157,8 +1205,69 @@ class PlatePanel(QWidget):
         else:
             self.use_length.setVisible(False)
 
+    def _on_guide_toggle(self, on: bool) -> None:
+        if on:
+            if not self.session.enter_guide_view():
+                self.guide_toggle.blockSignals(True)
+                self.guide_toggle.setChecked(False)
+                self.guide_toggle.blockSignals(False)
+        else:
+            self.session.leave_guide_view()
+
+    def _refresh_guide_view(self) -> None:
+        session = self.session
+        on = session.guide_view_on
+        self.guide_toggle.blockSignals(True)
+        self.guide_toggle.setChecked(on)
+        self.guide_toggle.blockSignals(False)
+        self.guide_back.setEnabled(on and session.guide_step > 0)
+        self.guide_next.setEnabled(on and session.guide_step < session.guide_step_count - 1)
+        if on:
+            self.guide_text.setText(
+                f"Step {session.guide_step + 1} of {session.guide_step_count}. {session.guide_step_text}"
+            )
+        else:
+            self.guide_text.setText(
+                "See the fresh plate on the printed comb, and each bend in order, "
+                "before touching the real one."
+            )
+
+    SIGN_STYLES = {
+        "good": ("#1b7f3b", "\u2713"),
+        "caution": ("#b26a00", "!"),
+        "bad": ("#c62828", "\u2715"),
+    }
+
+    def _refresh_sign(self) -> None:
+        """The verdict on this plate, big enough not to be missed, and its screws."""
+        verdict = self.session.plate_verdict
+        self.screws_table.setRowCount(0)
+        if verdict is None:
+            self.sign.setVisible(False)
+            self.use_suggested.setVisible(False)
+            return
+        colour, mark = self.SIGN_STYLES[verdict.level]
+        text = f"<b>{mark} {verdict.headline}</b>"
+        if verdict.reasons:
+            text += "<br>" + "<br>".join(verdict.reasons)
+        self.sign.setText(text)
+        self.sign.setStyleSheet(
+            f"QLabel {{ background: {colour}; color: white; padding: 8px; border-radius: 6px; }}"
+        )
+        self.sign.setVisible(True)
+        if verdict.suggested_holes is not None:
+            self.use_suggested.setText(f"Use the {verdict.suggested_holes}-hole plate")
+        self.use_suggested.setVisible(verdict.suggested_holes is not None)
+        labels = {"screw": "yes", "spare": "spare", "skip": "no", "no bone": "no"}
+        self.screws_table.setRowCount(len(verdict.holes))
+        for row, hole in enumerate(verdict.holes):
+            bone = "" if hole.bone_depth_mm != hole.bone_depth_mm else f"{hole.bone_depth_mm:.0f}"
+            for column, value in enumerate((str(hole.index + 1), labels[hole.state], bone, hole.why)):
+                self.screws_table.setItem(row, column, QTableWidgetItem(value))
+
     def refresh(self) -> None:
         self.refresh_library()
+        self._refresh_sign()
         plan = self.session.plate_plan
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
@@ -1169,7 +1278,7 @@ class PlatePanel(QWidget):
         if plan is None:
             count = len(self.session.plate_points)
             self.summary.setText(
-                "No plate path yet." if count == 0 else
+                "Choose a plate: it places itself." if count == 0 else
                 f"{count} point so far: click at least one more along the bone."
             )
             set_role(self.summary, "empty")

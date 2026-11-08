@@ -213,7 +213,42 @@ jaws land on a tooth at this pitch).
 
 ## The print kit is built from a solid, on a grid
 
-A real jaw's isosurface is hollow, so a joint has nothing to bite into, and the
+A real jaw's isosurface is hollow, so a connector has nothing to stand in, and the
 earlier approach of keying the mesh failed on every real scan. The surface is
-filled and contoured again at 0.3 mm. The working side's surface moves by a small
-fraction of a millimetre in exchange, and comes out closed inside.
+filled and contoured again at 0.3 mm, then every vertex near the scan's surface is
+put back on it, so the working surface loses nothing to the grid.
+
+## Parts connect with pegs on flat faces
+
+An interlocking jigsaw joint was tried and dropped at the owner's request: the
+parts are meant simply to connect. Flat faces keep the jaw's length exact, two
+pegs of different sizes fix the position and allow one way together, and the
+kit carries a small print to calibrate their clearance.
+
+## The plate places itself
+
+Choosing a plate is the whole input. The route runs just above the lower border
+because that keeps screws clear of tooth roots and the nerve on any jaw, and
+needs no segmentation of either, which the scans could not support. Position is
+chosen by scoring, not by rules per plate: holes balanced round the resection and
+least bending in the plate's own plane, which puts a preformed plate at the angle
+without knowing it is an angle plate. The verdict's red is kept for what cannot
+be bent or trimmed away, so it means something when it shows.
+
+## The guide starts from a fresh plate
+
+A plate out of the packet is straight, so only hole 1 can sit on its pin at first.
+The comb is meant for that: the plate wraps round it from one end, each bend
+bringing one more hole onto its pin. A ledge keeps it level until then, and the
+rehearsal in the app draws the plate at every step.
+
+## Negative slice spacing and CT padding
+
+Both came from one real scan. A negative SpacingBetweenSlices made the reader
+report a reversed stacking axis over slices in file order: an upside-down,
+mirrored volume, with no error. Placement now comes from ImagePositionPatient.
+The constant outside a CT's reconstructed circle counted as air and moved the
+bone threshold into soft tissue; a constant below -1100, covering over 1% of the
+scan, is now air. The rule needs Hounsfield-like values, and a CBCT without them
+keeps its gray values untouched.
+

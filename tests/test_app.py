@@ -756,3 +756,90 @@ def test_plates_are_chosen_by_brand_then_shape_then_length(window):
     panel.refresh_library()
     assert panel.brand_box.currentData() == "Generic"
     assert panel.family_box.currentData() == "generic-recon-2.4-lock"
+
+
+# -- the plate places itself -------------------------------------------------
+
+
+def _fresh_plate_session(window):
+    session = window.session
+    session.clear_plate_path()
+    session.plate_auto = False
+    session.plate_length_chosen = False
+    session.ensure_mandible()
+    return session
+
+
+def test_choosing_a_plate_is_all_it_takes(window):
+    session = _fresh_plate_session(window)
+    panel = window.plate_panel
+    assert not session.plate_points or session.frames is not None
+    session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
+    assert session.plate_auto and session.plate_plan is not None and session.plate_mesh() is not None
+    verdict = session.plate_verdict
+    assert verdict is not None and verdict.holes
+    assert len(verdict.holes) == len(session.plate_mesh().hole_centres)
+    assert panel.sign.text() and verdict.headline in panel.sign.text()
+    assert panel.screws_table.rowCount() == len(verdict.holes)
+    # Its holes are on the bone: nothing here was clicked.
+    projector = session.plate_projector
+    for centre in session.plate_mesh().hole_centres:
+        point, _ = projector.project(centre)
+        assert np.linalg.norm(point - centre) < 5.0
+
+
+def test_drawing_by_hand_takes_over_from_the_automatic_plate(window):
+    session = _fresh_plate_session(window)
+    session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
+    automatic = len(session.plate_points)
+    assert session.plate_auto and automatic >= 2
+    session.add_plate_point(session.plate_points[0])
+    assert not session.plate_auto and len(session.plate_points) == 1
+
+
+def test_a_plate_that_will_not_do_shows_a_red_sign(window):
+    session = _fresh_plate_session(window)
+    panel = window.plate_panel
+    session.clear_planes()
+    # Cut out most of the jaw: the shortest plate cannot span it.
+    frames = session.frames
+    for s, flip in ((0.25 * frames.length_mm, False), (0.75 * frames.length_mm, True)):
+        i = frames.index_of(s)
+        session.add_plane(frames.points[i], (-1.0 if flip else 1.0) * frames.tangents[i])
+    try:
+        session.set_plate_asset("generic-miniplate-2.0-4h", length_chosen=True)
+        verdict = session.plate_verdict
+        assert verdict is not None and verdict.level == "bad" and verdict.headline == "Not applicable"
+        assert "#c62828" in panel.sign.styleSheet()
+        assert window.view3d.verdict_actor.GetVisibility()
+        assert "Not applicable" in window.view3d.verdict_actor.GetInput()
+        assert verdict.suggested_holes is None or not panel.use_suggested.isHidden()
+    finally:
+        session.clear_planes()
+
+
+def test_the_bends_can_be_rehearsed_on_the_guide_from_a_fresh_plate(window):
+    session = _fresh_plate_session(window)
+    panel = window.plate_panel
+    session.set_plate_asset("generic-recon-2.4-lock-10h", length_chosen=True)
+    panel.guide_toggle.setChecked(True)
+    assert session.guide_view_on
+    assert window.view3d.guide_actor.GetVisibility() and not window.view3d.bone_actor.GetVisibility()
+    assert "Fresh plate" in panel.guide_text.text()
+    assert not window.view3d.arch_actor.GetVisibility()
+    assert all(not widget.GetEnabled() for widget in window.view3d._plane_widgets)
+    assert not panel.guide_back.isEnabled()
+    _, fresh, _ = session.guide_preview()
+    for _ in range(session.guide_step_count):
+        panel.guide_next.click()
+    assert "every hole" in panel.guide_text.text()
+    assert not panel.guide_next.isEnabled()
+    _, finished, _ = session.guide_preview()
+    # The plate came from straight to the shape it has on the jaw.
+    placed = session.plate_mesh()
+    assert np.linalg.norm(finished - placed.points, axis=1).max() < 1.0
+    assert np.linalg.norm(fresh - placed.points, axis=1).max() > 1.0
+    panel.guide_toggle.setChecked(False)
+    assert not session.guide_view_on
+    assert window.view3d.bone_actor.GetVisibility() and not window.view3d.guide_actor.GetVisibility()
+

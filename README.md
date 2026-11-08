@@ -530,13 +530,34 @@ and a strength: left-drag on the jaw, right-drag to turn it. Every stroke can
 be undone, *Back to computed* restores the computed surface, and the panel says
 how far your edits have moved it.
 
-**5 · Plate.** *Draw plate path on the bone* and click along the outer face of
-the jaw — after reconstructing, across the rebuilt segment too, since the plate
-follows the reconstruction. Clicks go through a plate already drawn to the
-bone behind it. Only a click adds a point: a press that turns into a drag turns the view, and moving on to another step puts the plate tool down, so looking the plan over in *Export* never changes it. Choose the plate family; its length follows the path (the
-shortest in the family that spans it) until you pick a length yourself. Its
-pitch, section and the lengths it comes in drive everything below. Pick the
-bending kit you will use.
+**5 · Plate.** Choose the brand and the plate. That is all: it places itself.
+The app runs the plate along the outer face of the jaw just above the lower
+border and up the posterior border of the ramus, centres it on the resection if
+there is one, and tries it each way round, which is what puts a preformed angle
+plate at the jaw's angle. Unless you pick a length, it uses the shortest of that
+family holding four screws each side of the resection. The plate follows the
+cuts when they move.
+
+A sign says whether the plate will do, and the same in the 3-D view:
+
+| sign | means |
+|---|---|
+| green: *Applicable* | enough sound screws each side, on the bone, within what it can be bent to |
+| amber: *Usable, with care* | it will work, and the sign says what to watch: three screws on a side rather than four, a bend past the plate's rating, a gap under a hole |
+| red: *Not applicable* | too few screws can hold on a side, the resection runs through to the condyle, the plate is longer than the jaw or wider than the bone, its preformed shape does not suit this site, or the bend is more than twice its rating. The plate itself turns red, and a length that would work is offered |
+
+Each hole has a coloured marker and a row in the **Screws** tab: green for a
+recommended screw (the nearest four sound holes outward from each cut), grey for
+a spare, amber for one to leave empty (within 5 mm of a cut, under 4 mm of bone,
+or more than 35° off the bone), red for no bone at all (over the gap, or standing
+off). The table gives the bone along each screw's line. It does not see the
+inferior alveolar nerve or tooth roots: check each planned screw on the slices.
+
+To place it yourself instead, open **Draw the path by hand** and click along the
+outer face of the jaw; after reconstructing, across the rebuilt segment too. Only
+a click adds a point: a press that turns into a drag turns the view. Drawing by
+hand takes over from the automatic placement, and the sign still judges it. Pick
+the bending kit you will use.
 
 Clicks are projected onto the bone, the normal under each is fitted over the
 plate's footprint rather than taken from one point of a rough surface, and the
@@ -600,19 +621,29 @@ the bench.
 The **Bending guide (STL + table)** in **6 · Export** is a thin comb the plate
 wraps round. It stands on the bench on a flat base inside the plate's curve. One
 thin tooth rises at each hole of the finished plate, ending in a pad where the
-plate's bone face lies there and a pin where the hole is. To use it, hang hole 1
-on the flagged tooth, bend the next bridge until the next hole drops over its pin
-and lies flat, release, and go on. A hole on its pin after release is right.
+plate's bone face lies there, a pin where the hole is, and a small ledge under
+the plate's lower edge. Each tooth's hole number is on the base beside it.
+
+To bend a fresh plate: cut it to length if the table says so, then hang hole 1 on
+the flagged tooth, bone face to the teeth, lower edge on the ledge. The rest of
+the plate stands straight off the comb. Bend the bridge between holes 1 and 2
+until hole 2 drops over its pin and lies flat on its pad; let go, check, and go
+on to the next. A hole on its pin after release is right. **Rehearse the bends on
+the guide** in **5 · Plate** shows this on screen first, one bend at a time, with
+the plate as it will be at that step and what to do next.
 
 It is made for one plate and one bender: hole count and spacing (after any
-trimming), pin diameter from the bore, tooth height from the width, and pad
-position from the thickness. The bridges are open all round. The base stands back
-as far as the chosen kit needs, and the table says whether that kit's jaws land
-on a tooth at this plate's pitch, in which case lift the plate off the pins for
-each bend. Expand **Guide dimensions** to set tooth thickness and pin play. Print
-one pin first and try it in a real hole. An oval hole gets a round pin of its
-narrow width, so it has play along the plate. The pin checks the shape; the real
-springback, tool envelope and final fit must still be checked on the bench.
+trimming), pins the shape of the holes (oval on an oval-holed plate, read from
+that plate's mesh), tooth height from the width, and pad position from the
+thickness. The bridges are open all round. The base stands back as far as the
+chosen kit needs, and the table says whether that kit's jaws land on a tooth at
+this plate's pitch, in which case lift the plate off the pins for each bend.
+
+Beside the guide comes a small test piece with three pins, of 0.15, 0.25 and
+0.35 mm play per side. Print it first, try it in a real hole of the plate, and set
+**Pin play** under **Guide dimensions** to the tightest that slides in without
+forcing. The pin checks the shape; the real springback, tool envelope and final
+fit must still be checked on the bench.
 
 ### Print a jaw for a smaller printer
 
@@ -621,28 +652,34 @@ reconstructed model, a printer or custom X/Y/Z build volume, and the patient
 side to protect. With a planned resection the app can infer the working side.
 The original single-STL exports remain available.
 
-The jaw is first made solid on a 0.3 mm grid, because a real bone's surface is a
-hollow shell with nothing for a joint to bite into. This moves the surface by a
-small fraction of a millimetre, and it is why these pieces are not the same mesh
-as the plain STL export.
+The whole jaw is tried at actual size first. If it does not fit, it is cut along
+the arch into parts. The stretch that matters stays whole in one part: the working
+side and the resection on it (plus 6 mm), or, on a printer too small for a whole
+side, the resection and 25 mm of bone either side of it. If even that cannot fit,
+the app says so and writes nothing.
 
-The whole jaw is tried at actual size first. If it does not fit, it is split
-along the arch, keeping the protected stretch (the working side and the
-resection, plus 6 mm) in one piece. Each seam is a jigsaw joint: a round head on
-a narrower neck in a matching socket, sized to the bone there. It goes together
-one way, by sliding the pieces together across the jaw, and then cannot be pulled
-apart along it. If the protected side cannot fit the printer, the app says so and
-writes nothing.
+A cut is flat and square to the jaw, and parts join face to face. One part has two
+round pegs on its face and the other two holes to take them, of different sizes
+so they go together only one way. The pegs go on the part further from the working
+section, so a broken peg costs a small reprint. Push the parts straight together.
 
-The piece holding the resection lies with the outer face at the resection upward,
-so that face is finished as a top surface. Stems come from below and keep 8 mm
-from the resection and from the joints. Import each piece in its exported
-orientation, with its stems at the same coordinates. Review overhangs and
-adhesion in the slicer, and print one joint to calibrate **Joint clearance** for
-your material and printer.
+The part holding the resection lies with the outer face at the resection upward,
+so that face is finished as a top surface: print it at your machine's finest
+layer height. Stems come from below, touch only faces turned to the bed, never
+the outer face of the working section, and keep 8 mm from the resection and the
+cut faces. Import each part in its exported orientation, with its stems at the
+same coordinates.
 
-Presets are the makers' nominal build volumes, and have not been checked against
-each machine. Use **Custom** for a smaller usable bed.
+A split kit includes `fit-test.stl`: this kit's pegs and holes at 0.1, 0.2 and
+0.3 mm clearance, with one, two and three notches. Print it first, and export again
+with the tightest that goes together by hand as **Peg clearance**.
+
+A real bone's surface is a hollow shell with nothing for a peg to stand in, so
+parts are built from the jaw as a solid on a 0.3 mm grid, and every vertex is then
+put back on the scan's own surface. `assembly.json` records how far the parts'
+surface lies from the scan's. Only cavities filled to make it solid differ.
+
+Presets are published nominal build volumes. Use **Custom** for a smaller usable bed.
 
 ### The plate catalogue is yours to correct
 
@@ -725,7 +762,7 @@ A geometric match in software does not certify the bend made with a physical
 kit or the dimensional accuracy or strength of a printed model.
 
 `pytest` runs all of it, including end-to-end passes through the real
-application: load, separate, cut, reconstruct, refine, draw a plate, bend it,
+application: load, separate, cut, reconstruct, refine, place a plate, bend it,
 export.
 
 ## Known limitations
@@ -751,16 +788,17 @@ export.
 - The plate library is generic. Its dimensions come from published size
   classes, not from any manufacturer, and nothing in the application knows the
   real bending characteristics of the plate in your hand.
-- The bending guide has not been printed or used with a real plate and bender.
-  Pin fit depends on the actual plate and print, and a shape check cannot certify
-  tool force, springback or the finished physical bend.
-- The print kit's joints have not been printed. Their clearance is a starting
-  value to calibrate.
+- The bending guide has not been printed or used with a real plate and bender,
+  nor the print kit's pegs printed. Each comes with a test piece for its fit. A
+  shape check cannot certify tool force, springback or the finished physical bend.
+- The automatic plate route knows the jaw's shape only. It does not see the
+  inferior alveolar nerve, tooth roots or disease in the bone: it keeps low on the
+  jaw for that reason, and every recommended screw is to be checked on the slices.
 - The back of a condylar head too faint for the threshold is read at a lower
   level and closed over. Where the scan shows almost nothing there, its outline
-  is an estimate. A very thin plate pressed against the fossa in a tight joint
-  can still stay partly open, rather than risk taking the skull with it. Check
-  the head against the slices.
+  is an estimate. Check the head against the slices.
+- Where upper and lower teeth interlock in thick slices beside metal, a tooth's
+  root tips can go to the wrong jaw by a few millimetres.
 - Two cutting planes. That covers a segmental resection but not a
   hemimandibulectomy with a condylar cut.
 - Margin distances are measured to points you place by eye, not to a segmented

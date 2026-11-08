@@ -367,6 +367,7 @@ class SurfaceProjector:
         normals = polydata.GetPointData().GetNormals()
         self._normals = normals
         self._point_locator = None
+        self._ray_tree = None
 
     def footprint_normal(self, point, radius_mm: float) -> np.ndarray:
         """The bone's outward normal averaged over a plate-sized patch.
@@ -400,6 +401,34 @@ class SurfaceProjector:
         _, vectors = np.linalg.eigh(centred.T @ centred)
         fitted = vectors[:, 0]
         return fitted if fitted @ normal >= 0 else -fitted
+
+    def through_bone(self, point, direction, reach_mm: float = 30.0) -> float:
+        """Bone along a line from ``point``, first surface to last, mm; NaN if none.
+
+        The far side of the jaw counts, the marrow between included, as a screw
+        goes through both cortices. The far side of the arch is out of reach.
+        """
+        if self._ray_tree is None:
+            self._ray_tree = vtk.vtkOBBTree()
+            self._ray_tree.SetDataSet(self.polydata)
+            self._ray_tree.BuildLocator()
+        start = np.asarray(point, dtype=float)
+        direction = np.asarray(direction, dtype=float)
+        hits = vtk.vtkPoints()
+        self._ray_tree.IntersectWithLine(
+            [float(v) for v in start], [float(v) for v in start + reach_mm * direction], hits, None
+        )
+        count = hits.GetNumberOfPoints()
+        if count == 0:
+            return float("nan")
+        along = sorted(float((np.array(hits.GetPoint(i)) - start) @ direction) for i in range(count))
+        # A jump this wide is soft tissue, and what lies past it another bone.
+        last = along[0]
+        for value in along[1:]:
+            if value - last > 12.0:
+                break
+            last = value
+        return last - along[0]
 
     def project(self, point) -> tuple[np.ndarray, np.ndarray]:
         """Closest point on the surface and the interpolated outward normal."""
