@@ -1346,7 +1346,7 @@ class ExportPanel(QWidget):
         ("segment", "Mirrored segment only (STL)", "Just the part that fills the defect."),
         ("fragment", "Resected segment (STL)", "The bone the cuts remove."),
         ("plate", "Bent plate (STL)", "The plate as planned, to print and bend against."),
-        ("guide", "Bending guide (STL + table)", "One small key per bend, made for this plate as cut and your bender: seat its pins in the two holes, rest the bender on it, and press until the plate lies flat on it. Ready to print on rods and a raft."),
+        ("guide", "Bending guide (STL + table)", "One small printed key per bend, made for this plate as cut and your bender. For a bend out of the plate's plane the key sits up in the bender's arch, its pins in the two holes, and the plate stops when it lies flat on it; for one in the plate's plane, a tray to check it on. Each key's press is checked step by step. Ready to print on rods and a raft."),
         ("bends", "Bend table (CSV)", "Angle at every screw hole."),
         ("steps", "Bench steps (CSV)", "The bending steps for the chosen kit, in order."),
         ("resection", "Resection summary (CSV)", "Cut positions, angles and margins."),

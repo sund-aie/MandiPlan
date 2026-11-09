@@ -14,7 +14,7 @@ import numpy as np
 import vtk
 
 from .constants import ATTRIBUTION, DISCLAIMER
-from .geometry.bending_guide import PIN_TEST_PLAYS_MM
+from .geometry.bending_guide import DESIGN_FORCE_N, PIN_TEST_PLAYS_MM, PRESS_STEPS
 from .geometry.plate import PlatePlan, ribbon_mesh
 from .render.convert import triangles_to_polydata
 
@@ -335,13 +335,15 @@ def write_bending_guide(path: str | Path, guide, asset=None, bed=None, printer_n
     pin = f"{guide.pin_diameter_mm:.2f}"
     if guide.hole_stretch_mm:
         pin += f" x {guide.pin_diameter_mm + guide.hole_stretch_mm:.2f}"
+    checks = guide.checks()
+    press = [(key, result) for key, result in zip(guide.keys, checks) if not key.check]
     lines = [
         "MandiPlan bend keys",
         f"plate: {asset.name} ({asset.status_label}); {len(guide.centres)} holes"
         if asset is not None else f"plate: {len(guide.centres)} holes",
-        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick; pins {pin} mm at the base for this plate's bore",
-        f"bender: {guide.kit.name}"
-        + (f"; head {head.source}" if head.source else ""),
+        f"plate section: {guide.width_mm:.2f} mm wide x {guide.thickness_mm:.2f} mm thick; pins {pin} mm at the base "
+        "for this plate's bore, the first of each key round and the rest flattened along the plate",
+        f"bender: {guide.kit.name}" + (f"; head {head.source}" if head.source else ""),
         f"print: {path.name}" + (f" and {beds - 1} more bed(s)" if beds > 1 else "")
         + (f" for {printer_name}" if printer_name else "")
         + " has every key on rods and a raft: do not re-orient or add supports. 100% scale, a rigid resin. "
@@ -351,37 +353,57 @@ def write_bending_guide(path: str | Path, guide, asset=None, bed=None, printer_n
         "and export again. Its tab has pins of "
         + ", ".join(f"{p:.2f}" for p in PIN_TEST_PLAYS_MM)
         + " mm play per side, marked 1, 2 and 3: set Pin play to the tightest that goes into a hole of the plate by hand",
-        "use: one key per bend, in the order below, each with its name raised on it. Seat its pins in the two holes "
-        "it names, from the face it says. Rest the bender on it as it says, and press until the plate lies flat on "
-        "the key: there it stops, however hard you press. Let go, and go on to the next key",
+        "use: one key per bend, in the order below, each with its name raised on it. A keys are for bends in the "
+        "plate's own plane: make those with your in-plane bender, checking on the key until the plate lies flat on it "
+        "with every pin in its hole. B keys are pressed: seat the pins in the two holes the key names, put it up into "
+        "the bender's arch with the post under the bridge, and squeeze until the plate lies flat on the key. There it "
+        "stops, however hard you squeeze. Let go, and go on to the next key",
         "the faces of a key are the plate's finished shape plus an allowance for springback. Springback figures are "
         "model estimates; the plate on the printed jaw decides",
+        f"checked: each B key's press was followed in {PRESS_STEPS} steps from the plate reaching it to the stop. "
+        + (
+            f"At the closest, the rest of the plate stays {min(r.plate_clear_of_key_mm for _, r in press):.2f} mm off "
+            f"the keys and {min(r.plate_clear_of_head_mm for _, r in press):.2f} mm off the bender's head, and the "
+            f"pins {min(r.pin_clear_mm for _, r in press):.2f} mm off their holes' walls. With {DESIGN_FORCE_N:.0f} N on "
+            f"the post the most stressed key sees about {max(r.stress_mpa for _, r in press):.0f} MPa. The head opens "
+            f"up to {max(r.opening_mm for _, r in press):.1f} mm to take the plate and key"
+            if press else "there are no B keys"
+        ),
         f"alloy for the springback estimate: {guide.alloy_name or 'none'}",
         f"shape: the plan's small turns are gathered into {len(guide.keys)} bends; every hole of the plate these "
         f"keys make is within {guide.deviation_mm:.1f} mm of the plan",
         "angles follow the bend table: in-plane positive counter-clockwise seen from the outer "
         "face, out-of-plane positive away from the bone, twist right-handed along the plate",
     ]
-    lines.extend(f"warning: {warning}" for warning in guide.warnings)
+    lines.extend(f"warning: {warning}" for warning in [*guide.warnings, *guide.check_warnings()])
     with table.open("w", newline="", encoding="utf-8") as handle:
         _write_header(handle, lines)
         out = csv.writer(handle)
-        out.writerow(["order", "key", "holes", "from hole 1 (mm)", "bend (deg)", "stop angle (deg)",
-                      "in-plane (deg)", "out-of-plane (deg)", "twist (deg)", "instruction"])
-        for key in guide.keys:
+        out.writerow(["order", "key", "type", "holes", "pins in holes", "from hole 1 (mm)", "bend (deg)",
+                      "stop angle (deg)", "in-plane (deg)", "out-of-plane (deg)", "twist (deg)",
+                      "plate clear of key (mm)", "plate clear of head (mm)", "pins clear (mm)",
+                      f"key stress at {DESIGN_FORCE_N:.0f} N (MPa)", "checked", "instruction"])
+        for key, result in zip(guide.keys, checks):
             joint = guide.joints[key.bridge]
             position = 0.5 * (guide.stock_distances[key.bridge] + guide.stock_distances[key.bridge + 1])
             out.writerow(
                 [
                     key.number,
                     key.name,
+                    "check" if key.check else "press",
                     f"{key.bridge + 1}-{key.bridge + 2}",
+                    " ".join(str(i + 1) for i in key.pinned),
                     f"{position:.2f}",
                     f"{key.angle_deg:.2f}",
                     f"{key.stop_angle_deg:.2f}",
                     f"{joint.in_plane_made_deg if key.kind == 'in_plane' else 0.0:.2f}",
                     f"{joint.out_of_plane_made_deg if key.kind != 'in_plane' else 0.0:.2f}",
                     f"{joint.twist_made_deg if key.kind != 'in_plane' else 0.0:.2f}",
+                    f"{result.plate_clear_of_key_mm:.2f}",
+                    "" if key.check else f"{result.plate_clear_of_head_mm:.2f}",
+                    f"{result.pin_clear_mm:.2f}",
+                    "" if key.check else f"{result.stress_mpa:.0f}",
+                    "yes" if result.ok else "see warning",
                     guide.instruction(key),
                 ]
             )

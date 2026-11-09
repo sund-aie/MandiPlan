@@ -151,6 +151,9 @@ class VolumeInfo:
 
 #: A bend past this share of a plate's limit at one hole rules the plate out.
 BEND_FATAL_SHARE = 2.0
+#: Of what a plate's bridge takes, this share is left to its turning in its own plane
+#: when it is laid along the jaw; the rest is for the bends out of it.
+IN_PLANE_SHARE = 0.75
 #: A hole this far into the bone is within what a rough surface reads, mm.
 COLLISION_TOLERANCE_MM = 0.3
 
@@ -276,6 +279,8 @@ class Session(QObject):
         self.plate_auto = False
         self.plate_placement = None
         self.plate_route = None
+        #: The automatic route along the plate, ``(points, outward)``, for seating it.
+        self._auto_course = None
         #: "neck": from the condylar neck past the far cut. "centred": on the resection.
         self.plate_course = "neck"
         self.plate_course_notes: list[str] = []
@@ -1339,7 +1344,7 @@ class Session(QObject):
                 )
             return False
         vertices = vtk_to_numpy(surface.GetPoints().GetData()).astype(float)
-        route = jaw_route(vertices, self.frames, asset.width_mm)
+        route = jaw_route(vertices, self.frames, asset.width_mm, self._in_plane_turn_limit(asset))
         if route is None:
             if not quiet:
                 self.message.emit("No route for a plate could be found along this jaw.")
@@ -1402,10 +1407,35 @@ class Session(QObject):
         self.plate_placement = placement
         self.plate_course_notes = notes
         self.plate_auto = True
+        self._auto_course = self._course_along(route, placement, active.hole_pitch_mm)
         self.plate_points = [np.asarray(p, dtype=float) for p in placement.points]
         self.plate_normals = [np.asarray(n, dtype=float) for n in placement.outward]
         self.update_plate_plan()
         return True
+
+    @staticmethod
+    def _in_plane_turn_limit(asset) -> float:
+        """How fast a plate may turn in its own plane along the jaw, degrees per mm:
+        a share of what one bridge takes, or what it was made with if more."""
+        own = np.abs(plate_turns(asset.hole_centres_mm, asset.hole_axes))
+        per_bridge = max(IN_PLANE_SHARE * float(asset.deformation.max_bend_deg_per_node),
+                         float(own.max()) if len(own) else 0.0)
+        return per_bridge / max(float(asset.hole_pitch_mm), 1e-6)
+
+    @staticmethod
+    def _course_along(route, placement, pitch_mm: float):
+        """The route itself from the plate's first hole to its last, a pitch past each:
+        what the plate is seated along, in its own hole order."""
+        first = int(np.argmin(np.linalg.norm(route.points - placement.points[0], axis=1)))
+        last = int(np.argmin(np.linalg.norm(route.points - placement.points[-1], axis=1)))
+        step = 1 if last >= first else -1
+        reach = int(np.ceil(pitch_mm))
+        lo = int(np.clip(first - step * reach, 0, len(route.s) - 1))
+        hi = int(np.clip(last + step * reach, 0, len(route.s) - 1))
+        index = np.arange(lo, hi + step, step)
+        if len(index) < 3:
+            return None
+        return route.points[index].copy(), route.outward[index].copy()
 
     def _cut_stock(self, stock, first: int, count: int) -> bool:
         """Keep these holes of the stock, unless that is what is already kept. Says
@@ -1700,6 +1730,7 @@ class Session(QObject):
                     asset.thickness_mm,
                     self.plate_clearance_mm,
                     asset.width_mm,
+                    hold_course_across=self.plate_auto and self._auto_course is not None,
                 )
             else:
                 paired, normals, _ = extend_targets(
@@ -1948,10 +1979,14 @@ class Session(QObject):
     def update_plate_plan(self) -> None:
         self.plate_plan = None
         if len(self.plate_points) >= 2:
-            path, normals = fair_plate_path(
-                np.vstack(self.plate_points), np.vstack(self.plate_normals),
-                smoothing_mm=max(3.0, self.plate.pitch_mm * 0.55),
-            )
+            if self.plate_auto and self._auto_course is not None:
+                # The jaw's own border, already fair: followed, not smoothed again.
+                path, normals = fair_plate_path(*self._auto_course, smoothing_mm=0.5)
+            else:
+                path, normals = fair_plate_path(
+                    np.vstack(self.plate_points), np.vstack(self.plate_normals),
+                    smoothing_mm=max(3.0, self.plate.pitch_mm * 0.55),
+                )
             self._plate_route = (path, normals)
             total = float(np.linalg.norm(np.diff(path, axis=0), axis=1).sum())
             if total >= self.plate.pitch_mm:
@@ -2017,6 +2052,8 @@ class Session(QObject):
         self.plate_points = state.plate_points
         self.plate_normals = state.plate_normals
         self.plate_auto = state.plate_auto
+        # The route along the jaw is the newer placement's: the restored holes stand.
+        self._auto_course = None
         if not state.cut_applied:
             self.fragment_surface = None
             self.retained_surface = None

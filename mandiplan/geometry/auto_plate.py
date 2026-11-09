@@ -4,11 +4,13 @@ Given only the jaw, the arch curve, any planned resection and a plate, this
 works out where that plate belongs, which holes to put screws in, and whether
 the plate is applicable at all.
 
-**The route.** A reconstruction plate runs along the outer face of the jaw just
-above its lower border, clear of the tooth roots and the nerve above it, and up
+**The route.** A reconstruction plate runs along the outer face of the jaw, its edge
+flush with the lower border, clear of the tooth roots and the nerve above it, and up
 the posterior border of the ramus to the condylar neck. At each station of the
 arch curve the bone's section is read for its lower border and its outer face at
 that height. The route stops at each neck: a plate does not lie on a condylar head.
+Round the angle of the jaw it turns no tighter than the plate can be bent in its own
+plane, so there, and only there, it leaves the border by as little as that allows.
 
 **The course.** With a resection, the plate starts at the neck nearer the resection
 and runs along the route, across the gap, to a few holes past the far cut: enough
@@ -40,8 +42,9 @@ import numpy as np
 
 from .plate_bend import _gaussian, _walk_chain
 
-#: The plate's lower edge stands this far above the jaw's lower border, mm.
-LOWER_BORDER_MARGIN_MM = 2.0
+#: The plate's lower edge stands this far above the jaw's lower border, mm: flush with
+#: it, as the AO describes a load-bearing plate, short of overhanging its rounded edge.
+LOWER_BORDER_MARGIN_MM = 0.5
 #: Stations of the route along the curve, and half the slice each reads, mm.
 ROUTE_STEP_MM = 1.0
 SECTION_HALF_MM = 1.2
@@ -50,6 +53,10 @@ SECTION_HALF_MM = 1.2
 SECTION_REACH_MM = (28.0, 50.0)
 #: Smoothing of the route, mm: a plate does not follow a bump this short.
 ROUTE_SMOOTH_MM = 5.0
+#: Rounding off a turn sharper than the plate can take: passes at most, and the length
+#: either side of a point the turn is measured over, mm: about half a bridge's spacing.
+TURN_CAP_PASSES = 400
+TURN_SPAN_MM = 4.0
 #: A gap this wide in a section of the jaw parts two pieces of bone, as the notch
 #: parts the neck from the coronoid process, mm.
 SECTION_GAP_MM = 3.0
@@ -164,8 +171,14 @@ class PlateVerdict:
     notes: list[str] = field(default_factory=list)
 
 
-def jaw_route(vertices: np.ndarray, frames, plate_width_mm: float) -> JawRoute | None:
-    """The line along the jaw a plate of this width lies on; None if there is none."""
+def jaw_route(
+    vertices: np.ndarray, frames, plate_width_mm: float, max_turn_deg_per_mm: float | None = None
+) -> JawRoute | None:
+    """The line along the jaw a plate of this width lies on; None if there is none.
+
+    ``max_turn_deg_per_mm`` is how sharply the plate may turn in its own plane: where
+    the border turns faster, at the angle of the jaw, the route rounds it off.
+    """
     vertices = np.asarray(vertices, dtype=float).reshape(-1, 3)
     if len(vertices) < 100:
         return None
@@ -228,6 +241,8 @@ def jaw_route(vertices: np.ndarray, frames, plate_width_mm: float) -> JawRoute |
     smooth = _gaussian(points[keep], sigma)
     faces = _gaussian(outward[keep], sigma)
     faces = faces / np.maximum(np.linalg.norm(faces, axis=1, keepdims=True), 1e-9)
+    if max_turn_deg_per_mm is not None and max_turn_deg_per_mm > 0.0:
+        smooth = capped_turning(smooth, faces, float(max_turn_deg_per_mm))
     s_kept, height_kept = stations[keep], height[keep]
     size = _gaussian((height_kept * breadth[keep])[:, None], NECK_SMOOTH_MM / ROUTE_STEP_MM).ravel()
     lo, neck_lo = _neck_end(s_kept, height_kept, size, float(plate_width_mm), False)
@@ -237,6 +252,50 @@ def jaw_route(vertices: np.ndarray, frames, plate_width_mm: float) -> JawRoute |
         lo, hi, neck_lo, neck_hi = 0, len(s_kept) - 1, None, None
     span = np.arange(lo, hi + 1)
     return JawRoute(s_kept[span], smooth[span], faces[span], height_kept[span], valid[keep][span], (neck_lo, neck_hi))
+
+
+def in_plane_turning(points: np.ndarray, outward: np.ndarray, span: int = 1) -> np.ndarray:
+    """How fast a line turns in the plane its faces lie in, degrees per mm: the turn a
+    plate laid along it would need in its own plane. Measured over ``span`` samples
+    either side of each point, from the ``span``-th to the ``span``-th from the end."""
+    points = np.asarray(points, dtype=float)
+    k = max(int(span), 1)
+    if len(points) < 2 * k + 1:
+        return np.zeros(0)
+    a = points[k:-k] - points[: -2 * k]
+    b = points[2 * k :] - points[k:-k]
+    n = np.asarray(outward, dtype=float)[k:-k]
+    a = a - np.einsum("ij,ij->i", a, n)[:, None] * n
+    b = b - np.einsum("ij,ij->i", b, n)[:, None] * n
+    turn = np.arctan2(np.einsum("ij,ij->i", np.cross(a, b), n), np.einsum("ij,ij->i", a, b))
+    length = 0.5 * (np.linalg.norm(a, axis=1) + np.linalg.norm(b, axis=1))
+    return np.degrees(np.abs(turn)) / np.maximum(length, 1e-9)
+
+
+def capped_turning(points: np.ndarray, outward: np.ndarray, max_turn_deg_per_mm: float) -> np.ndarray:
+    """``points`` rounded off only where they turn faster than a plate can, in its own
+    plane, over the length a plate's bridge has to turn in. Elsewhere they are left
+    exactly as they were."""
+    p = np.asarray(points, dtype=float).copy()
+    n = np.asarray(outward, dtype=float)
+    k = max(int(round(TURN_SPAN_MM / ROUTE_STEP_MM)), 1)
+    if len(p) < 2 * k + 3:
+        return p
+    for _ in range(TURN_CAP_PASSES):
+        rate = in_plane_turning(p, n, k)
+        over = np.zeros(len(p))
+        over[k:-k] = rate > max_turn_deg_per_mm
+        if not over.any():
+            break
+        # Eased in and out over a little more than the sharp turn, so the rounding
+        # leaves no kink of its own where it starts and stops.
+        weight = np.clip(3.0 * _gaussian(over[:, None], k)[:, 0], 0.0, 1.0)
+        weight[0] = weight[-1] = 0.0
+        moved = _gaussian(p, 0.5 * k) - p
+        # Within the plane of the plate only: off it the plate is seated on the bone.
+        moved -= np.einsum("ij,ij->i", moved, n)[:, None] * n
+        p += weight[:, None] * moved
+    return p
 
 
 def _neck_end(s: np.ndarray, height: np.ndarray, size: np.ndarray, plate_width: float, at_high_end: bool):

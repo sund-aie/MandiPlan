@@ -542,7 +542,7 @@ def _walk_chain(curve: np.ndarray, start: float, spacings: np.ndarray, step: flo
     return np.array(positions)
 
 
-def seat_plate_chain(projector, path, normals, spacings, thickness, clearance, width):
+def seat_plate_chain(projector, path, normals, spacings, thickness, clearance, width, hold_course_across=False):
     """Where a plate's holes go on the jaw: exactly spaced, seated and fair.
 
     ``projector`` finds the bone (``project``, ``footprint_normal``);
@@ -557,6 +557,11 @@ def seat_plate_chain(projector, path, normals, spacings, thickness, clearance, w
     the bone follows the jaw's form, and the plate's face turns only slowly.
     Where the fairing would sink the plate into a prominence it is lifted to
     rest on it, as a real plate does.
+
+    ``hold_course_across`` keeps where the route crosses the face of the bone, and fairs
+    only how it wraps round the jaw. A route worked out from the jaw is already where
+    the plate belongs across the face, on the border: fairing it there too, as clicks
+    need, lifts the plate off the border and cuts across the angle of the jaw.
     """
     path = np.asarray(path, dtype=float).reshape(-1, 3)
     normals = _unit(np.asarray(normals, dtype=float).reshape(-1, 3))
@@ -603,6 +608,11 @@ def seat_plate_chain(projector, path, normals, spacings, thickness, clearance, w
         faces[missing] = faces[np.maximum(np.flatnonzero(missing) - 1, 0)]
         up = _unit(_gaussian(faces, normal_sigma))
         course = _gaussian(bone, course_sigma)
+        if hold_course_across:
+            # Of the fairing, only what is along the route or off the face is kept.
+            across = _unit(np.cross(_unit(np.gradient(bone, axis=0)), up))
+            drift = course - bone
+            course = bone + drift - np.einsum("ij,ij->i", drift, across)[:, None] * across
         height = np.einsum("ij,ij->i", bone - course, up)
         curve = course + _gaussian(height, height_sigma)[:, None] * up
         if not seated.any():

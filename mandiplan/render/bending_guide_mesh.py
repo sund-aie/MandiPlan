@@ -218,8 +218,9 @@ def _lay_out(pieces, bed) -> list[list[vtk.vtkPolyData]]:
 
 
 def _flat_faces_only(points: np.ndarray, normals: np.ndarray) -> np.ndarray:
-    """Which contacts a rod must not make: all but the flat side turned to the bed.
-    The underside of a pin is turned to the bed too, but stands higher."""
+    """Which contacts a rod must not make: all but the flat side turned to the bed (a
+    press key's side, a check key's tray). The underside of a pin or of the head-side
+    curve is turned to the bed too, but stands higher."""
     return (normals[:, 2] > -ROD_FACE_COS) | (points[:, 2] > rods.lift_mm() + 0.05)
 
 

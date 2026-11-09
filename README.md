@@ -604,9 +604,10 @@ attribution; every table carries the disclaimer.
 ### The plate's course, and cutting off the excess
 
 Choose a plate in **5 · Plate**: that is the whole input. With a resection planned the
-plate starts at the condylar neck nearer the resection and runs on the outer face just
-above the lower border, up the ramus near its posterior border, across the gap, to
-four holes past the far cut (three if that is all it has). What is left of the plate is
+plate starts at the condylar neck nearer the resection and runs on the outer face with
+its edge flush with the lower border, half a millimetre above it, up the ramus along its
+posterior border, across the gap, to four holes past the far cut (three if that is all
+it has). What is left of the plate is
 for cutting off between holes, and the sign says how many holes that is. **Holes to
 keep** overrides the count, and a number set there stands until another plate is chosen.
 A plate that cannot reach that far is centred on the resection, and says so; a preformed
@@ -627,60 +628,84 @@ from the condylar neck: the closest is a fracture series with a long plate up th
 posterior ramus to the back of the condylar neck. The neck course is the default here
 because it is the practice this app was asked to follow. Choose **Centred** for the other.
 
-The plate is laid on the jaw as a whole. Its course across the bone is smoothed so the
-surface's texture does not reach it, its height follows the form of the jaw, and it rests
-on any prominence it would otherwise pass through. Holes stay exactly the plate's distance
-apart. Each lobe around a hole stays rigid and all the bending is in the bridges, as on
-the bench. Drawing a path by hand is still there, and takes over from all this.
+The plate is laid on the jaw as a whole, and stays on the border: the route is the jaw's
+own, and only the way the plate wraps round the arch is smoothed, never where it sits on
+the face. Round the angle of the jaw it turns in its own plane no faster than a quarter
+less than its bridges are rated for, so there, and only there, it leaves the border, by
+about 2 mm on the scans tried. It rests on any prominence it would otherwise pass through.
+Holes stay exactly the plate's distance apart. Each lobe around a hole stays rigid and all
+the bending is in the bridges, as on the bench. Drawing a path by hand is still there, and
+takes over from all this; a drawn path is smoothed more, as clicks need.
 
 ### Bend the plate on printed keys
 
 The **Bending guide (STL + table)** in **6 · Export** is one small printed key for each
-bend, made for this plate as cut and the bender chosen in **5 · Plate**. Each has its name
-raised on it (**A3** is the third bridge in the plate's plane, **B3** the same bridge out of
-its plane), its two pins are this plate's holes, oval on an oval-holed plate, and its two
-faces are this plate's surface either side of the bridge, in the finished shape, with
-the alloy's springback allowed for.
+bend, made for this plate as cut and the bender chosen in **5 · Plate**, each with its name
+raised on it: **A3** is the bridge between holes 3 and 4 in the plate's own plane, **B3**
+the same bridge out of it. In-plane bends come first, as the plate's maker says.
 
-With a three-point bender such as the DePuy Synthes 329.142, a key goes on the plate's
-convex side and nests in the arch of the head, with its shoulders under the two lobes:
+**B keys, pressed.** With a three-point bender such as the DePuy Synthes 329.142 (a round
+post on one jaw, two lobes with an arch between them on the other) a B key is a short
+block that sits up in the arch. Its underside is a shallow V: the plate's own surface
+over the two lobes either side of the bridge, in the finished shape with the alloy's
+springback allowed for. The post is the punch, the key the die.
 
-1. Seat the key's pins in the two holes it names, from the face it says.
-2. Rest the bender on it: the key in the arch, the post under the bridge.
-3. Press. The post pushes the plate until it lies flat on the key. Then the plate is
-   carried from end to end and can go no further, however hard the handles are pressed:
-   the angle comes from the key, not from the hand.
+1. Seat the key's round pin and flattened pin in the two holes it names, from the face it says.
+2. Put the key up into the bender's arch, the post under the bridge between the two holes.
+3. Squeeze. The post pushes the plate up into the V, bending it at the bridge, until both
+   lobes lie flat on the key. There each lobe is held between the post and the key, and
+   the bridge bends no further however hard you squeeze: the angle comes from the key.
 4. Let go, and go on to the next key in the order the table gives.
 
-Bends in the plate's own plane come first and then those out of it, as the plate's maker
-says; a twist goes in the key for that bridge's out-of-plane bend. With irons or forceps
-the key goes on the concave side instead and the plate is levered down onto it. A
+The key bears on the head's arch, not its lobes, so it is a solid block where the load
+goes through it; the lobes stand clear of the plate throughout. Past its two faces the key
+rises away steeply, so the rest of the plate, bent already or not yet, never touches it.
+The second pin is flattened along the plate, so that the two holes can close up or spread
+a little as the bridge between them bends without either pin binding. A twist goes in the
+same key as that bridge's out-of-plane bend; past about 8° start it with twisting irons.
+
+**A keys, checked.** A lobe of a plate is round about its hole, so a flat face cannot stop
+an in-plane bend: the lobe turns about its hole and still touches it. A keys are flat
+trays with pins for four holes, two either side of the bridge, where the planned turn puts
+them. Make the bend with your in-plane bender a little at a time, and lay the plate on the
+tray, bone face down, after each go: it is right when it lies flat with every pin in its
+hole.
+
+**Each key is checked before it is written.** Its press is followed in 12 steps, from the
+plate as it reaches the key to the stop, and the table gives what was found: how close the
+rest of the plate comes to the key and to the bender's head, how close each pin comes to
+its hole's wall, and the bending stress in the key at 2000 N on the post, a hard squeeze.
+On both scans tried, for three plates each, the rest of the plate stays 0.4 mm or more off
+the keys and 1 mm off the head, the pins 0.13 mm or more off their holes' walls, and the
+keys see 28 to 46 MPa, under half what a rigid printing resin takes in bending; the head
+has to open 4 to 5 mm. One key of the gold angled plate, where that bridge also twists 9°,
+comes to about 51 MPa and is named in a warning, as any key failing a check is.
+
+A plan on a real jaw turns a little at every bridge, so its turns are gathered into as few
+bends as keep every hole within 0.25 mm of the plan off the bone, and within 0.8 mm along
+it. The table says how close the result is, and how many keys that came to. With irons or
+forceps a B key goes on the concave side instead and the plate is levered down onto it. A
 template or wire kit has nothing for a key to stop and the app says so, keeping its plain
 bench steps. **Rehearse the bends on the keys** in **5 · Plate** shows each step on screen
 first: the plate at that step, its key, and the bender's head.
 
-A plan on a real jaw turns a little at every bridge, so its turns are gathered into as few
-bends as keep every hole within 0.25 mm of the plan off the bone, and within 0.8 mm along
-it. The table says how close the result is, and how many keys that came to.
-
-The file is ready to print: each key lies on its side on rods and a raft, laid out on your
-printer's bed, on as many beds as they need. The faces the plate lies on then stand
-upright, with no stair-stepping, and rods touch only the flat side. The folder beside it
-has each key alone, for a slicer's own supports.
+The file is ready to print: each B key lies on its side and each A key flat, on rods and a
+raft, laid out on your printer's bed, on as many beds as they need. The faces the plate lies
+on then stand upright, with no stair-stepping, and rods touch only the flat side. The folder
+beside it has each key alone, for a slicer's own supports.
 
 **Print the fit test first** (`-fit-test.stl`). It has a key for a known 15° bend on this
 plate, a gauge to lay on the plate after release, and a tab with pins of 0.05, 0.10 and
 0.15 mm play per side. Set **Pin play** to the tightest that goes in a real hole by hand.
 If the plate springs back short of the gauge, raise **Extra overbend** by what is missing.
-Both are under **Fit of the keys**.
+Both are under **Fit of the keys**. Squeeze the same way each time: how hard you squeeze at
+the stop changes the springback a little, and the fit test calibrates yours.
 
 **Your bender's head** in **6 · Export** holds the measurements a key is made to. Those
 of the 329.142 are estimated from one photograph, scaled by the plate engraved on the
-head, so measure yours: post diameter, how far apart the lobes are, the arch, and how
-wide it opens. A key's faces and pins do not depend on them. How it sits in the head does.
-In-plane keys go in with the plate on its edge, and if that is wider than the head
-opens the app says so: make those bends with the bender's nose or with irons, and check
-each on its key.
+head, so measure yours: post diameter, how far apart the lobes are, the arch's height and
+radius, and how wide it opens. A key's faces and pins do not depend on them. How it sits
+in the head does.
 
 ### Print a jaw for a smaller printer
 
@@ -838,9 +863,9 @@ export.
   real bending characteristics of the plate in your hand.
 - The bend keys have not been printed or used with a real plate and bender, nor the
   print kit's joints or rods printed. Each comes with a test print. The 329.142's head is
-  estimated from one photograph, its use with the plate on edge for in-plane bends is
-  assumed, and how a printed key stands up to the handles is a calculation, not a test.
-  A shape check cannot certify tool force, springback or the finished physical bend.
+  estimated from one photograph, and each key's press check is geometry and a beam
+  calculation, not a physical test: it cannot certify the force, the springback or the
+  finished bend. Which of the 329.142's heads makes in-plane bends is not known here.
 - The plate's course from the condylar neck follows the practice this app was asked to
   follow. The literature found supports the inferior and posterior borders and the screw
   counts, for fractures, not this course as a rule for resections.

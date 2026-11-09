@@ -836,12 +836,21 @@ def test_the_bends_can_be_rehearsed_on_the_keys_from_a_fresh_plate(window):
     assert solid is None and head is None, "no key yet: the plate as it comes"
     assert not window.view3d.guide_actor.GetVisibility()
     assert window.view3d.guide_plate_actor.GetVisibility()
-    panel.guide_next.click()
-    solid, head, on_key, _ = session.guide_preview()
-    assert solid is not None and solid.GetNumberOfCells() > 100
-    assert head is not None
-    assert window.view3d.guide_actor.GetVisibility() and window.view3d.guide_tool_actor.GetVisibility()
-    assert "Key " in panel.guide_text.text()
+    # Each key in turn: a check tray on its own, a press key in the bender's head.
+    seen = set()
+    for _ in range(session.guide_step_count - 2):
+        panel.guide_next.click()
+        key = session._guide_steps[session.guide_step].key
+        solid, head, on_key, _ = session.guide_preview()
+        assert solid is not None and solid.GetNumberOfCells() > 100
+        assert window.view3d.guide_actor.GetVisibility()
+        assert "Key " in panel.guide_text.text()
+        if key.check:
+            assert head is None and not window.view3d.guide_tool_actor.GetVisibility()
+        else:
+            assert head is not None and window.view3d.guide_tool_actor.GetVisibility()
+        seen.add(key.check)
+    assert False in seen, "at least one key is pressed"
     for _ in range(session.guide_step_count):
         panel.guide_next.click()
     assert "All the bends are made" in panel.guide_text.text()
@@ -953,8 +962,10 @@ def test_pin_play_and_extra_overbend_reach_the_keys(window):
     try:
         after = session.bending_guide()
         assert after.pin_diameter_mm == pytest.approx(before.pin_diameter_mm - 0.2)
-        if before.keys:
-            assert after.keys[0].stop_angle_deg == pytest.approx(before.keys[0].stop_angle_deg + 2.0, abs=0.05)
+        pressed = [k for k in before.keys if not k.check]
+        if pressed:
+            after_key = next(k for k in after.keys if k.name == pressed[0].name)
+            assert after_key.stop_angle_deg == pytest.approx(pressed[0].stop_angle_deg + 2.0, abs=0.05)
     finally:
         session.set_guide_setting("guide_pin_play_mm", 0.1)
         session.set_guide_setting("guide_extra_overbend_deg", 0.0)
@@ -988,7 +999,9 @@ def test_rehearsing_with_a_kit_that_has_no_keys_says_why(window):
         session.set_bending_kit("synthes-329-142")
 
 
-def test_a_cut_plane_grows_to_cover_the_bone_it_cuts(window):
+def test_a_cut_plane_is_a_square_just_covering_the_bone_it_cuts(window):
+    from mandiplan.ui.view3d import PLANE_HALF_SIZE_MM, PLANE_MARGIN_MM
+
     session = _fresh_plate_session(window)
     view = window.view3d
     session.clear_planes()
@@ -996,23 +1009,51 @@ def test_a_cut_plane_grows_to_cover_the_bone_it_cuts(window):
     i = frames.index_of(0.5 * frames.length_mm)
     session.add_plane(frames.points[i], frames.tangents[i])
     try:
-        from mandiplan.ui.view3d import PLANE_DRAWN_SHARE, PLANE_HALF_SIZE_MM
-        from vtkmodules.util.numpy_support import vtk_to_numpy
-
         plane = session.planes[0]
-        half = view._plane_half_size(plane.origin, plane.normal)
-        assert half >= PLANE_HALF_SIZE_MM
-        vertices = vtk_to_numpy(session.surface.GetPoints().GetData()).astype(float)
-        rel = vertices - np.asarray(plane.origin)
-        n = np.asarray(plane.normal) / np.linalg.norm(plane.normal)
-        off = rel @ n
-        flat = rel - off[:, None] * n
-        reach = np.linalg.norm(flat, axis=1)
-        section = reach[(np.abs(off) < 1.5) & (reach < 45.0)]
-        assert half * PLANE_DRAWN_SHARE >= section.max(), "the square covers the section"
+        normal = np.asarray(plane.normal) / np.linalg.norm(plane.normal)
+        source = view._plane_source(0)
+        o, p1, p2 = (np.array(v, dtype=float) for v in (source.GetOrigin(), source.GetPoint1(), source.GetPoint2()))
+        u, w = p1 - o, p2 - o
+        assert np.linalg.norm(u) == pytest.approx(np.linalg.norm(w)) and abs(u @ w) < 1e-6, "a square"
+        half = 0.5 * np.linalg.norm(u)
+        u, w = u / np.linalg.norm(u), w / np.linalg.norm(w)
+        centre = o + half * (u + w)
+        assert abs((centre - np.asarray(plane.origin)) @ normal) < 1e-6, "in the cut's own plane"
+        # Upright with the jaw: an edge runs up it.
+        _, up, _ = frames.frame_at(float(frames.s[i]))
+        assert max(abs(u @ up), abs(w @ up)) > 0.99
+        outline = view._plane_section(np.asarray(plane.origin, dtype=float), normal)
+        assert len(outline) > 20
+        rel = outline - centre
+        reach = np.maximum(np.abs(rel @ u), np.abs(rel @ w))
+        assert reach.max() <= half + 1e-6, "it covers the bone it cuts"
+        assert half <= max(reach.max() + PLANE_MARGIN_MM, PLANE_HALF_SIZE_MM) + 0.01, "and no more"
         # Out in the air it is its small self.
-        assert view._plane_half_size(np.array(plane.origin) + 500.0, plane.normal) == PLANE_HALF_SIZE_MM
-        bounds = view._plane_widgets[0].GetRepresentation().GetWidgetBounds()
-        assert 0.5 * (bounds[1] - bounds[0]) == pytest.approx(half, abs=0.01)
+        _, _, _, small = view._plane_square(np.asarray(plane.origin) + 500.0, normal)
+        assert small == PLANE_HALF_SIZE_MM
+    finally:
+        session.clear_planes()
+
+
+def test_an_executed_cut_leaves_the_view_and_is_not_moved_by_a_touch(window):
+    session = _fresh_plate_session(window)
+    view = window.view3d
+    session.clear_planes()
+    frames = session.frames
+    for s, flip in ((0.3 * frames.length_mm, False), (0.3 * frames.length_mm + 20.0, True)):
+        k = frames.index_of(s)
+        session.add_plane(frames.points[k], (-1.0 if flip else 1.0) * frames.tangents[k])
+    try:
+        assert all(widget.GetEnabled() for widget in view._plane_widgets)
+        session.execute_cut()
+        assert session.cut_applied
+        assert not any(widget.GetEnabled() for widget in view._plane_widgets), "gone once the cut is made"
+        before = session.placement(0).s_mm
+        rep = view._plane_widgets[0].GetRepresentation()
+        rep.SetOrigin(*(np.array(rep.GetOrigin()) + 15.0 * np.asarray(session.planes[0].normal)))
+        view._on_plane_moved(0)
+        assert session.cut_applied and session.placement(0).s_mm == pytest.approx(before)
+        session.undo_cut()
+        assert all(widget.GetEnabled() for widget in view._plane_widgets), "back to adjust after an undo"
     finally:
         session.clear_planes()

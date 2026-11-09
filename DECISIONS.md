@@ -205,25 +205,48 @@ plate's exact spacing.
 ## The bending guide is a key for each bend
 
 Replaces the comb with pins, which the owner found odd and hard to use. A comb only checks
-a bend after the fact: the hand decides when to stop. A key stops the bend. It lies
-between the plate and the bender's head with the plate's finished shape on its faces, so the
-plate goes no further once flat on it, however hard the handles are pressed, and neither
-the angle nor the bender's exact kinematics come into it. Only two lobes of the plate touch
-its faces, which lift away beyond them, so earlier and later bends do not matter. Pins in the
-two holes locate it and are conical, so they stay engaged while the hole turns. It is
-printed on its side so those faces are upright.
+a bend after the fact: the hand decides when to stop. A key stops the bend. It is a die,
+the bender's post the punch: the plate is pushed into the key's shallow V until its two
+lobes lie on it, and then each lobe is held between the post and the key and the bridge
+carries no more moment however hard the handles are pressed. Order is from the maker:
+in-plane first, per the DePuy Synthes sternal guide for the 329.142. A printed bending form
+is not new: Song et al. (J Korean Assoc Oral Maxillofac Surg 2021;47:233) printed upper and
+lower supports for a press, with a rod to locate the plate. That is one case report.
 
-Order and force are from the maker: in-plane first, per the DePuy Synthes sternal guide for
-the 329.142. The bridge's plastic moment is about 4.5 N·m on a 2.4 plate, so about 1000 N
-on the key at a 9 mm reach, about 40-60 MPa in the key: a calculation, to be checked on the
-fit test. A printed bending form is not new: Song et al. (J Korean Assoc Oral Maxillofac
-Surg 2021;47:233) printed upper and lower supports for a press, with a rod to locate the
-plate and rounded edges against stress. That is one case report.
+The owner asked for the keys to be tested, and following each press step by step changed
+the first design three ways. It bore on the head's lobes through thin ends, about 3.6 mm
+under them; at a hard squeeze, 2000 N on the post, that is about 160 MPa, more than printing
+resin takes, so a key now sits up in the arch and bears on it, the lobes clear of the
+plate. Its ends rose only 8 degrees past its faces, so a bend over about 16 degrees ran the
+fresh plate into them; they now rise at 60. And an in-plane key cannot stop a bend at all:
+a lobe is round about its hole, so against a flat face it turns about the hole and still
+touches it. In-plane keys are therefore trays to check on, with pins in four holes, not
+press keys. The second pin of every key is flattened along the plate, as fixtures for two
+holes do, so the holes can close or spread as the bridge bends without binding.
 
 The plan's small turns are gathered, since a key per bridge per direction came to 34 keys
 for an 18-hole plate. In-plane error only moves a hole along the bone, so it gets 0.8 mm;
 out-of-plane error lifts the plate off it, so it gets 0.25 mm. The plate in the app is the
-plan; the plate the keys make is within what the table states, and the rehearsal draws the latter.
+plan; the plate the keys make is within what the table states, and the rehearsal draws the
+latter.
+
+## The plate lies flush with the border
+
+The owner found the plate high on the jaw. The route was right, 2 mm above the lower border,
+but seating the plate faired its course across the bone over about 13 mm, which is right for
+clicks and wrong for a route already on the border: it lifted the plate 2 to 5 mm in the body
+and up to 11 mm across the angle of the jaw. Now the route's edge is 0.5 mm above the border,
+only the wrap round the arch is faired, and the angle is rounded just enough for the plate's
+in-plane bending, a quarter under its bridge's rating.
+
+## A cut plane is a square sized to the bone
+
+VTK draws an unclipped plane the length of its box's diagonal, about 3.5 times the box's
+half-size, so a plane meant to cover the bone came out nearly twice too big. The square is
+now drawn directly, upright with the jaw, centred on the outline of the bone the plane cuts
+and just covering it, and redrawn as it is dragged. The widget's origin is moved to that
+centre, on the same plane, and what it reports is taken back to the cut. Once a cut is
+executed its planes leave the view, and nothing can move them until Undo cut.
 
 ## A plate runs from the condylar neck
 

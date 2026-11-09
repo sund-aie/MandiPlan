@@ -81,9 +81,9 @@ def test_the_route_runs_on_the_outer_face_above_the_lower_border(jaw, route):
     # Halfway round the chin: the middle of the jaw.
     i = int(np.argmin(np.abs(route.s - 0.5 * frames.length_mm)))
     point = route.points[i]
-    # A tube of radius 9 about z = 0: a plate 8 wide, its edge 2 above the border,
-    # has its middle 6 above the border, so at z = -3.
-    assert point[2] == pytest.approx(-3.0, abs=1.5)
+    # A tube of radius 9 about z = 0: a plate 8 wide, its edge flush with the border,
+    # half a millimetre above it, has its middle 4.5 above the border, so at z = -4.5.
+    assert point[2] == pytest.approx(-4.5, abs=1.5)
     # On the outside of the arch, on the bone, not on its far side.
     assert point[1] < -55.0
     assert route.outward[i] @ np.array([0.0, -1.0, 0.0]) > 0.9
@@ -413,3 +413,28 @@ def test_notes_say_what_was_done_with_the_plate():
     verdict = judge_plate(holes, np.arange(10) * 10.0, None, None, notes=["Cut off 4 holes."])
     assert verdict.level == GOOD and verdict.notes == ["Cut off 4 holes."]
     assert "Cut off 4 holes." not in verdict.reasons
+
+
+def test_round_the_angle_the_route_turns_no_faster_than_the_plate_can():
+    from mandiplan.geometry.auto_plate import TURN_SPAN_MM, in_plane_turning
+
+    frames, vertices, neck = _necked_jaw()
+    free = jaw_route(vertices, frames, 6.0)
+    limit = 1.5
+    capped = jaw_route(vertices, frames, 6.0, max_turn_deg_per_mm=limit)
+    span = int(TURN_SPAN_MM)
+    assert in_plane_turning(free.points, free.outward, span).max() > limit, "the jaw turns faster at its angle"
+    assert in_plane_turning(capped.points, capped.outward, span).max() <= limit * 1.05
+    # Only where it turns too fast: along the straight body the route is the same.
+    moved = np.linalg.norm(capped.points - free.points, axis=1)
+    assert moved[:12].max() < 0.02
+    assert moved.max() < 6.0
+
+
+def test_capping_leaves_a_line_that_turns_slowly_alone():
+    from mandiplan.geometry.auto_plate import capped_turning
+
+    s = np.linspace(0.0, np.pi / 3.0, 120)
+    arc = np.column_stack([60.0 * np.sin(s), 60.0 * (1.0 - np.cos(s)), np.zeros_like(s)])
+    out = np.tile([0.0, 0.0, 1.0], (len(s), 1))
+    np.testing.assert_allclose(capped_turning(arc, out, 2.0), arc)

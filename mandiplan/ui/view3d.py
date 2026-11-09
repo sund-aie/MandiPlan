@@ -46,17 +46,15 @@ ARCH_COLOUR = (0.278, 0.600, 0.502)      # muted green: the planning curve
 MARK_COLOUR = (0.902, 0.678, 0.200)      # amber, active editing state only
 GRAFT_COLOUR = (0.600, 0.792, 0.776)     # pale teal: the mirrored segment
 NO_DONOR_COLOUR = (0.839, 0.706, 0.478)  # muted sand: no mirror donor there
-#: Half the side of the box a cut plane is drawn in, mm: a jaw's height.
+#: Half the side of a cut plane's square where it crosses no bone, mm.
 PLANE_HALF_SIZE_MM = 11.0
-#: The bone a cut goes through is read within this of its plane, out to this far from
-#: its centre, which keeps it from taking in the far side of the arch, mm.
-PLANE_SECTION_SLAB_MM = 1.5
+#: The bone a cut goes through is read out to this far from its centre, which keeps
+#: it from taking in the far side of the arch; outlines this close count as one, mm.
 PLANE_SECTION_REACH_MM = 45.0
-PLANE_SECTION_GAP_MM = 4.0
-#: How far the drawn plane runs past the bone, mm; the half-edge of the drawn square as
-#: a share of the half-size of its box; and how much the size must change to be redone.
-PLANE_MARGIN_MM = 3.0
-PLANE_DRAWN_SHARE = 1.025
+PLANE_SECTION_LINK_MM = 3.0
+#: How far the drawn square runs past the bone, and how much its size must change to
+#: be redrawn during a drag, mm.
+PLANE_MARGIN_MM = 2.0
 PLANE_RESIZE_STEP_MM = 1.0
 GUIDE_COLOUR = (0.45, 0.6, 0.8)
 #: The screw plan's hole markers: size, and what their colours mean.
@@ -350,6 +348,9 @@ class View3D(QWidget):
         self._guide_view_step = None
         self._plane_surface = None
         self._plane_vertices = None
+        self._plane_triangles = None
+        self._plane_halves: dict[int, float] = {}
+        self._plane_offsets: dict[int, np.ndarray] = {}
         self._saved_visibility: list[tuple] = []
 
         self.mark_glyph = vtk.vtkGlyph3D()
@@ -760,55 +761,142 @@ class View3D(QWidget):
                 widget = self._plane_widgets.pop()
                 widget.Off()
                 widget.SetInteractor(None)
+            # Whether they show at all is decided first, so nothing below can leave a
+            # cut on the screen, or draggable, once it has been executed.
+            shown = not self.session.cut_applied and not self._guide_view_shown
+            faded = self.session.reconstructed_surface is not None
             for index, plane in enumerate(self.session.planes):
-                # The box only sizes the plane: it is drawn as a square centred
-                # on the cut, whatever its angle, and is free to leave the box
-                # during a drag. (Cropped to the box, an oblique plane is a
-                # hexagon, and it stops following the mouse at the box's walls.)
-                # It grows to cover the bone it cuts.
-                half = self._plane_half_size(plane.origin, plane.normal)
-                box = [float(c) + sign * half for c in plane.origin for sign in (-1.0, 1.0)]
                 if index >= len(self._plane_widgets):
-                    self._plane_widgets.append(self._make_plane_widget(index, box))
-                rep = self._plane_widgets[index].GetRepresentation()
-                rep.PlaceWidget(box)
-                rep.SetOrigin(*(float(v) for v in plane.origin))
-                rep.SetNormal(*(float(v) for v in plane.normal))
-                # Over a finished reconstruction the planes are reference
-                # lines, not the subject: keep them grabbable but faint.
-                faded = self.session.reconstructed_surface is not None
+                    self._plane_widgets.append(self._make_plane_widget(index, self._plane_box(plane.origin)))
+                widget = self._plane_widgets[index]
+                widget.SetEnabled(shown)
+                # Over a finished reconstruction the planes are reference lines, faint,
+                # and not to be caught by accident: the panel's numbers move them.
+                widget.SetProcessEvents(shown and not faded)
+                rep = widget.GetRepresentation()
                 rep.GetPlaneProperty().SetOpacity(0.08 if faded else 0.35)
-                self._plane_widgets[index].SetEnabled(not self.session.cut_applied)
+                if not shown:
+                    continue
+                # The square is drawn round the middle of the bone it cuts, a point of
+                # the same plane; what the widget reports is taken back to the cut.
+                up, side, centre, half = self._plane_square(plane.origin, plane.normal)
+                self._plane_offsets[index] = centre - np.asarray(plane.origin, dtype=float)
+                rep.PlaceWidget(self._plane_box(centre))
+                rep.SetOrigin(*(float(v) for v in centre))
+                rep.SetNormal(*(float(v) for v in plane.normal))
+                rep.BuildRepresentation()
+                self._shape_plane(index, centre, up, side, half)
         finally:
             self._syncing = False
 
-    def _plane_half_size(self, origin, normal) -> float:
-        """The box half-size whose square covers the bone this cut goes through."""
-        surface = self.session.surface
-        if surface is None or not surface.GetNumberOfPoints():
-            return PLANE_HALF_SIZE_MM
-        if self._plane_surface is not surface:
-            from vtkmodules.util.numpy_support import vtk_to_numpy
+    @staticmethod
+    def _plane_box(origin):
+        return [float(c) + sign * PLANE_HALF_SIZE_MM for c in origin for sign in (-1.0, 1.0)]
 
-            self._plane_surface = surface
-            self._plane_vertices = vtk_to_numpy(surface.GetPoints().GetData()).astype(float)
-        rel = self._plane_vertices - np.asarray(origin, dtype=float)
+    def _plane_square(self, origin, normal, centre=None):
+        """The square to draw for a cut: ``(up, side, centre, half)``. Its edges run
+        along the jaw's height and across it; it is centred on the outline of the bone
+        the cut goes through, or on ``centre`` if given, and just covers that outline."""
         n = np.asarray(normal, dtype=float)
         n = n / max(float(np.linalg.norm(n)), 1e-9)
-        off = rel @ n
-        flat = rel - off[:, None] * n
-        reach = np.einsum("ij,ij->i", flat, flat)
-        near = (np.abs(off) < PLANE_SECTION_SLAB_MM) & (reach < PLANE_SECTION_REACH_MM**2)
-        if not near.any():
-            return PLANE_HALF_SIZE_MM
-        # Out from the cut's centre until there is a gap: past it, another part of the
-        # jaw is merely in the same plane, as the far side of the arch can be.
-        radii = np.sqrt(np.sort(reach[near]))
-        gaps = np.flatnonzero(np.diff(radii) > PLANE_SECTION_GAP_MM)
-        section = float(radii[gaps[0]]) if len(gaps) else float(radii[-1])
-        # A square of any turn covers this circle, the margin being what shows round it.
-        radius = section + PLANE_MARGIN_MM
-        return max(PLANE_HALF_SIZE_MM, radius / PLANE_DRAWN_SHARE)
+        o = np.asarray(origin, dtype=float)
+        frames = self.session.frames
+        up = np.array([0.0, 0.0, 1.0])
+        if frames is not None:
+            up = frames.frame_at(float(frames.s[int(np.argmin(np.linalg.norm(frames.points - o, axis=1)))]))[1]
+        up = up - (up @ n) * n
+        if np.linalg.norm(up) < 1e-6:
+            up = np.cross(n, [1.0, 0.0, 0.0])
+        up = up / np.linalg.norm(up)
+        side = np.cross(n, up)
+        middle = o if centre is None else np.asarray(centre, dtype=float)
+        half = PLANE_HALF_SIZE_MM
+        try:
+            outline = self._plane_section(o, n)
+            if len(outline):
+                rel = outline - o
+                a, b = rel @ up, rel @ side
+                if centre is None:
+                    middle = o + 0.5 * (a.min() + a.max()) * up + 0.5 * (b.min() + b.max()) * side
+                rel = outline - middle
+                half = max(half, float(np.max(np.maximum(np.abs(rel @ up), np.abs(rel @ side)))) + PLANE_MARGIN_MM)
+        except Exception:  # noqa: BLE001 - a square of the usual size will do
+            pass
+        return up, side, middle, half
+
+    def _plane_section(self, origin: np.ndarray, normal: np.ndarray) -> np.ndarray:
+        """Points on the outline of the bone the plane cuts at ``origin``: the outline
+        nearest it, and any inside that one, as the marrow's is."""
+        from vtkmodules.util.numpy_support import vtk_to_numpy
+
+        surface = self.session.surface
+        if surface is None or not surface.GetNumberOfPolys():
+            return np.zeros((0, 3))
+        if self._plane_surface is not surface:
+            self._plane_surface = surface
+            self._plane_vertices = vtk_to_numpy(surface.GetPoints().GetData()).astype(float)
+            self._plane_triangles = vtk_to_numpy(surface.GetPolys().GetConnectivityArray()).reshape(-1, 3)
+        vertices, triangles = self._plane_vertices, self._plane_triangles
+        rel = vertices - origin
+        near = np.einsum("ij,ij->i", rel, rel) < PLANE_SECTION_REACH_MM**2
+        side = (rel @ normal) > 0.0
+        crossing = (side[triangles].any(axis=1) & ~side[triangles].all(axis=1)) & near[triangles].all(axis=1)
+        if not crossing.any():
+            return np.zeros((0, 3))
+        # Where each edge of those triangles crosses the plane.
+        tri = triangles[crossing]
+        points = []
+        for i, j in ((0, 1), (1, 2), (2, 0)):
+            a, b = tri[:, i], tri[:, j]
+            cuts = side[a] != side[b]
+            da, db = rel[a[cuts]] @ normal, rel[b[cuts]] @ normal
+            w = (da / (da - db))[:, None]
+            points.append(vertices[a[cuts]] + w * (vertices[b[cuts]] - vertices[a[cuts]]))
+        points = np.vstack(points)
+        # The outline nearest the cut's centre, grown along the points it runs through.
+        taken = np.zeros(len(points), dtype=bool)
+        frontier = [int(np.argmin(np.linalg.norm(points - origin, axis=1)))]
+        taken[frontier[0]] = True
+        while frontier:
+            here = points[frontier]
+            close = np.zeros(len(points), dtype=bool)
+            for chunk in range(0, len(here), 256):
+                d = np.linalg.norm(points[None, :, :] - here[chunk : chunk + 256, None, :], axis=2)
+                close |= (d < PLANE_SECTION_LINK_MM).any(axis=0)
+            fresh = close & ~taken
+            taken |= fresh
+            frontier = list(np.flatnonzero(fresh))
+        main = points[taken]
+        low, high = main.min(axis=0), main.max(axis=0)
+        inside = np.all((points >= low) & (points <= high), axis=1)
+        return points[taken | inside]
+
+    def _shape_plane(self, index: int, centre, up, side, half) -> None:
+        """Draw the cut as its own square, upright with the jaw, sized to the bone."""
+        source = self._plane_source(index)
+        if source is None:
+            return
+        centre = np.asarray(centre, dtype=float)
+        source.SetOrigin(*(centre - half * up - half * side))
+        source.SetPoint1(*(centre + half * up - half * side))
+        source.SetPoint2(*(centre - half * up + half * side))
+        source.Update()
+        self._plane_halves[index] = half
+
+    def _plane_source(self, index: int):
+        """The plane source a cut's widget draws its square from."""
+        if index >= len(self._plane_widgets):
+            return None
+        props = vtk.vtkPropCollection()
+        self._plane_widgets[index].GetRepresentation().GetActors(props)
+        props.InitTraversal()
+        for _ in range(props.GetNumberOfItems()):
+            prop = props.GetNextProp()
+            if prop is not None and prop.IsA("vtkActor"):
+                algorithm = prop.GetMapper().GetInputAlgorithm()
+                if algorithm is not None and algorithm.IsA("vtkPlaneSource"):
+                    return algorithm
+        return None
 
     def _make_plane_widget(self, index: int, bounds) -> vtk.vtkImplicitPlaneWidget2:
         rep = vtk.vtkImplicitPlaneRepresentation()
@@ -855,19 +943,20 @@ class View3D(QWidget):
         rep = self._plane_widgets[index].GetRepresentation()
         # Deliberately does not read GetNormal(): dragging a plane along the jaw
         # translates it, and must not re-angle it. Angulation is set explicitly.
-        origin = np.array(rep.GetOrigin(), dtype=float)
+        if self.session.cut_applied or self.session.reconstructed_surface is not None:
+            return  # an executed cut is not moved by touching where it was
+        drawn = np.array(rep.GetOrigin(), dtype=float)
+        origin = drawn - self._plane_offsets.get(index, np.zeros(3))
         self._syncing = True
         try:
             self.plane_translated.emit(index, origin)
             if index < len(self.session.planes):
-                # Grow or shrink with the bone it is passing over, as it moves.
-                half = self._plane_half_size(origin, self.session.planes[index].normal)
-                bounds = rep.GetWidgetBounds()
-                if abs(0.5 * (bounds[1] - bounds[0]) - half) > PLANE_RESIZE_STEP_MM:
-                    normal = rep.GetNormal()
-                    rep.PlaceWidget([float(c) + sign * half for c in origin for sign in (-1.0, 1.0)])
-                    rep.SetOrigin(*origin)
-                    rep.SetNormal(*normal)
+                # Grow or shrink with the bone it is passing over, as it moves. The
+                # square is redrawn in place: the drag itself is left alone.
+                normal = self.session.planes[index].normal
+                up, side, centre, half = self._plane_square(origin, normal, centre=drawn)
+                if abs(self._plane_halves.get(index, 0.0) - half) > PLANE_RESIZE_STEP_MM:
+                    self._shape_plane(index, centre, up, side, half)
         finally:
             self._syncing = False
 
