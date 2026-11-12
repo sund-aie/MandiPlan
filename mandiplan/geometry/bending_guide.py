@@ -376,7 +376,7 @@ class DieBody(GuidePart):
 _SEGMENTS = {
     "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc",
     "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcfgd",
-    "A": "abcefg", "B": "cdefg",
+    "A": "abcefg", "B": "cdefg", "P": "abefg",
 }
 
 

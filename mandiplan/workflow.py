@@ -24,6 +24,8 @@ class StepStatus:
     done: bool
     blocked_by: str  # empty when the step can be worked on
     summary: str  # what has been achieved, or what to do next
+    #: An optional step left out: passed over as done, but with no tick.
+    skipped: bool = False
 
     @property
     def available(self) -> bool:
@@ -106,6 +108,27 @@ def _plate_step(session) -> tuple[bool, str, str]:
     return True, "", f"{plate} on a {session.plate_plan.total_length_mm:.1f} mm path."
 
 
+#: The fibula step left out: what its summary says.
+FIBULA_SKIPPED = "Optional: open a CT of the legs to plan a fibula graft."
+
+
+def _fibula_step(session) -> tuple[bool, str, str]:
+    graft = getattr(session, "fibula", None)
+    if not session.planes:
+        return False, "a resection", "Place the cuts first; then, if a fibula is to be used, open a CT of the legs."
+    if graft is None or graft.scan is None:
+        return True, "", FIBULA_SKIPPED
+    if graft.plan is None:
+        return False, "", graft.problem or "Plan the pieces."
+    plan = graft.plan
+    return (
+        True,
+        "",
+        f"{len(plan.pieces)} piece(s) from the {graft.side} fibula, "
+        f"{plan.harvest_length_mm:.0f} mm of it, within {plan.deviation_mm:.1f} mm of the jaw.",
+    )
+
+
 def _export_step(session) -> tuple[bool, str, str]:
     if session.reconstruction is None and session.plate_plan is None:
         return False, "a reconstruction or a plate", "Reconstruct or plan a plate first."
@@ -120,6 +143,7 @@ STEPS = (
     ("Cuts", _resection_step),
     ("Reconstruction", _reconstruction_step),
     ("Plate", _plate_step),
+    ("Fibula graft", _fibula_step),
     ("Export", _export_step),
 )
 
@@ -136,6 +160,7 @@ def workflow_status(session) -> list[StepStatus]:
                 done=done,
                 blocked_by=blocked_by,
                 summary=summary,
+                skipped=summary == FIBULA_SKIPPED,
             )
         )
     return statuses

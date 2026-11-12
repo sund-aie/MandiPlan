@@ -1350,6 +1350,8 @@ class ExportPanel(QWidget):
         ("bends", "Bend table (CSV)", "Angle at every screw hole."),
         ("steps", "Bench steps (CSV)", "The bending steps for the chosen kit, in order."),
         ("resection", "Resection summary (CSV)", "Cut positions, angles and margins."),
+        ("fibula-guide", "Fibula cutting guide (STL + cut list)", "The guide that sits on the fibula with a slot or window for every cut and holes for its screws, checked in use; with the cut list: each piece, where its cuts cross the fibula and how they lean."),
+        ("fibula-pieces", "Fibula pieces in the jaw (STL)", "The planned pieces of fibula where they go in the jaw, to print with the jaw as a model."),
     )
     #: (what it is called, its name on the head, least, most)
     HEAD_FIELDS = (
@@ -1448,6 +1450,8 @@ class ExportPanel(QWidget):
             "bends": session.plate_plan is not None,
             "steps": bool(session.steps),
             "resection": session.report is not None,
+            "fibula-guide": session.fibula.plan is not None,
+            "fibula-pieces": session.fibula.plan is not None,
         }
         for key, button in self.buttons.items():
             button.setEnabled(ready[key])

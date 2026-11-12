@@ -408,3 +408,89 @@ def write_bending_guide(path: str | Path, guide, asset=None, bed=None, printer_n
                 ]
             )
     return path, table
+
+
+def fibula_plan_lines(graft) -> list[str]:
+    """What the fibula plan is, in words, for the head of its table."""
+    plan, fibula = graft.plan, graft.fibula
+    first, second = graft.end_names()
+    end = first if plan.pedicle_end == "first" else second
+    lines = [
+        f"Fibula graft: {len(plan.pieces)} piece(s) from the {fibula.side} fibula, found "
+        f"{fibula.length_mm:.0f} mm long in the leg CT as far as it is bone at {graft.threshold:.0f} HU.",
+        "Distances up the fibula are from the tip of the lateral malleolus as found in the CT; "
+        "where each cut crosses the middle of the bone.",
+        f"Fibula kept at the ankle: {graft.distal_keep_mm:.0f} mm; at the knee: {graft.proximal_keep_mm:.0f} mm.",
+        f"Taken: {plan.harvest_mm[0]:.1f} to {plan.harvest_mm[1]:.1f} mm up the fibula "
+        f"({plan.harvest_length_mm:.1f} mm); {plan.above_graft_mm:.0f} mm more is free above it for the vessels.",
+        f"The pieces keep within {plan.deviation_mm:.1f} mm of the rebuilt jaw; the vessels leave from the {end}.",
+        f"Each joint is a closing wedge; no piece is twisted on the next. The cutting guide sits on "
+        f"the {graft.guide_face} face.",
+    ]
+    check = graft.guide_check
+    if check is not None:
+        lines.append("Following the guide's use: " + " ".join(check.lines()))
+    lines.extend(f"Warning: {w}" for w in plan.warnings)
+    return lines
+
+
+def write_fibula_table(path: str | Path, graft) -> Path:
+    """The cut list: every piece, where its cuts are on the fibula, and how they lean."""
+    path = Path(path)
+    plan = graft.plan
+    up_the_leg = plan.pieces_up_the_leg()
+    order = {piece.number: k + 1 for k, piece in enumerate(up_the_leg)}
+    with path.open("w", newline="") as handle:
+        _write_header(handle, fibula_plan_lines(graft))
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "piece (along the jaw)",
+                "up the leg",
+                "length (mm)",
+                "lower cut (mm up the fibula)",
+                "upper cut (mm up the fibula)",
+                "lower cut lean (deg)",
+                "upper cut lean (deg)",
+                "joint to the next piece along the jaw (deg)",
+                "bone between it and the piece above it on the leg (mm)",
+            ]
+        )
+        for k, piece in enumerate(plan.pieces):
+            above = next((p for p in up_the_leg if p.s_distal > piece.s_proximal), None)
+            writer.writerow(
+                [
+                    piece.number,
+                    order[piece.number],
+                    _num(piece.length_mm),
+                    _num(piece.s_distal),
+                    _num(piece.s_proximal),
+                    _num(piece.distal_face.lean_deg),
+                    _num(piece.proximal_face.lean_deg),
+                    _num(plan.joint_angles_deg[k]) if k < len(plan.joint_angles_deg) else "",
+                    _num(above.s_distal - piece.s_proximal) if above is not None else "",
+                ]
+            )
+    return path
+
+
+def write_fibula_guide(path: str | Path, graft) -> tuple[Path, Path]:
+    """The fibula cutting guide, as checked, and its cut list beside it."""
+    path = Path(path)
+    if graft.guide_mesh() is None and not graft.make_guide():
+        raise ValueError("there is no fibula plan to make a guide for")
+    stl = write_surface_stl(path, graft.guide_mesh())
+    table = write_fibula_table(path.with_name(path.stem + "-cuts.csv"), graft)
+    return stl, table
+
+
+def write_fibula_pieces(path: str | Path, graft) -> Path:
+    """The fibula's pieces where they go in the jaw, as one STL."""
+    pieces = [p for p in graft.pieces_in_jaw if p.GetNumberOfPoints()]
+    if not pieces:
+        raise ValueError("there are no fibula pieces to export")
+    append = vtk.vtkAppendPolyData()
+    for piece in pieces:
+        append.AddInputData(piece)
+    append.Update()
+    return write_surface_stl(path, append.GetOutput())

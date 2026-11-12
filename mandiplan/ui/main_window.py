@@ -37,10 +37,13 @@ from ..exporting import (
     write_steps_csv,
     write_surface_stl,
     write_bending_guide,
+    write_fibula_guide,
+    write_fibula_pieces,
 )
 from ..geometry import cpr
 from ..geometry.cpr import cross_section_world_point
 from ..geometry.measure import angle_deg, distance_mm, format_mm
+from .fibula_panel import FibulaPanel
 from .image_view import ImageView, Overlay
 from .modes import Mode
 from .panels import (
@@ -185,6 +188,7 @@ class MainWindow(QMainWindow):
         self.resection_panel = ResectionPanel(self.session)
         self.reconstruction_panel = ReconstructionPanel(self.session)
         self.plate_panel = PlatePanel(self.session)
+        self.fibula_panel = FibulaPanel(self.session)
         self.export_panel = ExportPanel(self.session)
         for panel in (
             self.volume_panel,
@@ -192,6 +196,7 @@ class MainWindow(QMainWindow):
             self.resection_panel,
             self.reconstruction_panel,
             self.plate_panel,
+            self.fibula_panel,
             self.export_panel,
         ):
             # Scrolled, so a long page never widens the dock under the view.
@@ -211,6 +216,7 @@ class MainWindow(QMainWindow):
             self.session.reconstruction_changed,
             self.session.plate_changed,
             self.session.mandible_changed,
+            self.session.fibula.changed,
         ):
             signal.connect(self._refresh_step_titles)
 
@@ -232,6 +238,7 @@ class MainWindow(QMainWindow):
         self.toolbox.currentChanged.connect(self._leave_step_tool)
         self.toolbox.currentChanged.connect(self._open_plate_step)
         self.volume_panel.load_requested.connect(self.open_dicom_folder)
+        self.fibula_panel.leg_requested.connect(self.open_leg_folder)
         for panel in (
             self.arch_panel, self.resection_panel, self.plate_panel, self.reconstruction_panel
         ):
@@ -242,7 +249,7 @@ class MainWindow(QMainWindow):
         """Number, name and a tick for each finished step; the step's state
         in full as its tooltip."""
         for status in workflow_status(self.session):
-            mark = "  \u2713" if status.done else ""
+            mark = "  \u2713" if status.done and not status.skipped else ""
             self.toolbox.setItemText(status.index, f"{status.index + 1} · {status.title}{mark}")
             self.toolbox.setItemToolTip(status.index, status.summary)
 
@@ -554,6 +561,20 @@ class MainWindow(QMainWindow):
         if not folder:
             return
         self.load_folder(folder)
+
+    def open_leg_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Open the leg CT")
+        if not folder:
+            return
+        self.load_leg_folder(folder)
+
+    def load_leg_folder(self, folder: str) -> None:
+        try:
+            self.session.fibula.load_leg_folder(folder)
+        except DicomLoadError as error:
+            QMessageBox.critical(self, "Cannot load this series", str(error))
+            return
+        self.show_message(f"Loaded the leg CT {Path(folder).name}")
 
     def open_sample_scan(self) -> None:
         self.session.load_sample_scan()
@@ -888,7 +909,46 @@ class MainWindow(QMainWindow):
             "bends": self.export_bend_csv,
             "steps": self.export_steps_csv,
             "resection": self.export_resection_csv,
+            "fibula-guide": self.export_fibula_guide,
+            "fibula-pieces": self.export_fibula_pieces,
         }[key]()
+
+    def export_fibula_guide(self) -> None:
+        """Export the fibula cutting guide, checked in use, and its cut list."""
+        graft = self.session.fibula
+        if graft.plan is None:
+            self.show_message(graft.problem or "Plan the fibula graft first.")
+            return
+        path = self._save_path("Export fibula cutting guide", "STL files (*.stl)", "fibula-cutting-guide.stl")
+        if not path:
+            return
+        self.set_busy(True)
+        try:
+            stl, table = write_fibula_guide(path, graft)
+        except (ValueError, OSError) as error:
+            self.show_message(f"Could not export the fibula guide: {error}")
+            return
+        finally:
+            self.set_busy(False)
+        self.session.note_export("fibula guide")
+        verdict = "checked in use" if graft.guide_check is not None and graft.guide_check.ok else "with a fault the check found"
+        self.show_message(f"Fibula guide ({verdict}) written to {stl}; the cuts in {table.name}")
+
+    def export_fibula_pieces(self) -> None:
+        graft = self.session.fibula
+        if graft.plan is None:
+            self.show_message(graft.problem or "Plan the fibula graft first.")
+            return
+        path = self._save_path("Export fibula pieces", "STL files (*.stl)", "fibula-pieces-in-jaw.stl")
+        if not path:
+            return
+        try:
+            write_fibula_pieces(path, graft)
+        except (ValueError, OSError) as error:
+            self.show_message(f"Could not export the fibula pieces: {error}")
+            return
+        self.session.note_export("fibula pieces")
+        self.show_message(f"Fibula pieces written to {path}")
 
     def export_bending_guide(self) -> None:
         """Export the bend keys, ready to print, and their table."""

@@ -151,7 +151,7 @@ def test_the_step_headers_carry_each_steps_state(window):
     """One list of steps: the page headers, ticked when done, with no second
     step bar repeating them."""
     toolbox = window.toolbox
-    assert toolbox.count() == 6
+    assert toolbox.count() == 7
     assert toolbox.itemText(0).startswith("1 · Scan and mandible")
     assert "\u2713" in toolbox.itemText(0)
     assert "\u2713" in toolbox.itemText(1)
@@ -328,6 +328,79 @@ def test_the_reconstruction_can_be_refined_by_hand_and_exported(window, tmp_path
     window.set_mode(Mode.NAVIGATE)
     assert window.view3d.interactor.GetInteractorStyle() is window.view3d.camera_style
     session.clear_planes()
+
+
+def test_a_fibula_graft_is_planned_from_a_ct_of_the_legs(window, tmp_path):
+    from make_leg_phantom import LegSpec, make_leg_phantom
+
+    from mandiplan.constants import DISCLAIMER
+    from mandiplan.exporting import write_fibula_guide, write_fibula_pieces
+    from mandiplan.workflow import workflow_status
+
+    session = window.session
+    view = window.view3d
+    panel = window.fibula_panel
+    session.clear_planes()
+    mid = session.frames.length_mm / 2.0
+    for s, sign in ((mid + 5.0, +1.0), (mid + 35.0, -1.0)):
+        index = session.frames.index_of(s)
+        session.add_plane(session.frames.points[index], sign * session.frames.tangents[index])
+    session.build_reconstruction()
+    graft = session.fibula
+    assert workflow_status(session)[5].skipped, "optional until a leg CT is opened"
+    assert "\u2713" not in window.toolbox.itemText(5)
+
+    graft.set_scan(make_leg_phantom(LegSpec(side="both", spacing=(0.8, 0.8, 1.0))))
+    assert sorted(f.side for f in graft.fibulae) == ["left", "right"]
+    graft.set_setting("min_piece_mm", 12.0)
+    plan = graft.plan
+    assert plan is not None, graft.problem
+    # A tight little jaw: the 30 mm defect takes two pieces to follow it.
+    assert len(plan.pieces) == 2 and plan.deviation_mm <= 2.0
+    assert workflow_status(session)[5].done and "\u2713" in window.toolbox.itemText(5)
+    # The pieces are shown in the jaw, the rebuilt shape see-through round them.
+    assert view.fibula_pieces_actor.GetVisibility()
+    assert view.fibula_pieces_mapper.GetInput().GetNumberOfPoints() > 100
+    assert view.graft_actor.GetProperty().GetOpacity() < 1.0
+    assert panel.table.rowCount() == 2
+    assert "pieces along" in panel.summary.text()
+
+    # The leg view: the fibula with its cuts, the jaw put away, and back.
+    panel.leg_view.setChecked(True)
+    assert view.leg_bone_actor.GetVisibility() and view.leg_cuts_actor.GetVisibility()
+    assert not view.graft_actor.GetVisibility() and not view.fibula_pieces_actor.GetVisibility()
+    panel.leg_view.setChecked(False)
+    assert not view.leg_bone_actor.GetVisibility()
+    assert view.graft_actor.GetVisibility() and view.fibula_pieces_actor.GetVisibility()
+
+    # The cutting guide: made for the plan, followed in use, shown on the leg, written out.
+    panel.guide_button.click()
+    assert graft.guide_check is not None and graft.guide_check.ok, graft.guide_check.lines()
+    assert "the guide works" in panel.guide_report.text()
+    panel.leg_view.setChecked(True)
+    assert view.leg_guide_actor.GetVisibility()
+    panel.leg_view.setChecked(False)
+    stl, table = write_fibula_guide(tmp_path / "guide.stl", graft)
+    assert stl.stat().st_size > 10_000
+    text = table.read_text()
+    assert DISCLAIMER in text and "lower cut (mm up the fibula)" in text
+    assert len([line for line in text.splitlines() if not line.startswith("#")]) == 1 + len(plan.pieces)
+    assert write_fibula_pieces(tmp_path / "pieces.stl", graft).stat().st_size > 10_000
+    # A change to the plan drops the guide: it was made for the plan as it was.
+    graft.set_setting("roll_deg", 30.0)
+    assert graft.guide is None and graft.guide_check is None
+    graft.set_setting("roll_deg", 0.0)
+
+    # The other leg gives the other fibula; the plan follows.
+    other = "left" if graft.side == "right" else "right"
+    graft.choose_side(other)
+    assert graft.plan is not None and graft.fibula.side == other
+
+    # Without the cuts there is nothing to plan for.
+    session.clear_planes()
+    assert graft.plan is None and "cuts" in graft.problem
+    assert not view.fibula_pieces_actor.GetVisibility()
+    graft.set_scan(None)
 
 
 def test_a_defect_across_the_midline_is_reported_as_partly_unmirrorable(window):
@@ -729,7 +802,7 @@ def test_dragging_the_view_never_adds_plate_points(window):
     session.remove_last_plate_point()
 
     # Moving on to Export puts the plate tool down.
-    window.toolbox.setCurrentIndex(5)
+    window.toolbox.setCurrentIndex(6)
     assert window.mode == Mode.NAVIGATE
     press_drag_release(0)
     assert len(session.plate_points) == before

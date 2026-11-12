@@ -320,7 +320,7 @@ as noise, which is a screenshot artifact and not what you see on screen.
 
 ## The workflow
 
-The planning panel is a numbered list of six steps, one page each. A step's
+The planning panel is a numbered list of seven steps, one page each. A step's
 header is ticked once it is done, and its tooltip says what has been achieved
 or what is still missing. The toolbar carries only the tools used in every
 step (navigate, measure, angle, the view directions, undo); each step's own
@@ -596,10 +596,73 @@ two or more passes, followed by release and reseating on the checking form.
 A twist the selected kit cannot make is marked as requiring another tool.
 Any predicted springback allowance is an estimate to check after release.
 
-**6 · Export.** Every file in one place: the reconstructed jaw, the mirrored
+**6 · Fibula graft** (optional). *Open the leg CT…*: a CT, or CT angiogram, of
+the lower legs, in its own DICOM folder. Each fibula in it is found by itself,
+slice by slice: in each leg the large bone is the tibia and the smaller one
+beside it the fibula, followed from the ankle to the knee. With both legs in
+the scan, choose the leg. Nothing of the leg's scan is moved into the jaw's but
+the planned pieces, each by its own rigid transform.
+
+The plan is made against the rebuilt jaw (the jaw as scanned, if it has not
+been rebuilt) between the two cuts:
+
+- **The course.** Section by section, where the fibula's middle has to run for
+  its lower edge to lie on the jaw's lower border and its outer side on the
+  jaw's outer face. *Above the lower border* raises it, for implants: up to
+  about 10 mm hardly shows.
+- **The pieces.** Straight pieces with their joints on the course, as few as
+  keep within 2 mm of it (the most 5), none shorter than 20 mm, or as many as you
+  choose. A 1 cm piece has no periosteal vessel of its own a third of the time;
+  over 2 cm, seldom.
+- **On the leg.** Each piece is a stretch of the fibula laid along its chord, the
+  most proximal at the end of the defect the vessels leave from (by default the
+  end towards the angle), the fibula's lateral side out of the jaw. No piece is
+  twisted on the next, so every joint is a plain closing wedge and the vessels
+  stay along one side; the panel says where they lie in the jaw, and *Turn about
+  its line* or the other leg moves them. The pieces follow each other up the
+  fibula from 70 mm above the tip of the lateral malleolus (Materialise keeps
+  70, KLS Martin 80, the surgical atlases 50 to 60), and 60 mm is left at the
+  knee, where the common peroneal nerve crosses the neck (no figure is
+  published). Between a joint's two cuts at least 1.5 mm of bone is left
+  everywhere, as BoneReconstructionPlanner leaves.
+
+The table gives each piece's length, where its lower end is up the fibula, how
+its two cuts lean, and the angle of its joint. *Show the leg* puts the jaw away
+and shows the fibula with its cuts and pieces where they lie in the leg.
+
+**The cutting guide.** *Make the cutting guide* builds it on the fibula as the
+CT shows it, at printing resolution: a shell 0.3 mm off the bone and 3 mm thick,
+wrapped 120° round the face it sits on; a slot 1.0 mm wide at each end of the
+graft and a window at each joint, in towers 8 mm high with 3 mm walls; holes for
+2.0 mm screws in every piece; the pieces' numbers raised on it, and a P at its
+proximal end. Each slot's wall on the kept piece's side lies on the planned
+cut, so wherever the blade runs in it the saw takes bone that is thrown away,
+never a piece. No part of it lies under the bone seen from its face, so it
+lifts straight off however its towers lean, and each screw's whole path, 8 mm
+into the bone, stays inside its own piece. Then its use is followed on the
+bone: it is seated, lifted off, a 0.6 mm blade is run down every slot and every
+screw is driven, and the panel says what was found. On the leg the tests use,
+it stands 0.30 mm off the bone at its closest, lifts straight off, a blade has
+0.4 mm of play in every slot, every slot reaches across the whole bone, no slot
+lets the saw into a kept piece, and every screw goes into its own piece 7 mm or
+more from its cuts.
+
+*Guide sits on* the lateral face, or the anterior, as DePuy offers. Each wedge
+narrows towards the outside of its bend, and a guide on the face where it
+narrows has to keep the joint's two cuts apart through its own depth too, so
+the pieces lie further apart on the leg. Which face takes less fibula depends
+on which way the bends go: round the arch the wedges narrow to the side that
+faces out of the jaw, the lateral unless the fibula is turned; where the lower
+border rises towards the angle, to the front or back. The panel plans both and
+says what the other face would take. Three pieces round the test arch took 118
+mm with the guide lateral and 98 mm anterior; a body defect on a real jaw tried,
+84 mm lateral and 91 anterior.
+
+**7 · Export.** Every file in one place: the reconstructed jaw, the mirrored
 segment alone, the resected segment, the bent plate, the bend keys, the bend
-table, the bench steps and the resection summary. Every STL carries the
-attribution; every table carries the disclaimer.
+table, the bench steps, the resection summary, the fibula cutting guide with
+its cut list, and the fibula's pieces where they go in the jaw. Every STL
+carries the attribution; every table carries the disclaimer.
 
 ### The plate's course, and cutting off the excess
 
@@ -639,7 +702,7 @@ takes over from all this; a drawn path is smoothed more, as clicks need.
 
 ### Bend the plate on printed keys
 
-The **Bending guide (STL + table)** in **6 · Export** is one small printed key for each
+The **Bending guide (STL + table)** in **7 · Export** is one small printed key for each
 bend, made for this plate as cut and the bender chosen in **5 · Plate**, each with its name
 raised on it: **A3** is the bridge between holes 3 and 4 in the plate's own plane, **B3**
 the same bridge out of it. In-plane bends come first, as the plate's maker says.
@@ -701,7 +764,7 @@ If the plate springs back short of the gauge, raise **Extra overbend** by what i
 Both are under **Fit of the keys**. Squeeze the same way each time: how hard you squeeze at
 the stop changes the springback a little, and the fit test calibrates yours.
 
-**Your bender's head** in **6 · Export** holds the measurements a key is made to. Those
+**Your bender's head** in **7 · Export** holds the measurements a key is made to. Those
 of the 329.142 are estimated from one photograph, scaled by the plate engraved on the
 head, so measure yours: post diameter, how far apart the lobes are, the arch's height and
 radius, and how wide it opens. A key's faces and pins do not depend on them. How it sits
@@ -709,7 +772,7 @@ in the head does.
 
 ### Print a jaw for a smaller printer
 
-Select **6 · Export → Prepare mandible print kit**. Choose the separated or
+Select **7 · Export → Prepare mandible print kit**. Choose the separated or
 reconstructed model, a printer or custom X/Y/Z build volume, and the patient
 side to protect. With a planned resection the app can infer the working side.
 The original single-STL exports remain available. The Asiga MAX, MAX X35, PRO 4K and
@@ -830,13 +893,29 @@ and under 0.2 % of the rest of the skull, with both condyles; and again with
 the head rolled 6° and a filling, with its streaks, in each first molar: both
 condyles kept, and nothing of the mandible more than 2 mm off the true bone.
 
+**Against a leg CT phantom** (`tests/make_leg_phantom.py`): one leg or both, in
+Hounsfield units, each a fibula of rounded-triangle section with its head and
+malleolus widened, a tibia beside it running past both ends and touching it at
+the knee, soft tissue round them; leaning up to 6° and with noise. The fibula of
+each leg is found on its own side, its line within 0.5 mm of the true axis and
+its ends within a few millimetres of the tips, through the DICOM loader as well.
+The plan's tests check the course against the jaw's known section, that chords
+along an arc stray by exactly their sagitta, that no piece is shorter than
+allowed, that each piece carries its stretch of fibula onto its chord, that a
+joint's two ends are one plane in the jaw each leaning half the angle, that no
+piece is twisted on the next, and that a joint's cuts keep apart across the bone.
+The guide's tests make it at printing resolution and follow its use, on the
+lateral face and the anterior, for oblique cuts and for ends leaning 77°; and
+one plans the spacing without the guide's room, so that a blade catches, to
+show the check finds it.
+
 Guide and plate checks exercise the bent hole geometry and exported meshes.
 A geometric match in software does not certify the bend made with a physical
 kit or the dimensional accuracy or strength of a printed model.
 
 `pytest` runs all of it, including end-to-end passes through the real
 application: load, separate, cut, reconstruct, refine, place a plate, bend it,
-export.
+plan a fibula graft from a leg CT, make and check its cutting guide, export.
 
 ## Known limitations
 
@@ -874,6 +953,17 @@ export.
   being pressed on, or glue the faces.
 - Rods do not reach every surface turned to the plate on a part as curved as a jaw:
   `assembly.json` gives the share they hold, about 85 to 98% on the scans tried.
+- **The fibula planning has only been run on synthetic legs.** No real leg CT has
+  been through it, and the cutting guide has not been printed or used. Its checks
+  are geometry on the bone as the scan has it: they cannot show how the guide
+  seats on bone with its soft tissue, or how a blade bends.
+- The fibula's lateral side is taken as the patient's, as BoneReconstructionPlanner
+  takes it. A leg turned out in the scanner turns it; *Turn about its line* corrects it.
+- Not planned yet: plate holes drilled through the fibula guide, a cutting guide
+  for the mandible, the skin paddle and its perforators, a fibula shaped for the
+  condyle, a double-barrel fibula.
+- The resins in reach of an Asiga printer (DentaGUIDE) are labelled for dental
+  surgical guides; a guide for a bone saw is outside that labelling.
 - The automatic plate route knows the jaw's shape only. It does not see the
   inferior alveolar nerve, tooth roots or disease in the bone: it keeps low on the
   jaw for that reason, and every recommended screw is to be checked on the slices.

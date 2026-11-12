@@ -183,6 +183,8 @@ class View3D(QWidget):
         session.arch_changed.connect(self.refresh_arch)
         session.reconstruction_changed.connect(self.refresh_reconstruction)
         session.reconstruction_edited.connect(self.render)
+        session.fibula.changed.connect(self.refresh_fibula)
+        session.fibula.leg_view_changed.connect(self.refresh_leg_view)
 
     def start(self) -> None:
         self.interactor.Initialize()
@@ -420,6 +422,55 @@ class View3D(QWidget):
         self.node_glyph.SetInputData(empty_polydata())
         self.mark_glyph.SetInputData(empty_polydata())
 
+        # The fibula graft: its pieces set in the jaw; and, in the leg view, the
+        # fibula with its cuts and the pieces where they are taken from.
+        self.fibula_pieces_mapper = vtk.vtkPolyDataMapper()
+        self.fibula_pieces_mapper.SetInputData(empty_polydata())
+        self.fibula_pieces_mapper.SetColorModeToDirectScalars()
+        self.fibula_pieces_mapper.SetScalarModeToUsePointData()
+        self.fibula_pieces_actor = vtk.vtkActor()
+        self.fibula_pieces_actor.SetMapper(self.fibula_pieces_mapper)
+        self.fibula_pieces_actor.GetProperty().SetSpecular(0.2)
+        self.fibula_pieces_actor.VisibilityOff()
+        self.renderer.AddActor(self.fibula_pieces_actor)
+        self.leg_bone_mapper = vtk.vtkPolyDataMapper()
+        self.leg_bone_mapper.SetInputData(empty_polydata())
+        self.leg_bone_mapper.ScalarVisibilityOff()
+        self.leg_bone_actor = vtk.vtkActor()
+        self.leg_bone_actor.SetMapper(self.leg_bone_mapper)
+        self.leg_bone_actor.GetProperty().SetColor(*BONE_COLOUR)
+        self.leg_bone_actor.GetProperty().SetOpacity(0.3)
+        self.leg_bone_actor.VisibilityOff()
+        self.renderer.AddActor(self.leg_bone_actor)
+        self.leg_pieces_mapper = vtk.vtkPolyDataMapper()
+        self.leg_pieces_mapper.SetInputData(empty_polydata())
+        self.leg_pieces_mapper.SetColorModeToDirectScalars()
+        self.leg_pieces_mapper.SetScalarModeToUsePointData()
+        self.leg_pieces_actor = vtk.vtkActor()
+        self.leg_pieces_actor.SetMapper(self.leg_pieces_mapper)
+        self.leg_pieces_actor.VisibilityOff()
+        self.renderer.AddActor(self.leg_pieces_actor)
+        self.leg_cuts_mapper = vtk.vtkPolyDataMapper()
+        self.leg_cuts_mapper.SetInputData(empty_polydata())
+        self.leg_cuts_mapper.ScalarVisibilityOff()
+        self.leg_cuts_actor = vtk.vtkActor()
+        self.leg_cuts_actor.SetMapper(self.leg_cuts_mapper)
+        self.leg_cuts_actor.GetProperty().SetColor(*RESECT_COLOUR)
+        self.leg_cuts_actor.GetProperty().SetOpacity(0.45)
+        self.leg_cuts_actor.VisibilityOff()
+        self.renderer.AddActor(self.leg_cuts_actor)
+        self.leg_guide_mapper = vtk.vtkPolyDataMapper()
+        self.leg_guide_mapper.SetInputData(empty_polydata())
+        self.leg_guide_mapper.ScalarVisibilityOff()
+        self.leg_guide_actor = vtk.vtkActor()
+        self.leg_guide_actor.SetMapper(self.leg_guide_mapper)
+        self.leg_guide_actor.GetProperty().SetColor(*GUIDE_COLOUR)
+        self.leg_guide_actor.GetProperty().SetOpacity(0.85)
+        self.leg_guide_actor.VisibilityOff()
+        self.renderer.AddActor(self.leg_guide_actor)
+        self._leg_view_shown = False
+        self._leg_saved: list[tuple] = []
+
     # -- refresh -----------------------------------------------------------
 
     def refresh_surface(self) -> None:
@@ -586,10 +637,13 @@ class View3D(QWidget):
         from ..render.convert import triangles_to_polydata
 
         preview = self.session.guide_preview()
+        if preview is not None and self._leg_view_shown:
+            # One view at a time: the keys replace the leg.
+            self.session.fibula.set_leg_view(False)
         hidden = [
             self.bone_actor, self.fragment_actor, self.graft_actor, self.plate_actor,
             self.node_actor, self.advice_actor, self.marking_actor, self.screw_actor,
-            self.verdict_actor, self.arch_actor,
+            self.verdict_actor, self.arch_actor, self.fibula_pieces_actor,
         ]
         if preview is None:
             self.guide_actor.VisibilityOff()
@@ -629,6 +683,77 @@ class View3D(QWidget):
         if entering or step != self._guide_view_step:
             self.renderer.ResetCamera(focus.GetBounds())
         self._guide_view_step = step
+        self.renderer.ResetCameraClippingRange()
+        self.render()
+
+    # -- the fibula graft ----------------------------------------------------
+
+    def _jaw_actors(self) -> list:
+        return [
+            self.bone_actor, self.fragment_actor, self.graft_actor, self.plate_actor,
+            self.node_actor, self.advice_actor, self.marking_actor, self.screw_actor,
+            self.verdict_actor, self.arch_actor, self.fibula_pieces_actor,
+        ]
+
+    def _leg_actors(self) -> list:
+        return [self.leg_bone_actor, self.leg_pieces_actor, self.leg_cuts_actor, self.leg_guide_actor]
+
+    def refresh_fibula(self) -> None:
+        """The fibula's pieces where they go in the jaw; the leg view, if shown."""
+        graft = self.session.fibula
+        mesh = graft.jaw_pieces_mesh()
+        self.fibula_pieces_mapper.SetInputData(mesh if mesh is not None else empty_polydata())
+        self.fibula_pieces_actor.SetVisibility(
+            mesh is not None and not self._leg_view_shown and not self._guide_view_shown
+        )
+        # The rebuilt jaw stays as the shape aimed for, seen through round the pieces.
+        self.graft_actor.GetProperty().SetOpacity(0.35 if mesh is not None else 1.0)
+        if self._leg_view_shown:
+            self._fill_leg_view()
+        self.render()
+
+    def _fill_leg_view(self) -> None:
+        graft = self.session.fibula
+        surface = graft.surface
+        self.leg_bone_mapper.SetInputData(surface if surface is not None else empty_polydata())
+        pieces = graft.leg_pieces_mesh()
+        self.leg_pieces_mapper.SetInputData(pieces if pieces is not None else empty_polydata())
+        cuts = graft.cut_squares()
+        self.leg_cuts_mapper.SetInputData(cuts if cuts is not None else empty_polydata())
+        guide = graft.guide_mesh() if hasattr(graft, "guide_mesh") else None
+        self.leg_guide_mapper.SetInputData(guide if guide is not None else empty_polydata())
+        self.leg_bone_actor.SetVisibility(surface is not None)
+        self.leg_pieces_actor.SetVisibility(pieces is not None)
+        self.leg_cuts_actor.SetVisibility(cuts is not None)
+        self.leg_guide_actor.SetVisibility(guide is not None)
+
+    def refresh_leg_view(self) -> None:
+        """Swap the jaw for the leg's fibula, with its cuts and pieces, or back."""
+        graft = self.session.fibula
+        if graft.leg_view and not self._leg_view_shown:
+            if self.session.guide_view_on:
+                self.session.leave_guide_view()
+            self._leg_saved = [(actor, actor.GetVisibility()) for actor in self._jaw_actors()]
+            for actor in self._jaw_actors():
+                actor.VisibilityOff()
+            for widget in self._plane_widgets:
+                widget.SetEnabled(False)
+            self._leg_view_shown = True
+            self._fill_leg_view()
+            focus = graft.leg_pieces_mesh()
+            if focus is None:
+                focus = graft.surface
+            if focus is not None:
+                self.renderer.ResetCamera(focus.GetBounds())
+        elif not graft.leg_view and self._leg_view_shown:
+            for actor in self._leg_actors():
+                actor.VisibilityOff()
+            for actor, visibility in self._leg_saved:
+                actor.SetVisibility(visibility)
+            self._leg_view_shown = False
+            self.refresh_fibula()
+            self._sync_plane_widgets()
+            self.renderer.ResetCamera()
         self.renderer.ResetCameraClippingRange()
         self.render()
 
@@ -763,7 +888,11 @@ class View3D(QWidget):
                 widget.SetInteractor(None)
             # Whether they show at all is decided first, so nothing below can leave a
             # cut on the screen, or draggable, once it has been executed.
-            shown = not self.session.cut_applied and not self._guide_view_shown
+            shown = (
+                not self.session.cut_applied
+                and not self._guide_view_shown
+                and not self._leg_view_shown
+            )
             faded = self.session.reconstructed_surface is not None
             for index, plane in enumerate(self.session.planes):
                 if index >= len(self._plane_widgets):

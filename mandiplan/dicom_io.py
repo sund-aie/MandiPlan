@@ -614,13 +614,17 @@ def _is_multiframe(files) -> bool:
 
 
 def load_series(
-    files: list[str], voxel_budget: int = WORKING_VOXEL_BUDGET, modality: str = ""
+    files: list[str],
+    voxel_budget: int = WORKING_VOXEL_BUDGET,
+    modality: str = "",
+    find_jaws: bool = True,
 ) -> tuple[Volume, SeriesGeometry]:
     """Validate and load a DICOM series into an LPS-aligned :class:`Volume`.
 
     The volume is always the whole series. For a medical CT
     (``modality == "CT"``) the box round its jaws is made too, in cubic
-    voxels, as ``geometry.jaw_volume``; see the module docstring.
+    voxels, as ``geometry.jaw_volume``, unless ``find_jaws`` is off, as it is
+    for a CT of the legs; see the module docstring.
     """
     import SimpleITK as sitk
 
@@ -643,7 +647,9 @@ def load_series(
     # too. What matters is whether the scan shows more than the head, or has
     # voxels coarse enough to step the bone surface; a CBCT does neither.
     length = _length_mm(array.shape, spacing, direction)
-    if modality.upper() == "CT" and (length > HEAD_LENGTH_MM or spacing.max() > SMOOTH_VOXEL_MM):
+    if find_jaws and modality.upper() == "CT" and (
+        length > HEAD_LENGTH_MM or spacing.max() > SMOOTH_VOXEL_MM
+    ):
         geometry.jaw_volume = _ct_jaws(array, spacing, origin, direction, geometry, voxel_budget)
         geometry.jaw_box = geometry.jaw_volume is not None
     factor = working_factor(array.shape, voxel_budget)
@@ -784,9 +790,10 @@ def load_folder(
     folder: str | Path,
     series_uid: str | None = None,
     voxel_budget: int = WORKING_VOXEL_BUDGET,
+    find_jaws: bool = True,
 ) -> tuple[Volume, SeriesGeometry, SeriesInfo]:
     """Load one series from ``folder``: ``series_uid``, or else the one
-    :func:`choose_series` picks."""
+    :func:`choose_series` picks. ``find_jaws`` as for :func:`load_series`."""
     series = list_series(folder)
     if not series:
         raise DicomLoadError(f"No DICOM series found in {folder}.")
@@ -799,7 +806,7 @@ def load_folder(
         # A folder of nothing but single images still gets inspect_geometry's
         # plain explanation of why it cannot be used.
         chosen = choose_series(series) or max(series, key=lambda s: s.n_files)
-    volume, geometry = load_series(chosen.files, voxel_budget, chosen.modality)
+    volume, geometry = load_series(chosen.files, voxel_budget, chosen.modality, find_jaws)
     volumes = [s for s in series if s is not chosen and _series_rank(s) is not None]
     if series_uid is None and volumes:
         geometry.warnings.insert(

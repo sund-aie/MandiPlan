@@ -329,6 +329,10 @@ class Session(QObject):
         self._undo: list[_Snapshot] = []
         #: What has been written out this session, in order.
         self.exported: list[str] = []
+        #: The fibula graft: the leg's CT and the plan of pieces for the jaw.
+        from .fibula_session import FibulaGraft
+
+        self.fibula = FibulaGraft(self)
 
     # -- volume -----------------------------------------------------------
 

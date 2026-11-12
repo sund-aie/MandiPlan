@@ -316,3 +316,49 @@ bone threshold into soft tissue; a constant below -1100, covering over 1% of the
 scan, is now air. The rule needs Hounsfield-like values, and a CBCT without them
 keeps its gray values untouched.
 
+
+## The fibula graft follows the open planner, with the commercial defaults
+
+The owner asked for fibula planning after a search of how others do it (the research
+report, `reports/Fibula flap mandible planning.md`, is kept out of the repository with its
+notes). The method is BoneReconstructionPlanner's, read from its code: straight pieces whose
+ends are the jaw's planes, each joint the plane half-way between its two pieces, each piece a
+stretch of fibula carried to the jaw by one rigid transform, the pieces laid up the fibula from
+the ankle, each pushed up until its cuts clear the last plus 1.5 mm, and a guide of a shell 0.3
+mm off the bone over 120° with slotted towers. Four things are added:
+
+- The joints are chosen, not clicked: the chain of chords with its joints on the course that
+  strays least from it, the fewest pieces within 2 mm, none under 20 mm. Raith and Modabber
+  found deviation from the target line tracks surgeons' ratings; no threshold is published, so
+  2 mm is the top of what a guided cut lands within. BoneReconstructionPlanner has no shortest
+  piece; Fry's 1 cm pieces lacked a periosteal vessel a third of the time.
+- No piece is twisted on the next. The frame is carried from piece to piece by the least
+  rotation, as Leclerc's planner does, so every joint is one plain wedge and the vessels stay
+  along one side. BoneReconstructionPlanner turns all its planes together instead.
+- The defaults are the vendors': 70 mm kept above the lateral malleolus (Materialise; KLS Martin
+  80; atlases 50 to 60), a height choice from the lower border up (KLS Martin's form), 1 to 5
+  pieces automatically (their forms offer 1 to 5 and 1 to 6). The knee's 60 mm has no source;
+  none publishes one.
+- The guide is followed in use before it is trusted, as the bend keys are: seated, lifted off,
+  a blade down every slot, every screw driven. On synthetic legs that found three faults: a
+  joint's cuts kept apart across the bone but not along the slot's length past it; a window
+  bounded by each cut's own measure across, shut at its ends; the two cuts' measures across
+  adding to nothing, which left the guide in three parts. On a real jaw with a synthetic leg
+  it found four more: the cuts kept apart round the bone's outline grown outwards, not to
+  the corners of the box a tower is; screws placed by the guide's surface alone, one
+  entering the wedge where a cut leant 37 degrees; the check itself following a screw from
+  the wrong side of the bone; and, for an end cut leaning 77 degrees, a tower leaning over
+  the bone so the guide could not be lifted off. Each has a test now. The towers' lower parts
+  that caused the last also rounded the guide's inner face towards the bone where they met
+  it; with nothing left under the bone seen from the guide's face, it lands at the 0.3 mm
+  asked for, at its closest.
+
+Where a joint's two cuts are too close for two slots with plastic between, the joint gets one
+window whose two walls guide the blade for each cut: a flange, which Lohn's 540 test cuts found
+more accurate than a closed slot. Each wedge narrows towards the outside of its bend, so a guide
+on that face needs its cuts kept apart through its own depth, and costs bone. Which face that is
+depends on the bends (round the arch, the lateral; up the angle, the front or back), so the face
+is a setting, as DePuy offers, and the panel says what the other would take.
+
+The bone the guide is shaped to is the scan's own surface at the threshold, as a signed distance
+on a 0.25 mm grid; at the bone mesh's vertices it reads 0.01 mm on average.
